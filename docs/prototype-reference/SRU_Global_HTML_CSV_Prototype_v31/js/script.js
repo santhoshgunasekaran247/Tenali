@@ -1,0 +1,3 @@
+const b=document.querySelector('.menu'),n=document.querySelector('.header nav');if(b&&n){b.onclick=()=>{n.style.display=n.style.display==='flex'?'none':'flex';n.style.position='absolute';n.style.top='82px';n.style.right='5vw';n.style.flexDirection='column';n.style.background='#f7f6f2';n.style.padding='18px 22px';n.style.border='1px solid #e5e2db';n.style.zIndex='50'}}
+
+document.querySelectorAll('.product-card[data-product-href]').forEach(card=>{const go=()=>window.location.href=card.dataset.productHref;card.addEventListener('click',e=>{if(e.target.closest('.btn'))return;go()});card.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!e.target.closest('.btn')){e.preventDefault();go()}})});

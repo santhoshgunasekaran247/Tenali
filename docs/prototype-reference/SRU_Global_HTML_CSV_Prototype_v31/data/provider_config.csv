@@ -1,0 +1,6 @@
+provider,enabled,client_id,client_secret_env,callback_path,scope,notes
+Google,no,,GOOGLE_CLIENT_SECRET,/auth/google/callback,openid profile email,Configure in server environment
+Facebook,no,,FACEBOOK_CLIENT_SECRET,/auth/facebook/callback,email public_profile,Configure in server environment
+Yahoo,no,,YAHOO_CLIENT_SECRET,/auth/yahoo/callback,openid profile email,Configure in server environment
+Microsoft,no,,MICROSOFT_CLIENT_SECRET,/auth/microsoft/callback,openid profile email,Configure in server environment
+Instagram,no,,INSTAGRAM_CLIENT_SECRET,/auth/instagram/callback,user_profile,Use Meta/Instagram Login and configure app credentials

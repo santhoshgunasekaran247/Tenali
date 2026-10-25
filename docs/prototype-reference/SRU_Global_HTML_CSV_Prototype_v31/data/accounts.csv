@@ -1,0 +1,7 @@
+account_id,nickname,account_type,holder_name,phone,email,opening_balance,current_balance,status
+A001,SRU Main,company,SRU Global,,,0,0,active
+A002,Cash,company,SRU Global,,,0,0,active
+A003,Personal,personal,Santhosh,,,0,0,active
+A004,Friends,friend,Friends Pool,,,0,0,active
+A005,Customers,customer,Customer Receivables,,,0,0,active
+A006,Vendor Clearing,company,Vendor Payables,,,0,0,active

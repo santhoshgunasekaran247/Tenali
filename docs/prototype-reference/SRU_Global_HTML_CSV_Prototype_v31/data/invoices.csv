@@ -1,0 +1,1 @@
+invoice_id,invoice_number,invoice_date,company_id,customer_party_id,customer_gst,customer_account_id,subtotal,gst,total,status,accounted,created_by,created_at,mode,reference

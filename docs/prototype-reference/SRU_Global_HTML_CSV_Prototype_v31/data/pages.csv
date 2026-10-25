@@ -1,0 +1,6 @@
+page_key,title,subtitle,active,display_order,admin_configurable
+portal,SRU Global Business System,Operations and business control centre,true,1,true
+dashboard,Dashboard,Your business at a glance,true,2,true
+catalogue,Catalogue & Stock,Products stock and vendor contributions,true,3,true
+vendor_contributions,Vendor Contributions,Map vendor items to catalogue products,true,4,true
+theme,Theme Configuration,Configure the visual theme,true,5,true

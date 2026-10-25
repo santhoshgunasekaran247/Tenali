@@ -1,0 +1,9 @@
+config_key,value,value_type,description
+company_name,SRU Global,text,Company display name
+portal_product_id_prefix,PRD-,text,Permanent product ID prefix
+vendor_contribution_id_prefix,CON-,text,Vendor contribution ID prefix
+invoice_prefix,IN,text,Invoice prefix
+invoice_sequence_width,5,number,Monthly sequence width
+catalogue_stock_rule,stock>0=in-stock,text,Public catalogue stock rule
+document_link_required,true,boolean,Documents should be linked to an entity
+auditable_transactions,true,boolean,Major transactions create audit events

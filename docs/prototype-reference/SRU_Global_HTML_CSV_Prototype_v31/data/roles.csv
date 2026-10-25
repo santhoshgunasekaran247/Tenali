@@ -1,0 +1,5 @@
+role,description,dashboard,catalog,crm,billing,accounts,bills,company,user_admin,menu_admin
+User,Standard portal user,yes,yes,no,no,no,no,no,no,no
+Contributor,Product and stock contributor,yes,yes,yes,no,no,yes,no,no,no
+Accounts,Finance and billing operator,yes,yes,yes,yes,yes,yes,yes,no,no
+Admin,Full administrator,yes,yes,yes,yes,yes,yes,yes,yes,yes

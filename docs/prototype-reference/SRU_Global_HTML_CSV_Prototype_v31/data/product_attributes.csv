@@ -1,0 +1,14 @@
+attribute_key,label,data_type,scope,active
+size,Size,text,product,true
+colour,Colour,text,product,true
+gtin,GTIN,text,product,true
+unit_count,Unit Count,number,product,true
+weight,Weight,text,product,true
+height,Height,text,product,true
+width,Width,text,product,true
+length,Length,text,product,true
+item_name,Item Name,text,product,true
+description,Description,longtext,product,true
+mrp,MRP,currency,product,true
+buying_price,Buying Price,currency,vendor_contribution,true
+selling_price,Selling Price,currency,product,true

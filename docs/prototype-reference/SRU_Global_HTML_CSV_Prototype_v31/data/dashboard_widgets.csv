@@ -1,0 +1,7 @@
+widget_id,widget_key,title,active,display_order,permission
+WID-001,today_sales,Today's Sales,true,1,dashboard.view
+WID-002,to_collect,To Collect,true,2,accounts.view
+WID-003,to_pay,To Pay,true,3,accounts.view
+WID-004,pending_settlements,Pending Settlements,true,4,accounts.view
+WID-005,stock_alerts,Stock Alerts,true,5,stock.view
+WID-006,tally_mismatch,Tally Mismatch,true,6,reports.view

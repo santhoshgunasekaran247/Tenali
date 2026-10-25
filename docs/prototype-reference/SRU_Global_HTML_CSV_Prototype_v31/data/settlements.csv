@@ -1,0 +1,2 @@
+settlement_id,period,account_from,account_to,amount,reason,status,settled_date,settled_by,reference
+ST001,2026-10-25,A005,A001,18000,Customer receipt pending settlement,open,,,,

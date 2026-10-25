@@ -1,0 +1,5 @@
+id,username,email,phone,role,status,provider,verified,created_at,last_login,password_sha256
+U001,admin,admin@sruglobal.in,+919361748842,Admin,active,local,yes,2026-10-25,,e86f78a8a3caf0b60d8e74e5942aa6d86dc150cd3c03338aef25b7d2d7e3acc7
+U002,contributor,contributor@sruglobal.in,+919361748843,Contributor,active,local,yes,2026-10-25,,0de11e766d5027fbf7c0d84605eeb2bb7cbca67f28cb1e34ed10015108feba5f
+U003,accounts,accounts@sruglobal.in,+919361748844,Accounts,active,local,yes,2026-10-25,,934975bf2a884e397d6e3f50ded9d96221b82ec6af04565a5917ff74b8347c2c
+U004,user,user@sruglobal.in,+919361748845,User,active,local,yes,2026-10-25,,3e7c19576488862816f13b512cacf3e4ba97dd97243ea0bd6a2ad1642d86ba72

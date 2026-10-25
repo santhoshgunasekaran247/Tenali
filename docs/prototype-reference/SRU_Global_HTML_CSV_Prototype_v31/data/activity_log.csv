@@ -1,0 +1,2 @@
+activity_id,timestamp,user_id,username,role,action,module,reference,ip_or_device,details
+A001,2026-10-25 09:00,U001,admin,Admin,login,auth,,demo-browser,Successful demo login
