@@ -2,6 +2,7 @@ import { API_BASE } from "../../api";
 
 export function toAssetUrl(path?: string): string {
   if (!path) return "";
+  if (/^data:image\/(png|jpeg|webp);base64,/i.test(path)) return path;
   if (/^https?:\/\//i.test(path)) return path;
   const normalized = path.replace(/^\/+/, "").replace(/^assets\//, "");
   return `${API_BASE}/catalog-assets/${normalized}`;

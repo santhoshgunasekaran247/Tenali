@@ -22,3 +22,14 @@ Use Alembic migrations from `api/alembic` and `api/migrations`:
     alembic upgrade head
 
 The modular SQL files are intended for maintainability, domain review, and future migration generation.
+
+## Purchase and payment attachments
+
+Purchase bills and business-payment receipts use `documents` and `document_links`.
+Uploaded file bytes are stored in `documents.file_content` (PostgreSQL `bytea`), not
+in a public asset directory. Include these tables in database backups and restores.
+
+PDF, JPEG, PNG and WebP files are supported: up to 5 MB per file, 5 files per record,
+and 20 MB total per record. Files selected during record creation save in the same
+transaction as the purchase or payment. Additional files can be uploaded later;
+existing evidence is retained rather than deleted by the attachment UI.

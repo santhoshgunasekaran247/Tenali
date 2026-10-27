@@ -1,44 +1,27 @@
-# Environment files
-.env
-.env.*
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Python caches and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+api/.venv/
 
-# Secrets and credentials
-*.pem
-passwords
-secrets/
-**/passwords
-**/secrets/
-
-# API / cloud credentials
-api-secrets/
-**/api-secrets/
-*.key
-*.crt
-*.p12
-*.pfx
-
-# Database credentials
-*.sql
-**/database/*.env
-**/*db*password*
-
-# Supabase / AWS / other cloud keys
-supabase-service-role-key
-supabase-service-role-keys
-service-role-key*
-aws-credentials
-aws-credentials.*
-*.aws
-
-# Node / package manager cache (optional safe defaults)
+# Node dependencies
 node_modules/
-npm-debug.log*
+web/node_modules/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.vite/
 
 # OS/editor noise
 .DS_Store
 Thumbs.db
-.vscode/
+
+# Local env files
+.env
+.env.*
+!.env.example

@@ -24,7 +24,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Serve routes at both root and /api so older clients keep working.
     app.include_router(api_router)
+    app.include_router(api_router, prefix="/api")
 
     prototype_assets_dir = (
         Path(__file__).resolve().parents[2] / "tenali-v31-exact-prototype" / "assets"
