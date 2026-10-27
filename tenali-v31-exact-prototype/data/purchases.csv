@@ -1,0 +1,2 @@
+purchase_id,date,vendor,sku,qty,buying_price,gst,total,account,mode,reference,bill_id,status,created_by
+P001,2026-10-25,Demo Vendor,AM-P511,20,700,2520,16520,A001,Bank,PO-DEMO-001,,posted,admin

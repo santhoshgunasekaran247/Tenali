@@ -1,0 +1,9 @@
+menu_key,label,enabled,roles
+catalog,Catalog,yes,User|Contributor|Accounts|Admin
+crm,CRM,yes,Contributor|Accounts|Admin
+billing,Billing,yes,Accounts|Admin
+accounts,Accounts & Tally,yes,Accounts|Admin
+bills,Bills & Documents,yes,Contributor|Accounts|Admin
+company,Company,yes,Accounts|Admin
+user-admin,User Admin,yes,Admin
+menu-admin,Menu Admin,yes,Admin

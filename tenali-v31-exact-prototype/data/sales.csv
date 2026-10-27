@@ -1,0 +1,2 @@
+sale_id,date,customer,sku,qty,selling_price,gst,total,account,mode,reference,bill_id,status,created_by
+SL001,2026-10-25,Demo Customer,PH-HD9270,1,15296,2745.76,18041.76,A001,UPI,SALE-DEMO-001,B001,posted,admin

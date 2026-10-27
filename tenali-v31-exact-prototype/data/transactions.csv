@@ -1,0 +1,4 @@
+transaction_id,date,type,account_from,account_to,amount,mode,reference,category,description,bill_id,status,created_by,created_at
+T001,2026-10-25,transfer,A002,A001,5000,UPI,DEMO-001,capital,Opening demo transfer,,posted,admin,2026-10-25 09:00
+T002,2026-10-25,purchase,A001,A006,12500,Bank,DEMO-002,stock,Sample stock purchase,,posted,admin,2026-10-25 11:00
+T003,2026-10-25,sale,A005,A001,18000,UPI,DEMO-003,sale,Sample customer receipt,B001,posted,admin,2026-10-25 13:00

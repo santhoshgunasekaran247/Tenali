@@ -1,0 +1,1 @@
+window.SRU_COMPANY={company_name:'SRU Global',nickname:'SRU',logo:'assets/sru-global-logo.png',gst_number:'CONFIGURE_GST',udhyam_number:'CONFIGURE_UDYAM',phone:'+919361748842',email:'sourcedbysru@gmail.com',address:'Chennai Tamil Nadu India',website:'sruglobal.in',instagram:'',facebook:'',linkedin:'',youtube:''};

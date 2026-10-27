@@ -1,0 +1,4 @@
+stock_id,sku,product_name,brand,category,qty_on_hand,buying_price,selling_price,reorder_level,updated_at,portal_product_id
+S001,AM-P511,PP-511,Ambrane,Power & Charging,50,700,899,10,2026-10-25,PRD-000001
+S002,MK-CABIN,The Cabin,Mokobara,Travel & Luggage,15,8500,10799,5,2026-10-25,PRD-000015
+S003,PH-HD9270,HD9270/70,Philips,Home Appliances,10,12500,15296,3,2026-10-25,PRD-000029

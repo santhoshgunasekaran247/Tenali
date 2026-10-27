@@ -1,0 +1,8 @@
+navigation_id,parent_id,label,route,icon,display_order,active,admin_only,permission
+NAV-001,,Dashboard,#dashboard,LayoutDashboard,1,true,false,dashboard.view
+NAV-002,,Catalogue & Stock,#catalog,Package,2,true,false,stock.view
+NAV-003,,Vendor Contributions,vendor-contributions.html,Handshake,3,true,false,product.view
+NAV-004,,Sales & Invoices,#invoices,Receipt,4,true,false,invoice.view
+NAV-005,,Purchases & Documents,#billing,FileText,5,true,false,purchase.view
+NAV-006,,Money & Accounts,#accounts,Wallet,6,true,false,accounts.view
+NAV-007,,Theme Configuration,theme-settings.html,Palette,7,true,true,admin.config

@@ -1,0 +1,14 @@
+theme_key,value,value_type,description
+primary,#7A1F3D,color,Primary burgundy
+secondary,#1F2937,color,Secondary navy
+accent,#C9A227,color,Premium gold
+background,#F8F5F0,color,Page background
+surface,#FFFFFF,color,Card background
+text,#252525,color,Primary text
+muted,#6B7280,color,Muted text
+success,#2E7D32,color,Success state
+warning,#ED6C02,color,Warning state
+error,#B42318,color,Error state
+radius,14px,size,Card/button radius
+font_body,Inter,font,Body font
+font_heading,Cormorant Garamond,font,Heading font
