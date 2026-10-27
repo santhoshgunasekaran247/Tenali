@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ImageOff } from "lucide-react";
 import { SiteFooter } from "../components/SiteFooter";
 import { api } from "../api";
 import type { CatalogProduct } from "../types";
@@ -11,6 +12,7 @@ export function ProductPage() {
   const [product, setProduct] = useState<CatalogProduct>();
   const [error, setError] = useState<string>();
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [variantId, setVariantId] = useState("");
 
   useEffect(() => {
     if (!productId) return;
@@ -32,6 +34,10 @@ export function ProductPage() {
   if (!product) return <main className="loading">Loading product...</main>;
 
   const mainPhoto = gallery[photoIndex] || product.image_url;
+  const variant = product.variants?.find(item=>item.id===variantId);
+  const details = {...product,...variant,attributes:{...product.attributes,...variant?.attributes}};
+  const mrp = variant ? variant.mrp_display : product.mrp_display;
+  const price = variant ? variant.selling_price_display : product.selling_price_display;
 
   return (
     <>
@@ -46,7 +52,7 @@ export function ProductPage() {
         <section className="product-detail">
           <div className="detail-gallery">
             <div className="detail-image-wrap">
-              <img src={toAssetUrl(mainPhoto)} alt={product.name} />
+              {mainPhoto?<img src={toAssetUrl(mainPhoto)} alt={product.name} />:<ImageOff size={48} aria-label="No product image"/>}
             </div>
             {gallery.length > 1 && (
               <div className="product-thumbs">
@@ -69,18 +75,20 @@ export function ProductPage() {
               {product.brand_name || "SRU"} · {product.category_title}
             </p>
             <h1>{product.name}</h1>
+            {product.variants?.length?<label className="catalog-variant-select">Size / Colour<select value={variantId} onChange={event=>setVariantId(event.target.value)}><option value="">Base product</option>{product.variants.map(item=><option key={item.id} value={item.id}>{item.variant_name}{item.size||item.colour?` - ${[item.size,item.colour].filter(Boolean).join(' / ')}`:''}</option>)}</select></label>:null}
             <div className="price-block">
               <div className="mrp">
                 <span>MRP</span>
-                <s>{moneyLabel(product.mrp_display)}</s>
+                <s>{moneyLabel(mrp)||"-"}</s>
               </div>
               <div className="our-price">
                 <span>Our Price</span>
-                <strong>{moneyLabel(product.selling_price_display)}</strong>
+                <strong>{moneyLabel(price)||"Request a quote"}</strong>
               </div>
             </div>
-            <p className="sample-price-note">Sample pricing shown for layout and catalogue demonstration.</p>
-            <p className="detail-desc">{product.description}</p>
+            {details.discount_percent!=null?<p>{Number(details.discount_percent)}% off MRP</p>:null}
+            <p className="detail-desc">{variant?.description||product.description}</p>
+            <dl className="inventory-specs">{[['Item name',details.item_name],['Size',details.size],['Colour',details.colour],['Weight (kg)',details.weight],['Height (cm)',details.height],['Width (cm)',details.width],['Length (cm)',details.length],...Object.entries(details.attributes||{})].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
             <div className="bulk-pricing">
               <strong>Better pricing on bulk orders.</strong>
               <span>WhatsApp us for best price and price matching with comparable offers.</span>
@@ -91,7 +99,7 @@ export function ProductPage() {
             <div className="detail-actions">
               <a
                 className="btn whatsapp-btn"
-                href={whatsappLink(FALLBACK_PHONE, product.name, product.brand_name || "SRU Collection")}
+                href={whatsappLink(FALLBACK_PHONE, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || "SRU Collection")}
               >
                 WhatsApp for best price
               </a>

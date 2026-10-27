@@ -71,6 +71,51 @@ export type HsnMaster = {
 export type HsnMasterInput = Pick<HsnMaster, "code" | "description" | "gst_rate" | "is_active">;
 export type HsnMasterUpdateInput = Omit<HsnMasterInput, "code">;
 
+export type InventoryItemInput = {
+  item_name?: string | null; description?: string | null; size?: string | null; colour?: string | null;
+  weight?: number | null; height?: number | null; width?: number | null; length?: number | null;
+  attributes: Record<string, string>; sku?: string | null;
+  pricing_mode: "price" | "discount" | "inherit"; selling_price: number | null; discount_percent: number;
+  preferred_vendor_id: string | null; reorder_level: number; reorder_target: number;
+  reorder_enabled: boolean; reorder_reminder_date: string | null; is_active: boolean;
+};
+export type InventoryProductInput = InventoryItemInput & {
+  name: string; brand_id: string | null; category_id: string | null; hsn_code: string | null;
+  image_url: string | null; image_urls: string[]; catalog_visible: boolean;
+  best_seller: boolean; sru_special: boolean; home_order: number;
+};
+export type InventoryOfferInput = {
+  vendor_id: string; variant_id: string | null; mrp: number | null; buying_price: number | null;
+  available_quantity: number; availability: "AVAILABLE" | "OUT_OF_STOCK" | "ON_ORDER" | "UNKNOWN";
+  lead_time_days: number; sku: string | null; vendor_reference: string | null; vendor_product_url: string | null; is_active: boolean;
+};
+export type InventoryOffer = InventoryOfferInput & {
+  id: string; product_id: string; vendor_name: string; vendor_active: boolean;
+  contact_person?: string; phone?: string; email?: string; address?: string;
+};
+export type InventoryItem = InventoryItemInput & {
+  id: string; effective_mrp: number | null; effective_buying_price: number | null;
+  catalog_price: number | null; effective_discount: number | null; preferred_vendor_name: string | null;
+  stock_qty: number; vendor_count: number; offers: InventoryOffer[]; pricing_error: string | null;
+  vendor_available_quantity: number | null; vendor_availability: string; vendor_lead_time_days: number | null;
+};
+export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string };
+export type InventoryProduct = InventoryItem & Omit<InventoryProductInput, "image_urls"> & {
+  image_urls: string; portal_product_id: string; brand_name?: string; category_name?: string;
+  base_stock_qty: number; variants: InventoryVariant[];
+};
+export type InventoryLookups = {
+  brands: Array<{ id: string; name: string; code: string }>;
+  categories: Array<{ id: string; name: string; code: string }>;
+  vendors: Array<{ id: string; legal_name: string; contact_person?: string; phone?: string; email?: string; address?: string }>;
+};
+export type InventoryAlert = {
+  product_id: string; variant_id: string | null; product_name: string; variant_name?: string;
+  stock_qty: number; reorder_level: number; reorder_quantity: number;
+  reminder_date: string | null; reminder_due: boolean; low_stock: boolean;
+};
+export type InventoryMovement = { id: string; variant_id: string | null; movement_type: string; quantity: number; notes: string; created_at: string };
+
 export type Brand = {
   code: string;
   name: string;
@@ -106,6 +151,12 @@ export type CatalogProduct = {
   category_description: string;
   stock_qty: number;
   gallery?: string[];
+  item_name?: string; size?: string; colour?: string;
+  weight?: number; height?: number; width?: number; length?: number;
+  attributes?: Record<string, string>; discount_percent?: number | null;
+  variants?: Array<{ id: string; variant_name: string; sku?: string; size?: string; colour?: string;
+    item_name?: string; description?: string; weight?: number; height?: number; width?: number; length?: number;
+    attributes?: Record<string, string>; mrp_display?: string; selling_price_display?: string; discount_percent?: number | null; stock_qty: number }>;
 };
 
 export type CatalogHomeResponse = {

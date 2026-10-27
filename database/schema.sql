@@ -128,6 +128,20 @@ create table if not exists products (
     home_order integer not null default 999,
     reorder_level numeric(14,3) not null default 0,
     preferred_vendor_id uuid references parties(id),
+    item_name text,
+    size text,
+    colour text,
+    weight numeric(14,3),
+    height numeric(14,3),
+    width numeric(14,3),
+    length numeric(14,3),
+    attributes jsonb not null default '{}'::jsonb,
+    pricing_mode text not null default 'price',
+    discount_percent numeric(5,2) not null default 0,
+    catalog_visible boolean not null default true,
+    reorder_target numeric(14,3) not null default 0,
+    reorder_enabled boolean not null default false,
+    reorder_reminder_date date,
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
@@ -151,6 +165,14 @@ create table if not exists product_variants (
     description text,
     mrp numeric(14,2),
     selling_price numeric(14,2),
+    attributes jsonb not null default '{}'::jsonb,
+    pricing_mode text not null default 'inherit',
+    discount_percent numeric(5,2) not null default 0,
+    preferred_vendor_id uuid references parties(id),
+    reorder_level numeric(14,3) not null default 0,
+    reorder_target numeric(14,3) not null default 0,
+    reorder_enabled boolean not null default false,
+    reorder_reminder_date date,
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -188,6 +210,9 @@ create table if not exists vendor_contributions (
     selling_price numeric(14,2),
     vendor_product_url text,
     vendor_reference text,
+    available_quantity numeric(14,3) not null default 0,
+    availability text not null default 'UNKNOWN',
+    lead_time_days integer not null default 0,
     is_active boolean not null default true,
     created_by uuid references user_profiles(id),
     created_at timestamptz not null default now(),
@@ -604,3 +629,6 @@ create index if not exists idx_purchases_company_date on purchases(company_id, p
 create index if not exists idx_purchases_receipt_status on purchases(company_id, receipt_status, receipt_type);
 create index if not exists idx_audit_entity on audit_events(entity_type, entity_id);
 create index if not exists idx_document_links_entity on document_links(entity_type, entity_id);
+create index if not exists idx_variants_product_active on product_variants(product_id, is_active);
+create index if not exists idx_vendor_offers_product on vendor_contributions(product_id, variant_id, vendor_id);
+create index if not exists idx_stock_balances_item on stock_balances(company_id, product_id, variant_id);

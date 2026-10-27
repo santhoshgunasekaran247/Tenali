@@ -24,7 +24,7 @@ const operationsLinks: PortalLink[] = [
   { label: "Receivables & Collections", path: "/portal/receivables", status: "live" },
   { label: "Sales Billing", path: "/portal/billing", status: "live" },
   { label: "Purchases", path: "/portal/purchases", status: "live" },
-  { label: "Inventory", status: "coming" },
+  { label: "Product Inventory", path: "/portal/inventory", status: "live" },
 ];
 
 const adminMaintenanceLinks: PortalLink[] = [
@@ -141,6 +141,7 @@ export function PortalPage() {
     dueReminders: 0,
     badDebtCount: 0,
     netBorrowingOutstanding: 0,
+    inventoryAlerts: 0,
   });
   const [kpiLoading, setKpiLoading] = useState(true);
   const [completedBySection, setCompletedBySection] = useState<Record<string, Record<string, boolean>>>({});
@@ -158,10 +159,11 @@ export function PortalPage() {
     const loadKpi = async () => {
       setKpiLoading(true);
       try {
-        const [receivableRes, reminderRes, borrowingSummaryRes] = await Promise.all([
+        const [receivableRes, reminderRes, borrowingSummaryRes, inventoryRes] = await Promise.all([
           api.receivables(),
           api.dueReceivableReminders(),
           api.borrowingSummary(),
+          api.inventoryAlerts(),
         ]);
 
         const openReceivables = receivableRes.items.filter(
@@ -178,6 +180,7 @@ export function PortalPage() {
           dueReminders: reminderRes.items.length,
           badDebtCount,
           netBorrowingOutstanding,
+          inventoryAlerts: inventoryRes.items.length,
         });
       } finally {
         setKpiLoading(false);
@@ -263,7 +266,8 @@ export function PortalPage() {
         </article>
       </section>
 
-      <section className="portal-kpi-grid">
+      <section className="portal-kpi-grid inventory-kpis">
+        <Link className="portal-kpi-card portal-kpi-link" to="/portal/inventory?view=alerts"><p>Inventory Reorder Alerts</p><strong>{kpiLoading?"...":kpi.inventoryAlerts}</strong></Link>
         <Link className="portal-kpi-card portal-kpi-link" to="/portal/receivables?status=OPEN">
           <p>Open Receivables</p>
           <strong>{kpiLoading ? "..." : kpi.openReceivables}</strong>

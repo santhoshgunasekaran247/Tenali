@@ -29,6 +29,25 @@ class CategoryOut(BaseModel):
     home_order: int | None = None
 
 
+class CatalogVariantOut(BaseModel):
+    id: UUID
+    variant_name: str | None = None
+    sku: str | None = None
+    size: str | None = None
+    colour: str | None = None
+    item_name: str | None = None
+    description: str | None = None
+    weight: float | None = None
+    height: float | None = None
+    width: float | None = None
+    length: float | None = None
+    attributes: dict[str, str] = Field(default_factory=dict)
+    mrp_display: str | None = None
+    selling_price_display: str | None = None
+    discount_percent: float | None = None
+    stock_qty: float = 0
+
+
 class ProductOut(BaseModel):
     id: UUID
     portal_product_id: str | None = None
@@ -49,6 +68,16 @@ class ProductOut(BaseModel):
     category_description: str | None = None
     stock_qty: float = 0
     gallery: list[str] = Field(default_factory=list)
+    item_name: str | None = None
+    size: str | None = None
+    colour: str | None = None
+    weight: float | None = None
+    height: float | None = None
+    width: float | None = None
+    length: float | None = None
+    attributes: dict[str, str] = Field(default_factory=dict)
+    discount_percent: float | None = None
+    variants: list[CatalogVariantOut] = Field(default_factory=list)
 
 
 class CatalogHomeResponse(BaseModel):

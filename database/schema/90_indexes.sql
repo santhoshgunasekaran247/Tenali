@@ -26,3 +26,6 @@ create index if not exists idx_purchases_company_date on purchases(company_id, p
 create index if not exists idx_purchases_receipt_status on purchases(company_id, receipt_status, receipt_type);
 create index if not exists idx_audit_entity on audit_events(entity_type, entity_id);
 create index if not exists idx_document_links_entity on document_links(entity_type, entity_id);
+create index if not exists idx_variants_product_active on product_variants(product_id, is_active);
+create index if not exists idx_vendor_offers_product on vendor_contributions(product_id, variant_id, vendor_id);
+create index if not exists idx_stock_balances_item on stock_balances(company_id, product_id, variant_id);

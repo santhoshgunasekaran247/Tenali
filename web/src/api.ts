@@ -1,4 +1,5 @@
 import type {
+  InventoryAlert, InventoryLookups, InventoryMovement, InventoryOfferInput, InventoryProduct, InventoryProductInput, InventoryItemInput,
   SiteTheme,
   Attachment,
   AttachmentEntity,
@@ -77,6 +78,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  inventoryProducts: () => request<{ items: InventoryProduct[] }>("/inventory/products"),
+  inventoryLookups: () => request<InventoryLookups>("/inventory/lookups"),
+  inventoryCreateLookup: (kind: "brands" | "categories", name: string) => request<{id: string; name: string; code: string}>(`/inventory/lookups/${kind}`, {method:"POST",body:JSON.stringify({name})}),
+  inventorySaveProduct: (payload: InventoryProductInput, id?: string) => request<InventoryProduct>(`/inventory/products${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),
+  inventorySaveVariant: (product: string, payload: InventoryItemInput & {variant_name: string}, id?: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/variants${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),
+  inventorySaveOffer: (product: string, payload: InventoryOfferInput, id?: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/offers${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),
+  inventoryBulkMap: (vendor_id: string, product_ids: string[]) => request<{mapped_count:number}>("/inventory/products/vendor-mappings", {method:"POST",body:JSON.stringify({vendor_id,product_ids})}),
+  inventoryAdjustStock: (product: string, payload: {variant_id:string|null;direction:"IN"|"OUT";quantity:number;notes:string}) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/stock`, {method:"POST",body:JSON.stringify(payload)}),
+  inventoryMovements: (product: string) => request<{items:InventoryMovement[]}>(`/inventory/products/${encodeURIComponent(product)}/movements`),
+  inventoryAlerts: () => request<{items:InventoryAlert[]}>("/inventory/alerts"),
+  inventoryRemind: (product:string,variant_id:string|null,reminder_date:string) => request<{items:InventoryAlert[]}>(`/inventory/products/${encodeURIComponent(product)}/reminder`, {method:"PUT",body:JSON.stringify({variant_id,reminder_date})}),
   attachments: (entity: AttachmentEntity, id: string) => request<{ items: Attachment[] }>(
     `/documents/${entity}/${encodeURIComponent(id)}`
   ),

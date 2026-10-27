@@ -33,3 +33,26 @@ PDF, JPEG, PNG and WebP files are supported: up to 5 MB per file, 5 files per re
 and 20 MB total per record. Files selected during record creation save in the same
 transaction as the purchase or payment. Additional files can be uploaded later;
 existing evidence is retained rather than deleted by the attachment UI.
+
+## Product-first inventory
+
+Inventory and the customer catalog use the same `products` records. Child size/colour
+variations live in `product_variants`; `vendor_contributions` links supplier offers to
+a product or variant. Supplier MRP, buying price, availability and lead time remain
+on the offer. Product-level summaries derive these fields from the preferred active
+supplier; changing supplier does not create another product.
+
+Catalog price and discount belong to the product. The pricing rule records which
+value stays fixed when preferred MRP changes. Variants inherit the parent's rule
+unless explicitly overridden. Visibility, best-seller/special flags and ordering are
+configured on the product. Customer responses omit supplier identity/contact and
+buying-price fields.
+
+Supplier availability is not owned stock. Owned quantities are recorded separately
+through stock-in/out adjustments with movement history and negative-stock checks.
+Existing free-text purchase/invoice lines do not automatically move inventory.
+Reorder thresholds, restock targets and dates produce persistent in-app alerts and
+reminders, not email/SMS notifications.
+
+Inventory migration: `009_product_inventory`. Rollback-only database regression
+tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_inventory.py`.

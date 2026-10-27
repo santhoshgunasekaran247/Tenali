@@ -5,6 +5,7 @@ from app.api.routes.billing import router as billing_router
 from app.api.routes.catalog import router as catalog_router
 from app.api.routes.collections import router as collections_router
 from app.api.routes.company import router as company_router
+from app.api.routes.inventory import router as inventory_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.masters import router as masters_router
 from app.api.routes.health import router as health_router
@@ -16,6 +17,7 @@ api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(company_router, prefix="/company", tags=["company"])
+api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(documents_router, prefix="/documents", tags=["documents"])
 api_router.include_router(masters_router, prefix="/masters", tags=["masters"])
 api_router.include_router(parties_router, prefix="/parties", tags=["parties"])

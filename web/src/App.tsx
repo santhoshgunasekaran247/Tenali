@@ -7,6 +7,7 @@ import { BusinessPaymentsPage } from "./pages/BusinessPaymentsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { CompanySetupPage } from "./pages/CompanySetupPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { HomePage } from "./pages/HomePage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { PortalPage } from "./pages/PortalPage";
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/portal/billing" element={<BillingPage />} />
         <Route path="/portal/company" element={<CompanySetupPage />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
+        <Route path="/portal/inventory" element={<InventoryPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />
         <Route path="/portal/reports" element={<ReportsPage />} />
       </Routes>
