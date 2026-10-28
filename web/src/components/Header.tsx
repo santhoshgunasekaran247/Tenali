@@ -47,12 +47,26 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
         {logo ? <img src={toAssetUrl(logo)} alt={companyName || "Company"} loading="eager" decoding="async" /> : auth.loading?<span className="brand-loading" aria-hidden="true"/>:<strong>{companyName||'Tenali'}</strong>}
       </Link>
       <nav className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onClick={(event)=>{if(menuOpen&&(event.target as HTMLElement).closest("a,button"))onMenuToggle();}}>
-        {auth.user&&inPortal?<><Link to="/portal">{navText("operations_portal","Operations Portal")}</Link><a href={storefrontHref}>{navText("storefront","Storefront")}</a></>:storefrontCompany?<><a href={`${tenantBase()}/#collection-special`}>{navText("collection","Collection")}</a>
-        <a href={`${tenantBase()}/#categories`}>{navText("categories","Categories")}</a>
-        <a href={`${tenantBase()}/#best-sellers`}>{navText("best_sellers","Best Sellers")}</a>
-        <a href={`${tenantBase()}/#sru-specials`}>{navText("specials","Specials")}</a>
-        <a href={`${tenantBase()}/#brands`}>{navText("brands","Brands")}</a>
-        <a href={`${tenantBase()}/#contact`}>{navText("contact","Contact")}</a></>:null}
+        {auth.user ? <div className="workspace-nav-links">
+          {inPortal ? <>
+            <Link to="/portal">{navText("operations_portal","Operations Portal")}</Link>
+            <a href={storefrontHref}>{navText("storefront","Storefront")}</a>
+          </> : storefrontCompany ? <>
+            <a href={`${tenantBase()}/#collection-special`}>{navText("collection","Collection")}</a>
+            <a href={`${tenantBase()}/#categories`}>{navText("categories","Categories")}</a>
+            <a href={`${tenantBase()}/#best-sellers`}>{navText("best_sellers","Best Sellers")}</a>
+            <a href={`${tenantBase()}/#sru-specials`}>{navText("specials","Specials")}</a>
+            <a href={`${tenantBase()}/#brands`}>{navText("brands","Brands")}</a>
+            <a href={`${tenantBase()}/#contact`}>{navText("contact","Contact")}</a>
+          </> : null}
+        </div> : storefrontCompany ? <>
+          <a href={`${tenantBase()}/#collection-special`}>{navText("collection","Collection")}</a>
+          <a href={`${tenantBase()}/#categories`}>{navText("categories","Categories")}</a>
+          <a href={`${tenantBase()}/#best-sellers`}>{navText("best_sellers","Best Sellers")}</a>
+          <a href={`${tenantBase()}/#sru-specials`}>{navText("specials","Specials")}</a>
+          <a href={`${tenantBase()}/#brands`}>{navText("brands","Brands")}</a>
+          <a href={`${tenantBase()}/#contact`}>{navText("contact","Contact")}</a>
+        </> : null}
         {!auth.user?<Link to="/login" onClick={()=>menuOpen&&onMenuToggle()}>{navText("sign_in","Sign In")}</Link>:null}
         <WorkspaceBar/>
       </nav>
