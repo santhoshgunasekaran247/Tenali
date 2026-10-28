@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { SiteFooter } from "../components/SiteFooter";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import type { Party, PartyCreateInput, PartyType } from "../types";
 
 const PARTY_TYPES: Array<{ value: PartyType; label: string }> = [
@@ -105,6 +106,7 @@ export function PartiesPage() {
     <>
       <main className="ops-page">
         <section className="ops-hero">
+          <PortalHomeLink />
           <p className="eyebrow">OPERATIONS · PARTIES</p>
           <h1>Customers and vendors</h1>
           <p>Capture and maintain your party master for billing, purchases, settlements and reporting.</p>

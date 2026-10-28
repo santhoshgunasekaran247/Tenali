@@ -6,8 +6,12 @@ import type { CatalogHomeResponse } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { ProductCard } from "../features/catalog/components/ProductCard";
 import { toAssetUrl } from "../features/catalog/utils";
+import { storefrontText } from "../features/catalog/storefrontText";
+import { Package } from "lucide-react";
+import { useAuth } from "../features/auth";
 
 export function HomePage() {
+  const {storefront}=useAuth();
   const [data, setData] = useState<CatalogHomeResponse>();
   const [error, setError] = useState<string>();
 
@@ -15,58 +19,54 @@ export function HomePage() {
     api.home().then(setData).catch((e: Error) => setError(e.message));
   }, []);
 
+  const publicCompany=storefront||{company_name:"Tenali",nickname:undefined,storefront_content:undefined};
+  const loadingCopy=publicCompany.storefront_content?.home||{};
   if (error) {
-    return <main className="loading">Catalogue unavailable. {error}</main>;
+    return <main className="loading">{storefrontText(loadingCopy.catalogue_unavailable||"Catalogue unavailable.",publicCompany)} {error}</main>;
   }
 
   if (!data) {
-    return <main className="loading">Loading catalogue...</main>;
+    return <main className="loading">{storefrontText(loadingCopy.catalogue_loading||"Loading catalogue...",publicCompany)}</main>;
   }
 
   const phone = data.company.phone || FALLBACK_PHONE;
   const email = data.company.email || FALLBACK_EMAIL;
+  const copy = data.company.storefront_content?.home || {};
+  const text = (key: string) => storefrontText(copy[key], data.company);
 
   return (
     <>
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <p className="eyebrow">THE SRU COLLECTION SPECIAL</p>
+            <p className="eyebrow">{text("hero_eyebrow")}</p>
             <h1>
-              Corporate gifting,
-              <br />
-              <span>curated the SRU way.</span>
+              {text("hero_heading_first")}<br /><span>{text("hero_heading_second")}</span>
             </h1>
-            <p className="lead">
-              A considered collection of premium, practical and memorable gifts, sourced from recognised brands and shaped around the occasion, audience and budget.
-            </p>
+            <p className="lead">{text("hero_description")}</p>
             <div className="actions">
-              <a className="btn" href="#collection-special">
-                What makes it special
-              </a>
-              <a className="link" href="#categories">
-                Explore categories
-              </a>
+              <a className="btn" href="#collection-special">{text("hero_primary_action")}</a>
+              <a className="link" href="#categories">{text("hero_secondary_action")}</a>
             </div>
           </div>
           <div className="hero-panel">
-            <p>CURATE</p>
+            <p>{text("hero_service_one")}</p>
             <i />
-            <p>CUSTOMISE</p>
+            <p>{text("hero_service_two")}</p>
             <i />
-            <p>DELIVER</p>
+            <p>{text("hero_service_three")}</p>
           </div>
         </section>
 
         <section id="categories" className="home-section categories-section">
           <div className="section-heading">
-            <p className="eyebrow">CATEGORIES</p>
+            <p className="eyebrow">{text("categories_eyebrow")}</p>
             <h2>
-              Shop by gifting
+              {text("categories_heading_first")}
               <br />
-              <span>category.</span>
+              <span>{text("categories_heading_second")}</span>
             </h2>
-            <p>Browse the kinds of products SRU Global can curate for employee, client, leadership and milestone gifting.</p>
+            <p>{text("categories_description")}</p>
           </div>
           <div className="category-grid">
             {data.categories.slice(0, 4).map((category) => (
@@ -76,37 +76,37 @@ export function HomePage() {
                 key={category.category_slug}
               >
                 <div className="category-image">
-                  <img src={toAssetUrl(category.image_url)} alt={category.category_title} loading="lazy" />
+                    {category.image_url?<img src={toAssetUrl(category.image_url)} alt={category.category_title} loading="lazy" />:<Package size={36} aria-hidden="true"/>}
                 </div>
                 <div className="category-body">
-                  <p className="eyebrow">SRU COLLECTION</p>
+                  <p className="eyebrow">{text("category_card_eyebrow")}</p>
                   <h3>{category.category_title}</h3>
                   <p>{category.category_description}</p>
-                  <span>Explore category →</span>
+                  <span>{text("category_action")}</span>
                 </div>
               </Link>
             ))}
           </div>
           <div className="category-more">
             <Link className="link" to="/brand.html?category=all">
-              Explore more categories →
+              {text("categories_more_action")}
             </Link>
           </div>
         </section>
 
         <section id="best-sellers" className="home-section featured-section">
           <div className="section-heading">
-            <p className="eyebrow">BEST SELLERS</p>
+            <p className="eyebrow">{text("best_sellers_eyebrow")}</p>
             <h2>
-              Popular picks for
+              {text("best_sellers_heading_first")}
               <br />
-              <span>corporate gifting.</span>
+              <span>{text("best_sellers_heading_second")}</span>
             </h2>
-            <p>Sample pricing is shown for catalogue look and feel. Bulk quantities can be quoted separately.</p>
+            <p>{text("best_sellers_description")}</p>
           </div>
           <div className="bulk-pricing">
-            <strong>Better pricing on bulk orders.</strong>
-            <span>WhatsApp us for best price and price matching with comparable offers.</span>
+            <strong>{text("bulk_title")}</strong>
+            <span>{text("bulk_description")}</span>
           </div>
           <div className="product-grid home-product-grid">
             {data.best_sellers.map((product) => (
@@ -117,17 +117,17 @@ export function HomePage() {
 
         <section id="sru-specials" className="home-section specials-section">
           <div className="section-heading">
-            <p className="eyebrow">SRU SPECIALS</p>
+            <p className="eyebrow">{text("specials_eyebrow")}</p>
             <h2>
-              Curated differently.
+              {text("specials_heading_first")}
               <br />
-              <span>Chosen by SRU.</span>
+              <span>{text("specials_heading_second")}</span>
             </h2>
-            <p>A hand-picked mix of premium, practical and conversation-worthy gifts for standout gifting moments.</p>
+            <p>{text("specials_description")}</p>
           </div>
           <div className="bulk-pricing">
-            <strong>Better pricing on bulk orders.</strong>
-            <span>WhatsApp us for best price and price matching with comparable offers.</span>
+            <strong>{text("bulk_title")}</strong>
+            <span>{text("bulk_description")}</span>
           </div>
           <div className="product-grid home-product-grid">
             {data.sru_specials.map((product) => (
@@ -138,13 +138,13 @@ export function HomePage() {
 
         <section id="brands" className="brands-section">
           <div className="section-heading">
-            <p className="eyebrow">BRANDS WE SUPPORT</p>
+            <p className="eyebrow">{text("brands_eyebrow")}</p>
             <h2>
-              Curated products from
+              {text("brands_heading_first")}
               <br />
-              <span>recognised brands.</span>
+              <span>{text("brands_heading_second")}</span>
             </h2>
-            <p>Explore available product ranges with sample MRP and our price for catalogue display.</p>
+            <p>{text("brands_description")}</p>
           </div>
           <div className="brand-grid">
             {data.brands.map((brand) => (
@@ -153,8 +153,8 @@ export function HomePage() {
                   <img src={toAssetUrl(`brand-logos/${brand.code}.png`)} alt={brand.name} loading="lazy" />
                 </div>
                 <strong>{brand.name}</strong>
-                <span>Corporate catalogue</span>
-                <em>View products →</em>
+                <span>{text("brand_catalog_label")}</span>
+                <em>{text("brand_action")}</em>
               </Link>
             ))}
           </div>
@@ -162,62 +162,59 @@ export function HomePage() {
 
         <section className="corporate">
           <div>
-            <p className="eyebrow">WHY SRU GLOBAL</p>
+            <p className="eyebrow">{text("why_eyebrow")}</p>
             <h2>
-              Thoughtful sourcing.
+              {text("why_heading_first")}
               <br />
-              <span>Seamless execution.</span>
+              <span>{text("why_heading_second")}</span>
             </h2>
           </div>
           <div>
-            <p>We understand the occasion, audience and requirement, then source, customise and coordinate the right gifting solution end-to-end.</p>
-            <a className="btn light" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
-              WhatsApp us
-            </a>
+            <p>{text("why_description")}</p>
+            {phone?<a className="btn light" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
+              {text("contact_whatsapp_label")}
+            </a>:null}
           </div>
         </section>
 
         <section id="contact" className="contact">
-          <p className="eyebrow">START A CONVERSATION</p>
+          <p className="eyebrow">{text("contact_eyebrow")}</p>
           <h2>
-            Let&apos;s create something
+            {text("contact_heading_first")}
             <br />
-            worth giving.
+            {text("contact_heading_second")}
           </h2>
-          <p>For corporate pricing, availability and bulk orders, contact SRU Global on WhatsApp or email.</p>
+          <p>{text("contact_description")}</p>
           <div className="contact-actions">
-            <a className="btn whatsapp-btn" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
-              WhatsApp {phone}
-            </a>
-            <a className="link" href={`mailto:${email}`}>
+            {phone?<a className="btn whatsapp-btn" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
+              {text("contact_whatsapp_label")} {phone}
+            </a>:null}
+            {email?<a className="link" href={`mailto:${email}`}>
               {email}
-            </a>
+            </a>:null}
           </div>
         </section>
 
         <section id="collection-special" className="statement collection-special">
-          <p className="eyebrow">WHAT IS THE SRU COLLECTION SPECIAL?</p>
+          <p className="eyebrow">{text("collection_eyebrow")}</p>
           <h2>
-            Not just a catalogue.
+            {text("collection_heading_first")}
             <br />
-            <span>A collection with a point of view.</span>
+            <span>{text("collection_heading_second")}</span>
           </h2>
-          <p>
-            SRU Collection Special is our curated approach to corporate gifting: we bring together products worth giving,
-            organise them by real gifting needs, and help businesses choose, customise and deliver the right gift at the right scale.
-          </p>
+          <p>{text("collection_description")}</p>
           <div className="special-points">
             <div>
-              <strong>CURATED</strong>
-              <span>Products selected for corporate relevance, quality and gifting appeal.</span>
+              <strong>{text("collection_point_one_title")}</strong>
+              <span>{text("collection_point_one_body")}</span>
             </div>
             <div>
-              <strong>FLEXIBLE</strong>
-              <span>Options across categories, budgets, occasions and quantities.</span>
+              <strong>{text("collection_point_two_title")}</strong>
+              <span>{text("collection_point_two_body")}</span>
             </div>
             <div>
-              <strong>COMMERCIAL</strong>
-              <span>Transparent reference pricing with sharper quotes for bulk requirements.</span>
+              <strong>{text("collection_point_three_title")}</strong>
+              <span>{text("collection_point_three_body")}</span>
             </div>
           </div>
         </section>

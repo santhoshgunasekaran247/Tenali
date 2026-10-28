@@ -1,0 +1,19 @@
+import { FormEvent,useEffect,useState } from "react";
+import { CheckCircle,Copy,Globe,Trash2 } from "lucide-react";
+import { PortalHomeLink } from "../components/PortalHomeLink";
+import { authRequest,useAuth } from "../features/auth";
+
+type Domain={id:string;hostname:string;verification_token:string;verified_at:string|null};
+type Domains={items:Domain[];cname_target:string;base_domain:string};
+export function DomainsPage(){
+  const auth=useAuth();const[data,setData]=useState<Domains>({items:[],cname_target:'',base_domain:''});const[host,setHost]=useState('');const[error,setError]=useState('');const[message,setMessage]=useState('');const[busy,setBusy]=useState(false);
+  useEffect(()=>{void authRequest<Domains>('/domains').then(setData).catch(failure=>setError(String(failure)));},[auth.user?.company_id]);
+  if(!auth.user||!['owner','admin'].includes(auth.user.role))return <main className="loading">Administrator access required.</main>;
+  const add=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{setData(await authRequest<Domains>('/domains',{method:'POST',body:JSON.stringify({hostname:host})}));setHost('');}catch(failure){setError(String(failure));}finally{setBusy(false);}};
+  const verify=async(domain:Domain)=>{setBusy(true);setError('');try{setData(await authRequest<Domains>(`/domains/${domain.id}/verify`,{method:'POST'}));setMessage('Domain ownership verified. Ensure DNS routing and HTTPS are provisioned before using it.');}catch(failure){setError(String(failure));}finally{setBusy(false);}};
+  return <main className="ops-page masters-page"><header className="masters-heading"><PortalHomeLink/><h1>Storefront Domains</h1></header>{error?<p role="alert" className="masters-feedback ops-error">{error}</p>:null}{message?<p role="status" className="masters-feedback">{message}</p>:null}
+    <section className="ops-grid ops-grid-single"><article className="ops-card"><h2>Your Storefront</h2><a href={`/c/${auth.user.tenant_slug}`}>{location.origin}/c/{auth.user.tenant_slug}</a>{data.base_domain?<p>Workspace subdomain: {auth.user.tenant_slug}.{data.base_domain}</p>:null}</article>
+    <article className="ops-card"><form className="ops-form" onSubmit={add}><label>Custom Domain<input required placeholder="shop.yourcompany.com" maxLength={253} value={host} onChange={event=>setHost(event.target.value)}/></label><button className="btn" disabled={busy}><Globe size={16}/>Add Domain</button></form></article>
+    {data.items.map(domain=><article className="ops-card domain-entry" key={domain.id}><div className="ops-card-head"><h2>{domain.hostname}</h2><span>{domain.verified_at?'Ownership verified':'Pending verification'}</span></div><dl><div><dt>TXT Record Name</dt><dd><code>_tenali-verification.{domain.hostname}</code></dd></div><div><dt>TXT Record Value</dt><dd><code>{domain.verification_token}</code><button className="ops-link-btn" title="Copy verification value" aria-label={`Copy token for ${domain.hostname}`} onClick={()=>void navigator.clipboard.writeText(domain.verification_token).catch(()=>setError('Copy was unavailable; select the value manually.'))}><Copy size={16}/></button></dd></div><div><dt>CNAME Target</dt><dd>{data.cname_target||'Platform deployment target is not configured yet.'}</dd></div></dl><div className="reports-actions-row"><button className="btn" disabled={busy} onClick={()=>void verify(domain)}><CheckCircle size={16}/>Verify DNS</button><button className="ops-link-btn" disabled={busy} title="Remove domain" aria-label={`Remove ${domain.hostname}`} onClick={()=>{if(!confirm(`Remove ${domain.hostname}?`))return;setBusy(true);void authRequest(`/domains/${domain.id}`,{method:'DELETE'}).then(()=>authRequest<Domains>('/domains')).then(setData).catch(failure=>setError(String(failure))).finally(()=>setBusy(false));}}><Trash2 size={16}/></button></div></article>)}
+    </section></main>;
+}

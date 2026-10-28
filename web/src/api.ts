@@ -58,10 +58,12 @@ import type {
   TransactionReverseResponse,
 } from "./types";
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+import { tenantFetch } from "./features/tenantTransport";
+
+export const API_BASE = "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await tenantFetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(options?.headers || {}),
@@ -71,14 +73,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `Request failed: ${response.status}`);
+    let message=body;try{message=JSON.parse(body).detail||body;}catch{}
+    throw new Error(message || `Request failed: ${response.status}`);
   }
 
   return response.json();
 }
 
 export const api = {
-  auditEvents:(from:string,to:string,offset:number)=>request<{items:Array<{id:string;action:string;entity_type:string;entity_id:string;created_at:string;old_value:unknown;new_value:unknown}>}>(`/reports/audit-events?offset=${offset}${from?`&from_date=${from}`:''}${to?`&to_date=${to}`:''}`),
+  publicCompany:()=>request<import('./features/auth').PublicCompany>('/catalog/company'),
+  auditEvents:(from:string,to:string,offset:number)=>request<{items:Array<{id:string;action:string;entity_type:string;entity_id:string;created_at:string;old_value:unknown;new_value:unknown;actor_user_id?:string|null}>}>(`/reports/audit-events?offset=${offset}${from?`&from_date=${from}`:''}${to?`&to_date=${to}`:''}`),
   reconcileGstr2b:(csv_text:string,from_date:string,to_date:string)=>request<{items:Array<Record<string,string>>;counts:Record<string,number>;limitations:string[];working_paper_only:boolean}>("/reports/gstr2b/reconcile",{method:"POST",body:JSON.stringify({csv_text,from_date,to_date})}),
   inventoryMasterEntries:(kind:string)=>request<{items:Array<{id:string;name:string;code:string;description:string|null;is_active:boolean}>}>(`/inventory/lookups/${kind}`),
   inventoryUpdateMaster:(kind:string,id:string,payload:{name:string;description:string;is_active:boolean})=>request(`/inventory/lookups/${kind}/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(payload)}),
@@ -102,7 +106,7 @@ export const api = {
     `/documents/${entity}/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ items }) }
   ),
   async downloadAttachment(id: string) {
-    const response = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/download`);
+    const response = await tenantFetch(`${API_BASE}/documents/${encodeURIComponent(id)}/download`);
     if (!response.ok) throw new Error(await response.text() || "Unable to download attachment.");
     return response.blob();
   },
@@ -277,7 +281,7 @@ export const api = {
     if (filters?.category) params.set("category", filters.category);
     if (filters?.source_type) params.set("source_type", filters.source_type);
     const qs = params.toString();
-    const response = await fetch(`${API_BASE}/accounts/transactions/export${qs ? `?${qs}` : ""}`);
+    const response = await tenantFetch(`${API_BASE}/accounts/transactions/export${qs ? `?${qs}` : ""}`);
     if (!response.ok) {
       const body = await response.text();
       throw new Error(body || `Request failed: ${response.status}`);
@@ -300,7 +304,7 @@ export const api = {
     if (filters?.source_type) params.set("source_type", filters.source_type);
     if (typeof filters?.limit === "number") params.set("limit", String(filters.limit));
     const qs = params.toString();
-    const response = await fetch(`${API_BASE}/accounts/journal/export${qs ? `?${qs}` : ""}`);
+    const response = await tenantFetch(`${API_BASE}/accounts/journal/export${qs ? `?${qs}` : ""}`);
     if (!response.ok) {
       const body = await response.text();
       throw new Error(body || `Request failed: ${response.status}`);
@@ -400,7 +404,7 @@ export const api = {
     if (filters?.from_date) params.set("from_date", filters.from_date);
     if (filters?.to_date) params.set("to_date", filters.to_date);
     const qs = params.toString();
-    const response = await fetch(
+    const response = await tenantFetch(
       `${API_BASE}/billing/invoices/reports/sales-register/export${qs ? `?${qs}` : ""}`
     );
     if (!response.ok) {
@@ -455,7 +459,7 @@ export const api = {
     if (filters?.from_date) params.set("from_date", filters.from_date);
     if (filters?.to_date) params.set("to_date", filters.to_date);
     const qs = params.toString();
-    const response = await fetch(
+    const response = await tenantFetch(
       `${API_BASE}/purchases/reports/purchase-register/export${qs ? `?${qs}` : ""}`
     );
     if (!response.ok) {
@@ -468,7 +472,7 @@ export const api = {
     const params = new URLSearchParams();
     if (filters?.as_of) params.set("as_of", filters.as_of);
     const qs = params.toString();
-    const response = await fetch(`${API_BASE}/purchases/reports/ap-aging/export${qs ? `?${qs}` : ""}`);
+    const response = await tenantFetch(`${API_BASE}/purchases/reports/ap-aging/export${qs ? `?${qs}` : ""}`);
     if (!response.ok) {
       const body = await response.text();
       throw new Error(body || `Request failed: ${response.status}`);
@@ -479,7 +483,7 @@ export const api = {
     const params = new URLSearchParams();
     if (filters?.as_of) params.set("as_of", filters.as_of);
     const qs = params.toString();
-    const response = await fetch(
+    const response = await tenantFetch(
       `${API_BASE}/collections/receivables/reports/ar-aging/export${qs ? `?${qs}` : ""}`
     );
     if (!response.ok) {

@@ -2,7 +2,10 @@ export type Company = {
   id: string;
   company_name: string;
   nickname?: string;
+  tenant_slug?: string;
   logo_url?: string;
+  site_theme?: SiteTheme;
+  storefront_content?: StorefrontContent;
   gst_number?: string;
   udyam_number?: string;
   phone?: string;
@@ -11,6 +14,14 @@ export type Company = {
   website?: string;
   social_links?: Record<string, string>;
   is_active: boolean;
+};
+
+export type StorefrontContent = {
+  navigation: Record<string, string>;
+  home: Record<string, string>;
+  catalog: Record<string, string>;
+  product: Record<string, string>;
+  footer: Record<string, string>;
 };
 
 export type InvoiceSettings = {
@@ -41,7 +52,7 @@ export type SiteTheme = {
   border_color: string;
 };
 
-export type CompanySetup = Company & { invoice_settings: InvoiceSettings; site_theme: SiteTheme };
+export type CompanySetup = Company & { tenant_slug: string; storefront_content: StorefrontContent; invoice_settings: InvoiceSettings; site_theme: SiteTheme };
 export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active">;
 
 export type AttachmentEntity = "purchase" | "business_payment";

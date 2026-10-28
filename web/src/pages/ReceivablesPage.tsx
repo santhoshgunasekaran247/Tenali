@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import type { Account, Party, Receivable, ReceivableReminderLog } from "../types";
 
 type ReceivableForm = {
@@ -336,6 +337,7 @@ export function ReceivablesPage() {
   return (
     <div className="ops-page">
       <section className="ops-hero">
+        <PortalHomeLink />
         <p className="eyebrow">Operations</p>
         <h1>Receivables & Collections</h1>
         <p>

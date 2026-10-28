@@ -3,11 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { ImageOff } from "lucide-react";
 import { SiteFooter } from "../components/SiteFooter";
 import { api } from "../api";
+import { useAuth } from "../features/auth";
 import type { CatalogProduct, Company } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../features/catalog/utils";
+import { storefrontText } from "../features/catalog/storefrontText";
 
 export function ProductPage() {
+  const {storefront}=useAuth();
   const { productId } = useParams();
   const [product, setProduct] = useState<CatalogProduct>();
   const [company,setCompany]=useState<Company>();
@@ -31,8 +34,11 @@ export function ProductPage() {
     return [];
   }, [product]);
 
-  if (error) return <main className="loading">Product unavailable. {error}</main>;
-  if (!product) return <main className="loading">Loading product...</main>;
+  const displayCompany=company||storefront;
+  const productCopy=displayCompany?.storefront_content?.product||{};
+  const text=(key:string,fallback:string,variables:Record<string,string|number>={})=>storefrontText(productCopy[key]||fallback,displayCompany||{company_name:"Tenali"},variables);
+  if (error) return <main className="loading">{text("product_unavailable","Product unavailable.")} {error}</main>;
+  if (!product) return <main className="loading">{text("product_loading","Loading product...")}</main>;
 
   const mainPhoto = gallery[photoIndex] || product.image_url;
   const variant = product.variants?.find(item=>item.id===variantId);
@@ -44,9 +50,9 @@ export function ProductPage() {
     <>
       <main id="product-page">
         <div className="product-detail-crumb">
-          <Link to="/">Home</Link>
+          <Link to="/">{text("home_breadcrumb","Home")}</Link>
           <span>/</span>
-          <span>{product.brand_name || "SRU"}</span>
+          <span>{product.brand_name || text("fallback_brand","{nickname}")}</span>
           <span>/</span>
           <span>{product.name}</span>
         </div>
@@ -63,7 +69,7 @@ export function ProductPage() {
                     type="button"
                     key={`${image}-${index}`}
                     onClick={() => setPhotoIndex(index)}
-                    aria-label={`View photo ${index + 1}`}
+                    aria-label={text("view_photo","View photo {number}",{number:index+1})}
                   >
                     <img src={toAssetUrl(image)} alt={`${product.name} photo ${index + 1}`} />
                   </button>
@@ -73,40 +79,40 @@ export function ProductPage() {
           </div>
           <div className="detail-copy">
             <p className="eyebrow">
-              {product.brand_name || "SRU"} · {product.category_title}
+              {product.brand_name || text("fallback_brand","{nickname}")} · {product.category_title}
             </p>
             <h1>{product.name}</h1>
-            {product.variants?.length?<label className="catalog-variant-select">Size / Colour<select value={variantId} onChange={event=>setVariantId(event.target.value)}><option value="">Base product</option>{product.variants.map(item=><option key={item.id} value={item.id}>{item.variant_name}{item.size||item.colour?` - ${[item.size,item.colour].filter(Boolean).join(' / ')}`:''}</option>)}</select></label>:null}
+            {product.variants?.length?<label className="catalog-variant-select">{text("variant_label","Size / Colour")}<select value={variantId} onChange={event=>setVariantId(event.target.value)}><option value="">{text("base_product","Base product")}</option>{product.variants.map(item=><option key={item.id} value={item.id}>{item.variant_name}{item.size||item.colour?` - ${[item.size,item.colour].filter(Boolean).join(' / ')}`:''}</option>)}</select></label>:null}
             <div className="price-block">
               <div className="mrp">
-                <span>MRP</span>
+                <span>{text("mrp_label","MRP")}</span>
                 <s>{moneyLabel(mrp)||"-"}</s>
               </div>
               <div className="our-price">
-                <span>Our Price</span>
-                <strong>{moneyLabel(price)||"Request a quote"}</strong>
+                <span>{text("our_price_label","Our Price")}</span>
+                <strong>{moneyLabel(price)||text("request_quote","Request a quote")}</strong>
               </div>
             </div>
-            {details.discount_percent!=null?<p>{Number(details.discount_percent)}% off MRP</p>:null}
+            {details.discount_percent!=null?<p>{Number(details.discount_percent)}{text("discount_suffix","% off MRP")}</p>:null}
             <p className="detail-desc">{variant?.description||product.description}</p>
-            <dl className="inventory-specs">{[['Item name',details.item_name],['Size',details.size],['Colour',details.colour],['Weight (kg)',details.weight],['Height (cm)',details.height],['Width (cm)',details.width],['Length (cm)',details.length],...Object.entries(details.attributes||{})].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+            <dl className="inventory-specs">{[[text("item_name_label","Item name"),details.item_name],[text("size_label","Size"),details.size],[text("colour_label","Colour"),details.colour],[text("weight_label","Weight (kg)"),details.weight],[text("height_label","Height (cm)"),details.height],[text("width_label","Width (cm)"),details.width],[text("length_label","Length (cm)"),details.length],...Object.entries(details.attributes||{})].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
             <div className="bulk-pricing">
-              <strong>Better pricing on bulk orders.</strong>
-              <span>WhatsApp us for best price and price matching with comparable offers.</span>
+              <strong>{text("bulk_heading","Better pricing on bulk orders.")}</strong>
+              <span>{text("bulk_description","WhatsApp us for best price and price matching with comparable offers.")}</span>
             </div>
             <div className="detail-note">
-              Our listed price is for individual requirements. Bulk orders will have better pricing. WhatsApp us for best quote.
+              {text("price_note","Our listed price is for individual requirements. Bulk orders will have better pricing. WhatsApp us for best quote.")}
             </div>
             <div className="detail-actions">
-              <a
+              {company?.phone?<a
                 className="btn whatsapp-btn"
-                href={whatsappLink(company?.phone||FALLBACK_PHONE, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || "SRU Collection")}
+                href={whatsappLink(company.phone, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || company.nickname || company.company_name, text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
               >
-                WhatsApp for best price
-              </a>
-              <a className="link" href={`mailto:${company?.email||FALLBACK_EMAIL}`}>
-                {company?.email||FALLBACK_EMAIL}
-              </a>
+                {text("whatsapp_action","WhatsApp for best price")}
+              </a>:null}
+              {company?.email?<a className="link" href={`mailto:${company.email}`}>
+                {company.email}
+              </a>:null}
             </div>
           </div>
         </section>

@@ -81,9 +81,15 @@ tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_invent
 - Apply Alembic through `013_runtime_schema`. Migrated requests skip the legacy
     request-time DDL that could deadlock with active postings/audit triggers.
 
-Authentication/roles are deliberately deferred to keep local testing unchanged. Do
-not expose the unauthenticated API publicly. SMTP/SMS provider delivery is not
-configured. Full chart-of-accounts accounting, verified opening balances, inventory
+Authentication and tenant membership are now enforced. Apply migrations through
+`017_tenant_slug_aliases`; the baseline SQL alone does not provision identity/RLS policies.
+See [multi-tenant deployment](../docs/MULTI_TENANT_DEPLOYMENT.md) for registration,
+owner bootstrap, role isolation and standalone-domain/HTTPS setup. Existing companies
+must be bootstrapped by an administrator; public registration creates new companies only.
+Company Setup also controls tenant storefront copy, display name, logo, theme and the
+customer-facing `/c/<workspace-address>`. Changed workspace addresses retain their old
+paths as aliases and redirect to the current address.
+SMTP/SMS provider delivery is not configured. Full chart-of-accounts accounting, verified opening balances, inventory
 valuation policy, partial credit/debit notes/refunds and accountant-approved statutory
 returns remain separate implementation/setup gates. The current money-movement
 reports must not be presented as a complete trial balance, P&L or balance sheet.

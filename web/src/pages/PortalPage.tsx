@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useAuth } from "../features/auth";
 
 type PortalLink = {
   label: string;
@@ -29,7 +30,8 @@ const operationsLinks: PortalLink[] = [
 
 const adminMaintenanceLinks: PortalLink[] = [
   { label: "Company Setup", path: "/portal/company", status: "live" },
-  { label: "Users & Roles", status: "coming" },
+  { label: "Users & Roles",path:"/portal/team",status:"live" },
+  { label: "Storefront Domains",path:"/portal/domains",status:"live" },
   { label: "Audit Events", path:"/portal/audit",status:"live" },
   { label: "Master Data", path: "/portal/masters", status: "live" },
   { label: "Provider Config", status: "coming" },
@@ -136,6 +138,8 @@ function LinkTile({ item }: { item: PortalLink }) {
 }
 
 export function PortalPage() {
+  const auth=useAuth();
+  const showAdminMaintenance=auth.user?.role==='owner'||auth.user?.role==='admin';
   const [kpi, setKpi] = useState({
     openReceivables: 0,
     dueReminders: 0,
@@ -294,7 +298,7 @@ export function PortalPage() {
       </section>
 
       <section className="portal-groups">
-        <article className="portal-group-card">
+        {showAdminMaintenance?<article className="portal-group-card">
           <div className="portal-group-head">
             <h2>Operations</h2>
             <span>Daily execution modules</span>
@@ -304,7 +308,7 @@ export function PortalPage() {
               <LinkTile key={item.label} item={item} />
             ))}
           </div>
-        </article>
+        </article>:null}
 
         <article className="portal-group-card">
           <div className="portal-group-head">

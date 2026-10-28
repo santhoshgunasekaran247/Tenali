@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import type { CatalogProduct } from "../../../types";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../utils";
+import { useAuth } from "../../auth";
+import { storefrontText } from "../storefrontText";
 
 type ProductCardProps = {
   product: CatalogProduct;
@@ -9,6 +11,10 @@ type ProductCardProps = {
 
 export function ProductCard({ product, phone }: ProductCardProps) {
   const navigate = useNavigate();
+  const {storefront,user}=useAuth();
+  const company=storefront||{company_name:user?.company_name||"Tenali",nickname:undefined};
+  const copy=storefront?.storefront_content?.product||{};
+  const text=(key:string,fallback:string,variables:Record<string,string|number>={})=>storefrontText(copy[key]||fallback,company,variables);
   const gallery = (product.image_urls || "")
     .split("|")
     .map((img) => img.trim())
@@ -28,13 +34,13 @@ export function ProductCard({ product, phone }: ProductCardProps) {
       <div className="product-image">
         <img src={toAssetUrl(image)} alt={product.name} loading="lazy" />
         <div className="product-tags">
-          {product.best_seller && <span className="badge-best">Best Seller</span>}
-          {product.sru_special && <span className="badge-special">SRU Special</span>}
+          {product.best_seller && <span className="badge-best">{text("best_seller_badge","Best Seller")}</span>}
+          {product.sru_special && <span className="badge-special">{text("special_badge","Special")}</span>}
         </div>
-        {gallery.length > 1 && <span className="photo-count">{gallery.length} photos</span>}
+        {gallery.length > 1 && <span className="photo-count">{text("photos_count","{count} photos",{count:gallery.length})}</span>}
         {!!product.stock_qty && (
           <span className={product.stock_qty > 0 ? "stock-badge stock-in" : "stock-badge stock-out"}>
-            {product.stock_qty > 0 ? "In stock" : "Out of stock"}
+            {product.stock_qty > 0 ? text("in_stock","In stock") : text("out_of_stock","Out of stock")}
           </span>
         )}
       </div>
@@ -43,22 +49,22 @@ export function ProductCard({ product, phone }: ProductCardProps) {
         <h3 title={product.name}>{product.name}</h3>
         <div className="price-block">
           <div className="mrp">
-            <span>MRP</span>
+            <span>{text("mrp_label","MRP")}</span>
             <s>{moneyLabel(product.mrp_display)}</s>
           </div>
           <div className="our-price">
-            <span>Our Price</span>
+            <span>{text("our_price_label","Our Price")}</span>
             <strong>{moneyLabel(product.selling_price_display)}</strong>
           </div>
         </div>
         <p title={product.description}>{product.description}</p>
-        <a
+        {phone?<a
           className="btn whatsapp-btn"
-          href={whatsappLink(phone, product.name, product.brand_name || "SRU Collection")}
+          href={whatsappLink(phone, product.name, product.brand_name || company.nickname || company.company_name, text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
           onClick={(e) => e.stopPropagation()}
         >
-          WhatsApp enquiry
-        </a>
+          {text("whatsapp_enquiry","WhatsApp enquiry")}
+        </a>:null}
       </div>
     </article>
   );

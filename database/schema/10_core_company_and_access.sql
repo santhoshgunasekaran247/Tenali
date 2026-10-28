@@ -1,6 +1,7 @@
 create table if not exists companies (
     id uuid primary key default gen_random_uuid(),
     company_name text not null,
+    tenant_slug text,
     nickname text,
     logo_url text,
     gst_number text,
@@ -12,9 +13,17 @@ create table if not exists companies (
     social_links jsonb not null default '{}'::jsonb,
     invoice_settings jsonb not null default '{}'::jsonb,
     site_theme jsonb not null default '{}'::jsonb,
+    storefront_content jsonb not null default '{}'::jsonb,
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
+);
+
+create table if not exists tenant_slug_aliases (
+    company_id uuid not null references companies(id) on delete cascade,
+    tenant_slug text not null unique,
+    created_at timestamptz not null default now(),
+    primary key (company_id, tenant_slug)
 );
 
 create table if not exists roles (

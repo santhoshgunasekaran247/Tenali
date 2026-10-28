@@ -640,6 +640,7 @@ body {
   color: var(--site-on-primary);
   padding: 58px 7vw;
 }
+.ops-hero .portal-home-link { display: inline-block; margin-bottom: 12px; color: var(--site-on-primary); }
 
 .ops-hero h1 {
   margin: 0;
@@ -663,6 +664,41 @@ body {
 .ops-grid-single {
   grid-template-columns: 1fr;
 }
+.access-page { min-height: calc(100dvh - 96px); padding: 36px 20px; background: var(--site-background); }
+.access-panel { max-width: 440px; margin: 0 auto; padding: 26px; background: var(--site-surface); border: 1px solid var(--site-border); border-radius: 6px; }
+.access-title { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.access-title h1 { font-size: 24px; line-height: 1.25; margin: 0; }
+.access-title p { color: var(--site-muted); font-size: 13px; margin: 4px 0 0; }
+.access-fields { border: 0; margin: 0; padding: 0; display: grid; gap: 14px; min-width: 0; }
+.access-fields input { min-width: 0; width: 100%; }
+.access-password { display: grid; grid-template-columns: minmax(0,1fr) 28px; gap: 6px; align-items: center; }
+.access-workspace-url { color: var(--site-muted); font-size: 12px; overflow-wrap: anywhere; }
+.access-panel > p { font-size: 13px; }
+.access-panel .btn, .workspace-action { display: inline-flex; gap: 7px; align-items: center; justify-content: center; letter-spacing: 0; }
+.brand-loading { display: block; width: 220px; height: 32px; }
+.workspace-menu { position: relative; flex: 0 0 auto; }
+.workspace-menu summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 10px; border: 1px solid var(--site-border); color: var(--site-text); cursor: pointer; font-size: 11px; text-transform: uppercase; }
+.workspace-menu summary::-webkit-details-marker { display: none; }
+.workspace-menu-panel { position: absolute; z-index: 25; top: calc(100% + 10px); right: 0; display: grid; gap: 10px; width: min(290px, calc(100vw - 28px)); padding: 14px; border: 1px solid var(--site-border); background: var(--site-surface); box-shadow: 0 12px 30px rgb(20 43 74 / 14%); }
+.workspace-identity { display: grid; gap: 2px; min-width: 0; }
+.workspace-identity strong { font-size: 14px; overflow-wrap: anywhere; }
+.workspace-identity span { font-size: 11px; color: var(--site-muted); }
+.workspace-action { display: flex; width: 100%; justify-content: flex-start; background: none; border: 0; padding: 7px 0; font: inherit; font-size: 12px; color: var(--site-text); text-decoration: none; cursor: pointer; }
+.workspace-switcher { display: grid; gap: 4px; font-size: 11px; color: var(--site-muted); }
+.workspace-switcher select { width: 100%; color: var(--site-text); background: var(--site-surface); border: 1px solid var(--site-border); padding: 7px; }
+.domain-entry dl > div { margin-bottom: 12px; }
+.domain-entry dt { font-size: 12px; color: var(--site-muted); }
+.domain-entry dd { margin: 0; overflow-wrap: anywhere; }
+.account-settings { max-width: 540px; }
+.account-settings input { max-width: 100%; min-width: 0; }
+.company-storefront-copy { display: grid; gap: 12px; }
+.company-storefront-copy > h2 { margin: 0; font-size: 20px; }
+.company-storefront-copy > p { margin: 0; color: var(--site-muted); }
+.company-copy-group { border: 1px solid var(--site-border); background: var(--site-surface); }
+.company-copy-group > summary { padding: 12px 14px; cursor: pointer; font-weight: 600; }
+.company-copy-group > .company-fields { padding: 14px; }
+@media (max-width: 800px) { .workspace-menu { width: auto; } .workspace-menu summary { width: auto; justify-content: space-between; } .workspace-menu-panel { position: absolute; top: calc(100% + 8px); right: 0; width: min(290px, calc(100vw - 28px)); margin: 0; } }
+@media (max-width: 600px) { .access-panel { padding: 20px; } }
 .reports-page .ops-card { min-width: 0; }
 .reports-page input { min-width: 0; max-width: 100%; }
 .reports-actions-row .btn { display: inline-flex; align-items: center; gap: 7px; }
@@ -1448,6 +1484,26 @@ footer strong {
   }
 
   .menu { display: block; }
+
+  .header nav.workspace-header-nav {
+    display: none;
+    position: absolute;
+    top: 82px;
+    left: 0;
+    right: 0;
+    width: auto;
+    padding: 14px 5vw;
+    border-bottom: 1px solid var(--site-border);
+    background: var(--site-background);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .header nav.workspace-header-nav.open { display: flex; }
+  .workspace-header-nav > a { display: block; }
+  .workspace-header-nav .workspace-menu { width: 100%; }
+  .workspace-header-nav .workspace-menu summary { width: 100%; justify-content: space-between; }
 
   .header nav {
     display: none;

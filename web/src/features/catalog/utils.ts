@@ -19,8 +19,9 @@ export function moneyLabel(value?: string): string {
     .join(" - ");
 }
 
-export function whatsappLink(phone: string, productName: string, brandName: string): string {
+export function whatsappLink(phone: string, productName: string, brandName: string, template?: string): string {
   const digits = phone.replace(/\D/g, "");
-  const message = `Hi SRU Global, I am interested in ${productName} from ${brandName}. Please share the best corporate price, bulk pricing, availability and price matching options.`;
+  const message = (template || "Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options.")
+    .replace(/\{product_name\}/g, productName).replace(/\{brand_name\}/g, brandName);
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }

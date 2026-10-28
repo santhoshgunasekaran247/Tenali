@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.schemas.billing import InvoiceCreate
-from app.schemas.company import CompanySetupOut, CompanyUpdate, InvoiceSettings, SiteTheme
+from app.schemas.company import CompanySetupOut, CompanyUpdate, InvoiceSettings, SiteTheme, StorefrontContent
 from app.services.invoice_document import build_invoice_document
 
 
@@ -96,6 +96,16 @@ class InvoiceDocumentTests(unittest.TestCase):
         self.assertEqual(company.site_theme.primary_color, "#006644")
         self.assertEqual(company.invoice_settings.primary_color, "#142b4a")
         self.assertIsNone(CompanyUpdate(company_name="Older client").site_theme)
+
+    def test_storefront_copy_defaults_and_workspace_slug_validation(self):
+        content = StorefrontContent()
+        self.assertEqual(content.home.hero_heading_first, "Corporate gifting,")
+        self.assertEqual(content.home.hero_heading_second, "curated the {nickname} way.")
+        self.assertEqual(content.home.specials_heading_second, "Chosen by {nickname}.")
+        self.assertEqual(CompanyUpdate(company_name="SRU Global", tenant_slug="sourcebysru").tenant_slug, "sourcebysru")
+        for value in ["admin", "../sru", "SourceBySru"]:
+            with self.assertRaises(ValidationError):
+                CompanyUpdate(company_name="SRU Global", tenant_slug=value)
 
 
 if __name__ == "__main__":

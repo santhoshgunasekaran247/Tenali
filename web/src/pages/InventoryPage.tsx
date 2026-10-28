@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import { postingKey } from "../features/postingKey";
 import { ProductEditor, VendorOfferEditor, inventoryMoney, itemPayload, productPayload } from "../components/InventoryForms";
 import { toAssetUrl } from "../features/catalog/utils";
@@ -42,7 +43,7 @@ export function InventoryPage() {
   const filtered=products.filter(product=>(includeInactive||product.is_active)&&`${product.name} ${product.item_name||''} ${product.sku||''} ${product.portal_product_id} ${product.brand_name||''}`.toLowerCase().includes(search.toLowerCase())&&(!vendorFilter||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorFilter)));
   const allOffers=selected?[...selected.offers,...selected.variants.flatMap(variant=>variant.offers)]:[];
   return <main className="ops-page inventory-page">
-    <header className="inventory-heading"><Link className="ops-inline-link" to="/portal">Portal</Link><div className="inventory-section-head"><h1>Product Inventory</h1><div className="inventory-actions">
+    <header className="inventory-heading"><PortalHomeLink/><div className="inventory-section-head"><h1>Product Inventory</h1><div className="inventory-actions">
       <button className="btn" type="button" disabled={busy} onClick={()=>{setView('products');setNewProduct(true);setEditor('product');setSelectedId(null);}}><Plus size={16}/>Add Product</button>
       <button className="ops-link-btn" type="button" title="Refresh inventory" aria-label="Refresh inventory" disabled={loading||busy} onClick={()=>void load()}><RefreshCw size={18}/></button>
     </div></div><div className="inventory-tabs" role="tablist" aria-label="Inventory views">

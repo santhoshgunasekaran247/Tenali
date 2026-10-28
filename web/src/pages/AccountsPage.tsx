@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import type {
   Account,
   AccountCreateInput,
@@ -418,6 +419,7 @@ export function AccountsPage() {
   return (
     <div className="ops-page">
       <section className="ops-hero">
+        <PortalHomeLink />
         <p className="eyebrow">Operations</p>
         <h1>Accounts</h1>
         <p>

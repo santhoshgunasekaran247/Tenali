@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
 import type { Account, AccountTransaction, AttachmentInput, Party } from "../types";
@@ -116,6 +117,7 @@ export function BusinessPaymentsPage() {
   return (
     <div className="ops-page business-payments-page">
       <section className="ops-hero">
+        <PortalHomeLink />
         <p className="eyebrow">Operations</p>
         <h1>Business Payments</h1>
         <p>

@@ -17,7 +17,7 @@ router=APIRouter()
 def audit_events(company_id:UUID|None=None,from_date:date|None=None,to_date:date|None=None,
                  limit:int=Query(default=100,ge=1,le=500),offset:int=Query(default=0,ge=0),db:Session=Depends(get_db)):
     company=CompanyService(db).get(str(company_id) if company_id else None)
-    rows=db.execute(text("""select id,action,entity_type,entity_id,old_value,new_value,created_at,user_id from audit_events
+    rows=db.execute(text("""select id,action,entity_type,entity_id,old_value,new_value,created_at,user_id,actor_user_id from audit_events
         where company_id=:company and (cast(:from_date as date) is null or created_at::date>=:from_date)
         and (cast(:to_date as date) is null or created_at::date<=:to_date)
         order by created_at desc,id desc limit :limit offset :offset"""),

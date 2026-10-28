@@ -1,0 +1,10 @@
+import { FormEvent,useState } from "react";
+import { Link } from "react-router-dom";
+import { Building2 } from "lucide-react";
+import { authRequest,type Identity } from "../features/auth";
+
+export function NewWorkspacePage(){
+  const [form,setForm]=useState({company_name:'',slug:''});const[error,setError]=useState('');const[busy,setBusy]=useState(false);
+  const save=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{const result=await authRequest<{user:Identity}>('/workspaces',{method:'POST',headers:{'X-Tenant-Slug':''},body:JSON.stringify(form)});window.location.assign(`/c/${result.user.tenant_slug}/portal`);}catch(failure){setError(String(failure));setBusy(false);}};
+  return <main className="access-page"><section className="access-panel"><h1>Create Another Workspace</h1>{error?<p role="alert" className="ops-error">{error}</p>:null}<form className="ops-form" onSubmit={save}><label>Company Name<input required maxLength={200} value={form.company_name} onChange={event=>setForm(previous=>({...previous,company_name:event.target.value}))}/></label><label>Workspace Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9]|-){1,46}[a-z0-9]" value={form.slug} onChange={event=>setForm(previous=>({...previous,slug:event.target.value.toLowerCase()}))}/></label><button className="btn" disabled={busy}><Building2 size={16}/>Create Workspace</button></form><Link className="ops-inline-link" to="/portal">Back to Workspace</Link></section></main>;
+}

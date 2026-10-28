@@ -1,0 +1,23 @@
+{
+    email {$ACME_EMAIL}
+    on_demand_tls {
+        ask http://127.0.0.1:8000/domain-authorization
+    }
+}
+
+https:// {
+    tls {
+        on_demand
+    }
+
+    @api path /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle {
+        root * {$TENALI_WEB_ROOT}
+        try_files {path} /index.html
+        file_server
+    }
+}

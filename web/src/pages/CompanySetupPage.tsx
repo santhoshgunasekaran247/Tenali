@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
-import { Link } from "react-router-dom";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
 import { toAssetUrl } from "../features/catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "../features/invoiceSettings";
 import { DEFAULT_SITE_THEME, SITE_THEME_FIELDS, endSiteThemePreview, normalizeSiteTheme, previewSiteTheme, setSavedSiteTheme } from "../features/siteTheme";
+import { STOREFRONT_COPY_FIELDS, STOREFRONT_COPY_GROUP_LABELS, type StorefrontCopyGroup } from "../features/catalog/storefrontCopyFields";
+import { tenantBase } from "../features/tenantTransport";
 import type { CompanySetup, CompanyUpdateInput, Invoice, InvoiceSettings } from "../types";
 
 type AssetInputProps = {
@@ -95,6 +97,16 @@ export function CompanySetupPage() {
     setCompany((previous) => previous ? { ...previous, invoice_settings: { ...previous.invoice_settings, ...patch } } : previous);
     setMessage("");
   };
+  const updateStorefrontCopy = (group: StorefrontCopyGroup, key: string, value: string) => {
+    setCompany((previous) => previous ? {
+      ...previous,
+      storefront_content: {
+        ...previous.storefront_content,
+        [group]: { ...previous.storefront_content[group], [key]: value },
+      },
+    } : previous);
+    setMessage("");
+  };
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!company) return;
@@ -112,6 +124,7 @@ export function CompanySetupPage() {
         address: company.address || undefined,
         gst_number: company.gst_number || undefined,
         udyam_number: company.udyam_number || undefined,
+        tenant_slug: company.tenant_slug,
         phone: company.phone || undefined,
         email: company.email || undefined,
         website: company.website || undefined,
@@ -119,11 +132,15 @@ export function CompanySetupPage() {
         social_links: links as Record<string, string>,
         invoice_settings: company.invoice_settings,
         site_theme: company.site_theme,
+        storefront_content: company.storefront_content,
       });
       setSavedSiteTheme(result.site_theme);
       setCompany(result);
       setMessage("Company settings saved.");
       window.dispatchEvent(new Event("company-updated"));
+      if (tenantBase() && result.tenant_slug !== company.tenant_slug) {
+        window.location.assign(`/c/${result.tenant_slug}/portal/company`);
+      }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Unable to save company.");
     } finally { setSaving(false); }
@@ -181,7 +198,7 @@ export function CompanySetupPage() {
   return (
     <main className="ops-page company-setup-page">
       <section className="company-setup-heading">
-        <Link className="ops-inline-link" to="/portal">Portal</Link>
+        <PortalHomeLink />
         <h1>Company Setup</h1>
       </section>
       {loading ? <p className="company-setup-status">Loading...</p> : null}
@@ -193,6 +210,7 @@ export function CompanySetupPage() {
           <div className="company-fields">
             <label>Company Name<input required maxLength={200} value={company.company_name} onChange={(event) => update({ company_name: event.target.value })} /></label>
             <label>Display Name<input maxLength={100} value={company.nickname || ""} onChange={(event) => update({ nickname: event.target.value })} /></label>
+            <label>Storefront Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" value={company.tenant_slug} onChange={(event) => update({ tenant_slug: event.target.value.toLowerCase() })} /><span className="access-workspace-url">/c/{company.tenant_slug}</span></label>
             <label className="company-field-wide">Registered Address<textarea rows={4} maxLength={2000} value={company.address || ""} onChange={(event) => update({ address: event.target.value })} /></label>
             <label>GSTIN<input pattern="[0-9]{2}[A-Z0-9]{13}" maxLength={15} value={company.gst_number || ""} onChange={(event) => update({ gst_number: event.target.value.toUpperCase() })} /></label>
             <label>Udyam Number<input maxLength={50} value={company.udyam_number || ""} onChange={(event) => update({ udyam_number: event.target.value })} /></label>
@@ -202,6 +220,26 @@ export function CompanySetupPage() {
             <label>Social Links (JSON)<textarea rows={3} value={socialLinks} onChange={(event) => setSocialLinks(event.target.value)} /></label>
           </div>
         </fieldset>
+        <section className="company-storefront-copy">
+          <h2>Storefront Copy</h2>
+          <p>Update the customer-facing wording without changing products or company records.</p>
+          {(Object.keys(STOREFRONT_COPY_FIELDS) as StorefrontCopyGroup[]).map((group) => (
+            <details className="company-copy-group" key={group}>
+              <summary>{STOREFRONT_COPY_GROUP_LABELS[group]}</summary>
+              <div className="company-fields">
+                {STOREFRONT_COPY_FIELDS[group].map(([key, label]) => {
+                  const value = company.storefront_content[group][key] || "";
+                  const longText = /description|body|note/i.test(key);
+                  return <label key={key}>{label}
+                    {longText
+                      ? <textarea rows={3} maxLength={600} value={value} onChange={(event) => updateStorefrontCopy(group, key, event.target.value)} />
+                      : <input maxLength={600} value={value} onChange={(event) => updateStorefrontCopy(group, key, event.target.value)} />}
+                  </label>;
+                })}
+              </div>
+            </details>
+          ))}
+        </section>
         <fieldset disabled={saving} className="company-setup-section">
           <legend>Site Colours</legend>
           <div className="site-theme-grid">

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
 import { TaxLinesEditor, calculateLineTotals, newTaxLine as newLine } from "../components/TaxLinesEditor";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
 import type { InventoryProduct } from "../types";
@@ -244,6 +245,7 @@ export function BillingPage() {
   return (
     <div className="ops-page billing-page">
       <section className="ops-hero">
+        <PortalHomeLink />
         <p className="eyebrow">Operations</p>
         <h1>Billing</h1>
         <p>

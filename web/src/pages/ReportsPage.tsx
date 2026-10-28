@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "../api";
 import { GstReconciliation } from "../components/GstReconciliation";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 
 type ExportState = {
   loading: boolean;
@@ -57,6 +58,7 @@ export function ReportsPage() {
   return (
     <div className="ops-page reports-page">
       <section className="ops-hero">
+        <PortalHomeLink />
         <p className="eyebrow">Auditor Pack</p>
         <h1>Reports & Exports</h1>
         <p>

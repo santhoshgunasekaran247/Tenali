@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Power, Save, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { PortalHomeLink } from "../components/PortalHomeLink";
 import type { HsnMaster } from "../types";
 
 const EMPTY = { code: "", description: "", gst_rate: "", is_active: true };
@@ -68,7 +69,7 @@ export function MasterDataPage() {
 
   return <main className="ops-page masters-page">
     <header className="masters-heading">
-      <Link className="ops-inline-link" to="/portal">Portal</Link>
+      <PortalHomeLink />
       <h1>Master Data</h1>
       <nav className="masters-nav" aria-label="Master modules">
         <Link to="/portal/masters/hsn" aria-current="page">HSN / GST</Link>

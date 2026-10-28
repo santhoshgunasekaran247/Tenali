@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.company import SiteTheme, StorefrontContent
+
 
 class CompanyOut(BaseModel):
     id: UUID
@@ -12,6 +14,9 @@ class CompanyOut(BaseModel):
     logo_url: str | None = None
     phone: str | None = None
     email: str | None = None
+    site_theme: SiteTheme = Field(default_factory=SiteTheme)
+    tenant_slug: str | None = None
+    storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
 
 
 class BrandOut(BaseModel):
