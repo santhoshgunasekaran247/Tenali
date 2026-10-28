@@ -663,6 +663,9 @@ body {
 .ops-grid-single {
   grid-template-columns: 1fr;
 }
+.reports-page .ops-card { min-width: 0; }
+.reports-page input { min-width: 0; max-width: 100%; }
+.reports-actions-row .btn { display: inline-flex; align-items: center; gap: 7px; }
 
 .ops-card {
   background: var(--site-surface);

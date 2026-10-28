@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { api } from "../api";
+import { postingKey } from "../features/postingKey";
+import type { InventoryProduct } from "../types";
 import { TaxLinesEditor, calculateLineTotals, newTaxLine } from "../components/TaxLinesEditor";
 import type { Account, AttachmentInput, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
 
@@ -73,6 +75,8 @@ const EMPTY_RECEIPT_FORM: ReceiptForm = {
 export function PurchasesPage() {
   const [vendors, setVendors] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [inventory,setInventory]=useState<InventoryProduct[]>([]);
+  const [requestKey,setRequestKey]=useState(postingKey);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [paymentStatus, setPaymentStatus] = useState("");
   const [form, setForm] = useState<PurchaseForm>(EMPTY_FORM);
@@ -99,11 +103,12 @@ export function PurchasesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [partyRes, accountRes, purchaseRes, hsnRes] = await Promise.all([
+      const [partyRes, accountRes, purchaseRes, hsnRes,inventoryRes] = await Promise.all([
         api.parties({ active_only: true }),
         api.accounts({ active_only: true }),
         api.purchases({ payment_status: paymentStatus || undefined }),
         api.hsnMasters(),
+        api.inventoryProducts(),
       ]);
 
       setVendors(
@@ -112,6 +117,7 @@ export function PurchasesPage() {
         )
       );
       setAccounts(accountRes.items);
+      setInventory(inventoryRes.items);
       setHsnMasters(hsnRes.items);
       setPurchases(purchaseRes.items);
     } catch (loadError) {
@@ -150,6 +156,7 @@ export function PurchasesPage() {
       }
 
       const created = await api.createPurchase({
+        idempotency_key:requestKey,
         attachments,
         lines,
         vendor_party_id: form.vendor_party_id,
@@ -168,6 +175,7 @@ export function PurchasesPage() {
       });
 
       setForm(EMPTY_FORM);
+      setRequestKey(postingKey());
       setAttachments([]);
       setAttachmentTarget(created);
       setLines([newTaxLine()]);
@@ -350,7 +358,7 @@ export function PurchasesPage() {
               <select
                 value={form.vendor_party_id}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, vendor_party_id: event.target.value }))
+                  {setForm((prev) => ({ ...prev, vendor_party_id: event.target.value }));setLines([newTaxLine()]);}
                 }
                 required
               >
@@ -382,7 +390,7 @@ export function PurchasesPage() {
               />
             </label>
 
-            <TaxLinesEditor lines={lines} masters={hsnMasters} onChange={setLines} disabled={saving} />
+            <TaxLinesEditor lines={lines} masters={hsnMasters} products={inventory} vendorId={form.vendor_party_id} onChange={setLines} disabled={saving} />
 
             <label>
               Amount Paid Now
@@ -524,14 +532,15 @@ export function PurchasesPage() {
                       <td>{item.total.toFixed(2)}</td>
                       <td>{item.amount_paid.toFixed(2)}</td>
                       <td>{item.balance_amount.toFixed(2)}</td>
-                      <td>{item.payment_status}</td>
+                      <td>{item.status==='CANCELLED'?'CANCELLED':item.payment_status}</td>
                       <td>{item.receipt_status === "RECEIVED" ? `${item.receipt_type} RECEIVED` : "PENDING"}</td>
                       <td>{item.due_date || "-"}</td>
                       <td>
                         <div className="ops-list-tools">
                           <button className="ops-link-btn" type="button" title="Receipts and bills" aria-label={`Attachments for purchase ${item.bill_number || item.id}`}
                             onClick={() => setAttachmentTarget(item)}><Paperclip size={16} aria-hidden="true" /> Files</button>
-                          {item.balance_amount > 0 ? (
+                          {item.status!=='CANCELLED'&&item.amount_paid===0?<button className="ops-link-btn" type="button" onClick={()=>{const reason=window.prompt('Reason for cancellation (received stock is removed; no refund is issued):');if(reason?.trim())void api.cancelPurchase(item.id,reason).then(()=>load()).catch(failure=>setError(String(failure)));}}>Cancel Bill</button>:null}
+                          {item.status!=='CANCELLED'&&item.balance_amount > 0 ? (
                             <button
                               className="ops-link-btn"
                               type="button"
@@ -540,7 +549,7 @@ export function PurchasesPage() {
                               Pay
                             </button>
                           ) : null}
-                          {item.receipt_status !== "RECEIVED" ? (
+                          {item.status!=='CANCELLED'&&item.receipt_status !== "RECEIVED" ? (
                             <button
                               className="ops-link-btn"
                               type="button"

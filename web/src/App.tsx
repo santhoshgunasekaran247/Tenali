@@ -8,6 +8,8 @@ import { BillingPage } from "./pages/BillingPage";
 import { CompanySetupPage } from "./pages/CompanySetupPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { InventoryMasterPage } from "./pages/InventoryMasterPage";
+import { AuditPage } from "./pages/AuditPage";
 import { HomePage } from "./pages/HomePage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { PortalPage } from "./pages/PortalPage";
@@ -40,7 +42,10 @@ export default function App() {
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />
+        <Route path="/portal/masters/brands" element={<InventoryMasterPage kind="brands" />} />
+        <Route path="/portal/masters/categories" element={<InventoryMasterPage kind="categories" />} />
         <Route path="/portal/reports" element={<ReportsPage />} />
+        <Route path="/portal/audit" element={<AuditPage />} />
       </Routes>
     </div>
   );

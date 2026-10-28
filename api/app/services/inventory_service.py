@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.inventory import BulkVendorMapping, ProductInput, ReorderReminder, StockAdjustment, VariantInput, VendorOfferInput
 from app.services.inventory_pricing import resolve_catalog_price
+from app.services.posting_service import replay_posting, finish_posting, request_hash
 
 
 class InventoryService:
@@ -72,14 +73,35 @@ class InventoryService:
             where company_id=:company and is_active=true and party_type in ('vendor','customer_vendor') order by legal_name"""), {"company": self.company_id}).mappings()]
         return result
 
-    def create_lookup(self, kind: str, name: str) -> dict:
+    def master_entries(self,kind:str)->dict:
+        table={"brands":"brands","categories":"product_categories"}.get(kind)
+        if not table:
+            raise HTTPException(422,"Invalid master type")
+        return {"items":[dict(row) for row in self.db.execute(text(f"select id,name,code,description,is_active from {table} where company_id=:company order by name"),{"company":self.company_id}).mappings()]}
+
+    def update_lookup(self,kind:str,record_id:str,payload)->dict:
+        table={"brands":"brands","categories":"product_categories"}.get(kind)
+        if not table:
+            raise HTTPException(422,"Invalid master type")
+        try:
+            row=self.db.execute(text(f"update {table} set name=:name,description=:description,is_active=:active"+(", display_title=:name" if kind=="categories" else "")+" where id=:id and company_id=:company returning id,name,code,description,is_active"),
+                {"id":record_id,"company":self.company_id,"name":payload.name,"description":payload.description,"active":payload.is_active}).mappings().first()
+            if not row:
+                raise HTTPException(404,"Master entry not found")
+            self.db.commit()
+        except IntegrityError as error:
+            self.db.rollback()
+            raise HTTPException(409,"This name already exists") from error
+        return dict(row)
+
+    def create_lookup(self, kind: str, name: str, description: str = "", is_active: bool = True) -> dict:
         table = {"brands": "brands", "categories": "product_categories"}.get(kind)
         if not table:
             raise HTTPException(422, "Invalid lookup type")
         code = (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "item")[:60] + "-" + uuid4().hex[:8]
         try:
-            row = self.db.execute(text(f"insert into {table}(company_id,name,code) values(:company,:name,:code) returning id,name,code"),
-                                  {"company": self.company_id, "name": name, "code": code}).mappings().one()
+            row = self.db.execute(text(f"insert into {table}(company_id,name,code,description,is_active) values(:company,:name,:code,:description,:active) returning id,name,code,description,is_active"),
+                                  {"company": self.company_id, "name": name, "code": code,"description":description,"active":is_active}).mappings().one()
             self.db.commit()
         except IntegrityError as error:
             self.db.rollback()
@@ -243,8 +265,11 @@ class InventoryService:
         self.db.commit()
         return {"mapped_count": len(product_ids)}
 
-    def adjust_stock(self, product_id: str, payload: StockAdjustment) -> dict:
+    def adjust_stock(self, product_id: str, payload: StockAdjustment, commit: bool = True, reference_type: str = "manual_inventory", reference_id: str | None = None) -> dict:
         self._product(product_id, lock=True)
+        cached = replay_posting(self.db, self.company_id, f"stock:{product_id}", payload) if commit else None
+        if cached is not None:
+            return cached
         variant_id = str(payload.variant_id) if payload.variant_id else None
         if variant_id:
             self._variant(product_id, variant_id)
@@ -261,11 +286,15 @@ class InventoryService:
         else:
             self.db.execute(text("insert into stock_balances(company_id,product_id,variant_id,quantity) values(:company,:product,:variant,:quantity)"),
                             {"company": self.company_id, "product": product_id, "variant": variant_id, "quantity": new_total})
-        self.db.execute(text("""insert into stock_movements(company_id,product_id,variant_id,movement_type,quantity,notes,reference_type)
-            values(:company,:product,:variant,:movement,:quantity,:notes,'manual_inventory')"""),
-            {"company": self.company_id, "product": product_id, "variant": variant_id, "movement": f"ADJUSTMENT_{payload.direction}", "quantity": payload.quantity, "notes": payload.notes})
-        self.db.commit()
-        return self.detail(product_id)
+        self.db.execute(text("""insert into stock_movements(company_id,product_id,variant_id,movement_type,quantity,notes,reference_type,reference_id)
+            values(:company,:product,:variant,:movement,:quantity,:notes,:reference_type,:reference_id)"""),
+            {"company": self.company_id, "product": product_id, "variant": variant_id, "movement": "SALE" if reference_type=="invoice" else "PURCHASE" if reference_type=="purchase_receipt" else f"ADJUSTMENT_{payload.direction}", "quantity": payload.quantity,
+             "notes": payload.notes,"reference_type":reference_type,"reference_id":reference_id})
+        result = self.detail(product_id)
+        if commit:
+            finish_posting(self.db,self.company_id,f"stock:{product_id}",payload,result)
+            self.db.commit()
+        return result
 
     def movements(self, product_id: str) -> dict:
         self._product(product_id)

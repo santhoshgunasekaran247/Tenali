@@ -20,6 +20,8 @@ from app.schemas.accounts import (
 )
 from app.services.period_lock_service import assert_period_open, ensure_period_locks_table
 from app.services.documents_service import DocumentsService
+from app.services.posting_service import replay_posting, finish_posting
+from app.services.runtime_schema import managed_schema
 
 
 class AccountsService:
@@ -38,6 +40,7 @@ class AccountsService:
         return str(first_company)
 
     def _ensure_account_extensions(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text("alter table accounts add column if not exists party_id uuid references parties(id)")
         )
@@ -53,6 +56,7 @@ class AccountsService:
         )
 
     def _ensure_borrowings_table(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text(
                 """
@@ -423,6 +427,7 @@ class AccountsService:
             return
 
     def _ensure_transaction_extensions(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text(
                 """
@@ -1091,6 +1096,9 @@ class AccountsService:
         self._ensure_borrowings_table()
         self._ensure_transaction_extensions()
         resolved_company_id = self._resolve_company_id(company_id)
+        cached=replay_posting(self.db,resolved_company_id,"business_payment",payload)
+        if cached is not None:
+            return cached
 
         purpose = payload.purpose.strip().lower()
         if purpose not in {"purchase", "billing", "expense"}:
@@ -1258,6 +1266,7 @@ class AccountsService:
         DocumentsService(self.db).add_attachments(
             "business_payment", str(tx["id"]), resolved_company_id, payload.attachments
         )
+        finish_posting(self.db,resolved_company_id,"business_payment",payload,{"account_transaction":dict(tx),"borrowing_id":borrowing_id})
         self.db.commit()
         return {
             "account_transaction": dict(tx),

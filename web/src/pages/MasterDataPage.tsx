@@ -72,6 +72,8 @@ export function MasterDataPage() {
       <h1>Master Data</h1>
       <nav className="masters-nav" aria-label="Master modules">
         <Link to="/portal/masters/hsn" aria-current="page">HSN / GST</Link>
+        <Link to="/portal/masters/brands">Brands</Link>
+        <Link to="/portal/masters/categories">Categories</Link>
         <Link to="/portal/parties">Parties</Link>
         <Link to="/portal/company">Company Setup</Link>
       </nav>

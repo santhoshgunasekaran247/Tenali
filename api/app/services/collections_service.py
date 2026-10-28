@@ -16,6 +16,7 @@ from app.schemas.collections import (
     ReceivableStatusUpdate,
 )
 from app.services.period_lock_service import assert_period_open
+from app.services.runtime_schema import managed_schema
 
 ALLOWED_RECEIVABLE_STATUS = {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"}
 
@@ -36,6 +37,7 @@ class CollectionsService:
         return str(first_company)
 
     def _ensure_tables(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text(
                 """
@@ -262,7 +264,7 @@ class CollectionsService:
         rows = self.db.execute(
             text(
                 """
-                select
+                with balances as (select
                     r.id,
                     p.legal_name as party_name,
                     r.reference,
@@ -270,18 +272,34 @@ class CollectionsService:
                     r.due_date,
                     r.created_at::date as created_date,
                     r.amount_due,
-                    r.amount_received,
-                    (r.amount_due - r.amount_received) as balance_amount,
-                    r.status
+                                        r.amount_due - coalesce(paid.amount,0) - coalesce(initial.amount,0) as balance_amount,
+                                        case when r.status='BAD_DEBT' and r.updated_at::date<=:as_of then 'BAD_DEBT'
+                                                 when coalesce(paid.amount,0)+coalesce(initial.amount,0)>0 then 'PARTIAL' else 'UNPAID' end as status
                 from receivables r
                 join parties p on p.id = r.party_id
+                                left join invoices invoice on invoice.id=r.invoice_id and invoice.company_id=r.company_id
+                                left join lateral (
+                                        select sum(payment.amount) as amount from receivable_payments payment
+                                        left join account_transactions reversal on reversal.id=payment.reversed_by_transaction_id
+                                        where payment.receivable_id=r.id and payment.company_id=r.company_id and payment.payment_date<=:as_of
+                                            and (payment.reversed_at is null or coalesce(reversal.transaction_date,payment.reversed_at::date)>:as_of)
+                                ) paid on true
+                                left join lateral (
+                                        select sum(case when movement.to_account_id is not null then movement.amount else -movement.amount end) as amount
+                                        from account_transactions movement
+                                        left join account_transactions original on original.id=movement.reversal_of_transaction_id and original.company_id=movement.company_id
+                                        where movement.company_id=r.company_id and movement.transaction_date<=:as_of
+                                            and ((movement.source_type='invoice' and movement.source_id=r.invoice_id)
+                                                or (original.source_type='invoice' and original.source_id=r.invoice_id))
+                                ) initial on true
                 where r.company_id = :company_id
-                  and r.status in ('UNPAID', 'PARTIAL')
-                  and (r.amount_due - r.amount_received) > 0
-                order by coalesce(r.due_date, r.created_at::date) asc, r.created_at asc
+                                      and coalesce(invoice.invoice_date,r.created_at::date)<=:as_of
+                                      and (invoice.cancelled_at is null or invoice.cancelled_at>:as_of))
+                                select * from balances where balance_amount>0
+                                order by coalesce(due_date,created_date),id
                 """
             ),
-            {"company_id": resolved_company_id},
+            {"company_id": resolved_company_id,"as_of":as_of_value},
         ).mappings().all()
 
         output = StringIO()
@@ -332,6 +350,10 @@ class CollectionsService:
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
+        cancelled=self.db.execute(text("""select r.id from receivables r join invoices i on i.id=r.invoice_id
+            where r.id=:id and r.company_id=:company and i.status='CANCELLED'"""),{"id":receivable_id,"company":resolved_company_id}).scalar_one_or_none()
+        if cancelled:
+            raise HTTPException(422,"A cancelled invoice cannot receive collections")
 
         if payload.amount <= 0:
             raise HTTPException(status_code=422, detail="amount must be greater than zero")

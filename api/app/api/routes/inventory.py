@@ -21,7 +21,17 @@ def lookups(service: InventoryService = Depends(inventory_service)):
 
 @router.post("/lookups/{kind}", status_code=201)
 def create_lookup(kind: str, payload: InventoryLookupCreate, service: InventoryService = Depends(inventory_service)):
-    return service.create_lookup(kind, payload.name)
+    return service.create_lookup(kind, payload.name,payload.description,payload.is_active)
+
+
+@router.get("/lookups/{kind}")
+def master_entries(kind:str,service:InventoryService=Depends(inventory_service)):
+    return service.master_entries(kind)
+
+
+@router.put("/lookups/{kind}/{record_id}")
+def update_lookup(kind:str,record_id:UUID,payload:InventoryLookupCreate,service:InventoryService=Depends(inventory_service)):
+    return service.update_lookup(kind,str(record_id),payload)
 
 
 @router.get("/products")

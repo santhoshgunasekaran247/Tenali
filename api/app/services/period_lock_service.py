@@ -5,9 +5,11 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.services.runtime_schema import managed_schema
 
 
 def ensure_period_locks_table(db: Session) -> None:
+    if managed_schema(db): return
     db.execute(
         text(
             """

@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 
 
 class InvoiceLineCreate(BaseModel):
+    product_id: UUID | None = None
+    variant_id: UUID | None = None
     description: str = Field(min_length=1, max_length=500)
     hsn: str = Field(pattern=r"^\d{4,8}$")
     quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
@@ -16,6 +18,7 @@ class InvoiceLineCreate(BaseModel):
 
 
 class InvoiceCreate(BaseModel):
+    idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
     customer_party_id: UUID
     invoice_date: date | None = None
     subtotal: float = 0

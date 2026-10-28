@@ -14,6 +14,9 @@ from app.schemas.billing import InvoiceCreate
 from app.services.period_lock_service import assert_period_open
 from app.services.invoice_document import build_invoice_document
 from app.services.masters_service import MastersService
+from app.services.commerce_stock import resolve_product_lines, book_stock
+from app.services.posting_service import replay_posting, finish_posting, request_hash
+from app.services.runtime_schema import managed_schema
 
 
 class BillingService:
@@ -32,6 +35,7 @@ class BillingService:
         return str(first_company)
 
     def _ensure_tables(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text(
                 """
@@ -262,6 +266,10 @@ class BillingService:
     def create_invoice(self, company_id: str | None, payload: InvoiceCreate) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
+        original_hash=request_hash(payload)
+        cached=replay_posting(self.db,resolved_company_id,"invoice",payload)
+        if cached is not None:
+            return cached
 
         customer = self.db.execute(
             text(
@@ -278,6 +286,7 @@ class BillingService:
 
         document_data = None
         if payload.lines:
+            resolve_product_lines(self.db,resolved_company_id,payload.lines)
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             company = self.db.execute(
                 text("select company_name, address, gst_number, udyam_number, logo_url, phone, email, website, invoice_settings from companies where id = :company_id"),
@@ -514,12 +523,16 @@ class BillingService:
                 },
             )
 
-        self.db.commit()
-        return {
+        if document_data:
+            book_stock(self.db,resolved_company_id,document_data["lines"],"OUT","invoice",invoice_id)
+        result = {
             **dict(invoice_row),
             "customer_name": customer["legal_name"],
             "document_data": document_data,
         }
+        finish_posting(self.db,resolved_company_id,"invoice",payload,result,original_hash)
+        self.db.commit()
+        return result
 
     def list_invoices(self, company_id: str | None, collection_status: str | None = None) -> dict:
         self._ensure_tables()
@@ -601,13 +614,13 @@ class BillingService:
                     i.invoice_number,
                     i.invoice_date,
                     p.legal_name as customer_name,
-                    p.gst_number as customer_gst,
+                    i.customer_gst as customer_gst,
                     i.subtotal,
                     i.gst_total,
                     i.total,
                     i.amount_received,
                     i.collection_status,
-                    i.reference
+                    i.reference,i.document_data,i.status,i.cancelled_at
                 from invoices i
                 join parties p on p.id = i.customer_party_id
                 where i.company_id = :company_id
@@ -640,6 +653,7 @@ class BillingService:
                 "collection_status",
                 "reference",
                 "supply_type",
+                "document_status","cancelled_at",
             ]
         )
 
@@ -647,7 +661,10 @@ class BillingService:
             gst_total = Decimal(str(row["gst_total"] or 0))
             customer_gst = str(row["customer_gst"] or "")
             customer_state = customer_gst[:2] if customer_gst else ""
-            is_intra = bool(company_state and customer_state and company_state == customer_state)
+            snapshot=row["document_data"] or {}
+            seller_state=str(snapshot.get("seller",{}).get("gst_number") or company_gst or "")[:2]
+            supply_state=str(snapshot.get("place_of_supply") or customer_state)[:2]
+            is_intra = bool(seller_state and supply_state and seller_state == supply_state)
 
             if is_intra:
                 cgst = (gst_total / Decimal("2")).quantize(Decimal("0.01"))
@@ -659,6 +676,11 @@ class BillingService:
                 sgst = Decimal("0.00")
                 igst = gst_total.quantize(Decimal("0.01"))
                 supply_type = "INTER_STATE_OR_UNKNOWN"
+
+            if snapshot.get("lines"):
+                cgst=sum((Decimal(str(line.get("cgst",0))) for line in snapshot["lines"]),Decimal('0'))
+                sgst=sum((Decimal(str(line.get("sgst",0))) for line in snapshot["lines"]),Decimal('0'))
+                igst=sum((Decimal(str(line.get("igst",0))) for line in snapshot["lines"]),Decimal('0'))
 
             writer.writerow(
                 [
@@ -676,6 +698,7 @@ class BillingService:
                     row["collection_status"],
                     row["reference"] or "",
                     supply_type,
+                    row["status"],row["cancelled_at"] or "",
                 ]
             )
 

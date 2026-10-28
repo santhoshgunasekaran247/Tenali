@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../api";
+import { GstReconciliation } from "../components/GstReconciliation";
 
 type ExportState = {
   loading: boolean;
@@ -7,13 +8,11 @@ type ExportState = {
 };
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  const date=new Date();return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
 function monthStartIso(): string {
-  const date = new Date();
-  date.setDate(1);
-  return date.toISOString().slice(0, 10);
+  return `${todayIso().slice(0,7)}-01`;
 }
 
 function triggerCsvDownload(blob: Blob, filename: string) {
@@ -34,7 +33,7 @@ export function ReportsPage() {
   const [states, setStates] = useState<Record<string, ExportState>>({});
 
   const periodError = useMemo(() => {
-    if (!fromDate || !toDate) return "";
+    if (!fromDate || !toDate) return "Select both period dates.";
     if (fromDate > toDate) return "From date cannot be after To date.";
     return "";
   }, [fromDate, toDate]);
@@ -56,7 +55,7 @@ export function ReportsPage() {
   };
 
   return (
-    <div className="ops-page">
+    <div className="ops-page reports-page">
       <section className="ops-hero">
         <p className="eyebrow">Auditor Pack</p>
         <h1>Reports & Exports</h1>
@@ -88,6 +87,15 @@ export function ReportsPage() {
           {periodError ? <p className="ops-error">{periodError}</p> : null}
         </article>
 
+        <article className="ops-card">
+          <div className="ops-card-head"><h2>Account Records</h2></div>
+          <div className="reports-actions-row">
+            <button className="btn" type="button" disabled={!!periodError||states.transactions?.loading} onClick={()=>void runExport('transactions',`transactions_${fromDate}_${toDate}.csv`,()=>api.exportAccountTransactionsCsv({from_date:fromDate,to_date:toDate}))}>Export Transactions</button>
+            <button className="btn" type="button" disabled={!!periodError||states.journal?.loading} onClick={()=>void runExport('journal',`journal_${fromDate}_${toDate}.csv`,()=>api.exportAccountJournalCsv({from_date:fromDate,to_date:toDate}))}>Export Journal</button>
+          </div>
+          {states.transactions?.error?<p role="alert" className="ops-error">{states.transactions.error}</p>:null}
+          {states.journal?.error?<p role="alert" className="ops-error">{states.journal.error}</p>:null}
+        </article>
         <article className="ops-card">
           <div className="ops-card-head">
             <h2>GST Registers</h2>
@@ -132,7 +140,7 @@ export function ReportsPage() {
             <button
               className="btn"
               type="button"
-              disabled={states.arAging?.loading}
+              disabled={!asOfDate||states.arAging?.loading}
               onClick={() =>
                 runExport("arAging", "ar_aging.csv", () =>
                   api.exportArAgingCsv({ as_of: asOfDate })
@@ -144,7 +152,7 @@ export function ReportsPage() {
             <button
               className="btn"
               type="button"
-              disabled={states.apAging?.loading}
+              disabled={!asOfDate||states.apAging?.loading}
               onClick={() =>
                 runExport("apAging", "ap_aging.csv", () =>
                   api.exportApAgingCsv({ as_of: asOfDate })
@@ -157,6 +165,7 @@ export function ReportsPage() {
           {states.arAging?.error ? <p className="ops-error">AR aging: {states.arAging.error}</p> : null}
           {states.apAging?.error ? <p className="ops-error">AP aging: {states.apAging.error}</p> : null}
         </article>
+        <GstReconciliation fromDate={fromDate} toDate={toDate} invalid={!!periodError}/>
       </section>
     </div>
   );

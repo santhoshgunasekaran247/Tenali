@@ -14,6 +14,9 @@ from app.schemas.purchases import PurchaseCreate, PurchasePaymentCreate, Purchas
 from app.services.period_lock_service import assert_period_open
 from app.services.masters_service import MastersService
 from app.services.documents_service import DocumentsService
+from app.services.commerce_stock import resolve_product_lines, book_stock
+from app.services.posting_service import replay_posting, finish_posting, request_hash
+from app.services.runtime_schema import managed_schema
 
 
 class PurchasesService:
@@ -32,6 +35,7 @@ class PurchasesService:
         return str(first_company)
 
     def _ensure_tables(self) -> None:
+        if managed_schema(self.db): return
         self.db.execute(
             text(
                 """
@@ -298,6 +302,10 @@ class PurchasesService:
     def create_purchase(self, company_id: str | None, payload: PurchaseCreate) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
+        original_hash=request_hash(payload)
+        cached=replay_posting(self.db,resolved_company_id,"purchase",payload)
+        if cached is not None:
+            return cached
 
         vendor = self.db.execute(
             text(
@@ -314,6 +322,7 @@ class PurchasesService:
 
         line_items = []
         if payload.lines:
+            resolve_product_lines(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id))
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             subtotal = Decimal("0")
             gst_total = Decimal("0")
@@ -543,6 +552,7 @@ class PurchasesService:
         DocumentsService(self.db).add_attachments(
             "purchase", str(purchase["id"]), resolved_company_id, payload.attachments
         )
+        finish_posting(self.db,resolved_company_id,"purchase",payload,{**purchase,"vendor_name":vendor["legal_name"],"balance_amount":float(total_amount-amount_paid)},original_hash)
         self.db.commit()
 
         result = self.db.execute(
@@ -604,7 +614,7 @@ class PurchasesService:
         purchase = self.db.execute(
             text(
                 """
-                select id, company_id, total, amount_paid, payment_status
+                select id, company_id, total, amount_paid, payment_status, status
                 from purchases
                 where id = :purchase_id and company_id = :company_id
                 """
@@ -613,6 +623,8 @@ class PurchasesService:
         ).mappings().first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Purchase not found")
+        if purchase["status"]=="CANCELLED":
+            raise HTTPException(422,"A cancelled purchase cannot receive payments")
 
         account = self.db.execute(
             text(
@@ -870,17 +882,22 @@ class PurchasesService:
         purchase = self.db.execute(
             text(
                 """
-                select id, receipt_status
+                select id, receipt_status, receipt_type, line_items, status
                 from purchases
                 where id = :purchase_id and company_id = :company_id
+                for update
                 """
             ),
             {"purchase_id": purchase_id, "company_id": resolved_company_id},
         ).mappings().first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Purchase not found")
+        if purchase["status"]=="CANCELLED":
+            raise HTTPException(422,"A cancelled purchase cannot be received")
 
-        receipt_type = self._normalize_receipt_type(payload.receipt_type)
+        receipt_type = self._normalize_receipt_type(payload.receipt_type or purchase["receipt_type"])
+        if purchase["receipt_status"] != "RECEIVED" and receipt_type != "SERVICE":
+            book_stock(self.db,resolved_company_id,purchase["line_items"],"IN","purchase_receipt",purchase_id)
 
         self.db.execute(
             text(
@@ -892,6 +909,7 @@ class PurchasesService:
                     received_at = coalesce(:received_at, now()),
                     received_notes = :received_notes
                 where id = :purchase_id and company_id = :company_id
+                                    and receipt_status <> 'RECEIVED'
                 """
             ),
             {
@@ -979,7 +997,7 @@ class PurchasesService:
                     p.amount_paid,
                     greatest(p.total - p.amount_paid, 0) as balance_amount,
                     p.payment_status,
-                    p.reference
+                    p.reference,p.status,p.cancelled_at
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
                 where p.company_id = :company_id
@@ -1013,6 +1031,7 @@ class PurchasesService:
                 "payment_status",
                 "reference",
                 "supply_type",
+                "document_status","cancelled_at",
             ]
         )
 
@@ -1050,6 +1069,7 @@ class PurchasesService:
                     row["payment_status"],
                     row["reference"] or "",
                     supply_type,
+                    row["status"],row["cancelled_at"] or "",
                 ]
             )
         return output.getvalue()
@@ -1066,23 +1086,29 @@ class PurchasesService:
         rows = self.db.execute(
             text(
                 """
-                select
+                with balances as (select
                     p.id,
                     v.legal_name as vendor_name,
                     p.bill_number,
                     p.purchase_date,
                     p.due_date,
                     p.total,
-                    p.amount_paid,
-                    greatest(p.total - p.amount_paid, 0) as balance_amount
+                                        greatest(p.total - coalesce(paid.amount,0), 0) as balance_amount
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
+                                left join lateral (
+                                        select sum(payment.amount) as amount from purchase_payments payment
+                                        left join account_transactions reversal on reversal.id=payment.reversed_by_transaction_id
+                                        where payment.purchase_id=p.id and payment.company_id=p.company_id and payment.payment_date<=:as_of
+                                            and (payment.reversed_at is null or coalesce(reversal.transaction_date,payment.reversed_at::date)>:as_of)
+                                ) paid on true
                 where p.company_id = :company_id
-                  and greatest(p.total - p.amount_paid, 0) > 0
-                order by coalesce(p.due_date, p.purchase_date) asc, p.created_at asc
+                                      and p.purchase_date<=:as_of
+                                      and (p.cancelled_at is null or p.cancelled_at>:as_of))
+                                select * from balances where balance_amount>0 order by coalesce(due_date,purchase_date),id
                 """
             ),
-            {"company_id": resolved_company_id},
+            {"company_id": resolved_company_id,"as_of":as_of_value},
         ).mappings().all()
 
         output = StringIO()

@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.services.runtime_schema import managed_schema
 
 from app.schemas.settlements import BorrowingEntryCreate
 from app.services.period_lock_service import assert_period_open
@@ -28,6 +29,7 @@ class SettlementsService:
         return str(first_company)
 
     def _ensure_table(self) -> None:
+        if managed_schema(self.db): return
         # Keeps environments operable while migrations are being formalized.
         self.db.execute(
             text(

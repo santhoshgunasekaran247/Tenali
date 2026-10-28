@@ -330,12 +330,24 @@ create table if not exists invoice_sequences (
     unique(company_id, year, month)
 );
 
+create table if not exists posting_requests (
+    company_id uuid not null references companies(id),
+    operation text not null,
+    request_key text not null,
+    payload_hash text not null,
+    response jsonb not null,
+    created_at timestamptz not null default now(),
+    primary key(company_id, operation, request_key)
+);
+
 create table if not exists invoices (
     id uuid primary key default gen_random_uuid(),
     company_id uuid not null references companies(id),
     invoice_number text not null,
     customer_party_id uuid not null references parties(id),
     customer_gst text,
+    cancelled_at date,
+    cancellation_reason text,
     document_data jsonb,
     invoice_date date not null default current_date,
     subtotal numeric(14,2) not null default 0,
@@ -427,6 +439,8 @@ create table if not exists purchases (
     id uuid primary key default gen_random_uuid(),
     company_id uuid not null references companies(id),
     vendor_party_id uuid not null references parties(id),
+    cancelled_at date,
+    cancellation_reason text,
     line_items jsonb not null default '[]'::jsonb,
     bill_number text,
     purchase_date date not null default current_date,
@@ -632,3 +646,4 @@ create index if not exists idx_document_links_entity on document_links(entity_ty
 create index if not exists idx_variants_product_active on product_variants(product_id, is_active);
 create index if not exists idx_vendor_offers_product on vendor_contributions(product_id, variant_id, vendor_id);
 create index if not exists idx_stock_balances_item on stock_balances(company_id, product_id, variant_id);
+create index if not exists idx_stock_movement_source on stock_movements(company_id, reference_type, reference_id);

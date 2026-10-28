@@ -12,8 +12,15 @@ from app.schemas.purchases import (
     PurchaseReceiptConfirm,
 )
 from app.services.purchases_service import PurchasesService
+from app.services.document_cancellation import Cancellation,cancel_document
 
 router = APIRouter()
+
+
+@router.post("/{purchase_id}/cancel")
+def cancel_purchase(purchase_id:str,payload:Cancellation,company_id:str|None=None,db:Session=Depends(get_db)):
+    company=PurchasesService(db)._resolve_company_id(company_id)
+    return cancel_document(db,company,"purchase",purchase_id,payload)
 
 
 @router.get("", response_model=PurchaseListResponse)

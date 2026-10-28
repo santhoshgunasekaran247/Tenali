@@ -3,13 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { ImageOff } from "lucide-react";
 import { SiteFooter } from "../components/SiteFooter";
 import { api } from "../api";
-import type { CatalogProduct } from "../types";
+import type { CatalogProduct, Company } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../features/catalog/utils";
 
 export function ProductPage() {
   const { productId } = useParams();
   const [product, setProduct] = useState<CatalogProduct>();
+  const [company,setCompany]=useState<Company>();
   const [error, setError] = useState<string>();
   const [photoIndex, setPhotoIndex] = useState(0);
   const [variantId, setVariantId] = useState("");
@@ -18,7 +19,7 @@ export function ProductPage() {
     if (!productId) return;
     api
       .product(productId)
-      .then((r) => setProduct(r.product))
+      .then((r) => {setProduct(r.product);setCompany(r.company);})
       .catch((e: Error) => setError(e.message));
   }, [productId]);
 
@@ -99,12 +100,12 @@ export function ProductPage() {
             <div className="detail-actions">
               <a
                 className="btn whatsapp-btn"
-                href={whatsappLink(FALLBACK_PHONE, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || "SRU Collection")}
+                href={whatsappLink(company?.phone||FALLBACK_PHONE, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || "SRU Collection")}
               >
                 WhatsApp for best price
               </a>
-              <a className="link" href={`mailto:${FALLBACK_EMAIL}`}>
-                {FALLBACK_EMAIL}
+              <a className="link" href={`mailto:${company?.email||FALLBACK_EMAIL}`}>
+                {company?.email||FALLBACK_EMAIL}
               </a>
             </div>
           </div>

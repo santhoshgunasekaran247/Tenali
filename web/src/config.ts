@@ -1,4 +1,4 @@
-import type { ModuleKey } from "./types";
+export type ModuleKey = "dashboard" | "catalogue" | "vendor-contributions" | "sales" | "purchases" | "accounts" | "parties" | "employees" | "reports" | "company" | "audit" | "admin";
 
 export type NavItem = {
   key: ModuleKey;

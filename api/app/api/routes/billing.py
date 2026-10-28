@@ -11,8 +11,15 @@ from app.schemas.billing import (
     InvoiceReconcileRunListResponse,
 )
 from app.services.billing_service import BillingService
+from app.services.document_cancellation import Cancellation,cancel_document
 
 router = APIRouter()
+
+
+@router.post("/invoices/{invoice_id}/cancel")
+def cancel_invoice(invoice_id: str,payload:Cancellation,company_id:str|None=None,db:Session=Depends(get_db)):
+    company=BillingService(db)._resolve_company_id(company_id)
+    return cancel_document(db,company,"invoice",invoice_id,payload)
 
 
 @router.get("/invoices", response_model=InvoiceListResponse)

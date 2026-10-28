@@ -99,3 +99,4 @@ class CatalogListResponse(BaseModel):
 
 class CatalogProductResponse(BaseModel):
     product: ProductOut
+    company: CompanyOut | None = None

@@ -270,4 +270,5 @@ class CatalogService:
             where p.id=:product_id and p.company_id=:company_id and variant.is_active=true order by variant.created_at,variant.id
         """), {"product_id": product_id, "company_id": resolved_company_id}).mappings().all()
         product["variants"] = [_public_product(variant) for variant in variants]
-        return {"product": product}
+        company=self.db.execute(text("select id,company_name,nickname,logo_url,phone,email from companies where id=:company"),{"company":resolved_company_id}).mappings().one()
+        return {"product": product,"company":dict(company)}

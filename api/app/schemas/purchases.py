@@ -10,6 +10,7 @@ from app.schemas.documents import AttachmentCreate, MAX_ATTACHMENTS
 
 
 class PurchaseCreate(BaseModel):
+    idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
     vendor_party_id: UUID
     purchase_date: date | None = None
     bill_number: str | None = None

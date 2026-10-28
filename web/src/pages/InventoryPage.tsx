@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { postingKey } from "../features/postingKey";
 import { ProductEditor, VendorOfferEditor, inventoryMoney, itemPayload, productPayload } from "../components/InventoryForms";
 import { toAssetUrl } from "../features/catalog/utils";
 import type { HsnMaster, InventoryAlert, InventoryLookups, InventoryMovement, InventoryOffer, InventoryProduct, InventoryVariant } from "../types";
@@ -23,6 +24,7 @@ export function InventoryPage() {
   const detailDialog=useRef<HTMLDialogElement>(null);
   const createDialog=useRef<HTMLDialogElement>(null);
   const selected=products.find(product=>product.id===selectedId);
+  const [stockKey,setStockKey]=useState(postingKey);
   const load=async()=>{setLoading(true);try{const[data,options,codes,notifications]=await Promise.all([api.inventoryProducts(),api.inventoryLookups(),api.hsnMasters(),api.inventoryAlerts()]);setProducts(data.items);setLookups(options);setHsn(codes.items);setAlerts(notifications.items);}catch(failure){setError(failure instanceof Error?failure.message:"Unable to load inventory.");}finally{setLoading(false);}};
   useEffect(()=>{void load();},[]);
   useEffect(()=>{if(selected&&detailDialog.current&&!detailDialog.current.open)detailDialog.current.showModal();},[selected]);
@@ -36,7 +38,7 @@ export function InventoryPage() {
   const saved=(product:InventoryProduct)=>{setSelectedId(product.id);setProducts(previous=>previous.some(item=>item.id===product.id)?previous.map(item=>item.id===product.id?product:item):[product,...previous]);setEditor(null);setNewProduct(false);setOfferEditor(null);setMessage("Product inventory saved.");void load();};
   const prefer=async(offer:InventoryOffer)=>{if(!selected)return;await perform(async()=>{if(offer.variant_id){const variant=selected.variants.find(item=>item.id===offer.variant_id)!;await api.inventorySaveVariant(selected.id,{...itemPayload(variant),variant_name:variant.variant_name,preferred_vendor_id:offer.vendor_id},variant.id);}else await api.inventorySaveProduct({...productPayload(selected),preferred_vendor_id:offer.vendor_id},selected.id);},"Preferred vendor updated.");};
   useEffect(()=>{let active=true;if(selectedId&&tab==='stock'){api.inventoryMovements(selectedId).then(result=>{if(active)setMovements(result.items);}).catch(failure=>{if(active)setError(failure instanceof Error?failure.message:"Unable to load stock history.");});}return()=>{active=false;};},[selectedId,tab,products]);
-  const adjust=async(event:FormEvent)=>{event.preventDefault();if(!selected)return;await perform(async()=>{await api.inventoryAdjustStock(selected.id,{variant_id:stock.variant_id||null,direction:stock.direction,quantity:Number(stock.quantity),notes:stock.notes});setStock(previous=>({...previous,quantity:"",notes:""}));},"Owned stock updated.");};
+  const adjust=async(event:FormEvent)=>{event.preventDefault();if(!selected)return;await perform(async()=>{await api.inventoryAdjustStock(selected.id,{variant_id:stock.variant_id||null,direction:stock.direction,quantity:Number(stock.quantity),notes:stock.notes,idempotency_key:stockKey});setStockKey(postingKey());setStock(previous=>({...previous,quantity:"",notes:""}));},"Owned stock updated.");};
   const filtered=products.filter(product=>(includeInactive||product.is_active)&&`${product.name} ${product.item_name||''} ${product.sku||''} ${product.portal_product_id} ${product.brand_name||''}`.toLowerCase().includes(search.toLowerCase())&&(!vendorFilter||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorFilter)));
   const allOffers=selected?[...selected.offers,...selected.variants.flatMap(variant=>variant.offers)]:[];
   return <main className="ops-page inventory-page">

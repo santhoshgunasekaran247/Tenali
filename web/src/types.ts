@@ -169,6 +169,7 @@ export type CatalogHomeResponse = {
 
 export type CatalogProductResponse = {
   product: CatalogProduct;
+  company?: Company;
 };
 
 export interface CatalogListResponse {
@@ -435,6 +436,7 @@ export type BorrowingSummaryResponse = {
 };
 
 export type BusinessPaymentCreateInput = {
+  idempotency_key?: string;
   attachments?: AttachmentInput[];
   from_account_id: string;
   amount: number;
@@ -535,6 +537,8 @@ export type ReceivableReminderLogListResponse = {
 };
 
 export type InvoiceLineInput = {
+  product_id?: string | null;
+  variant_id?: string | null;
   description: string;
   hsn: string;
   quantity: number;
@@ -605,6 +609,7 @@ export type InvoiceReconcileRunListResponse = {
 };
 
 export type InvoiceCreateInput = {
+  idempotency_key?: string;
   customer_party_id: string;
   invoice_date?: string;
   subtotal: number;
@@ -656,6 +661,7 @@ export type PurchaseListResponse = {
 };
 
 export type PurchaseCreateInput = {
+  idempotency_key?: string;
   attachments?: AttachmentInput[];
   lines?: InvoiceLineInput[];
   vendor_party_id: string;

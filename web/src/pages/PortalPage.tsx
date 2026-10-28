@@ -30,7 +30,7 @@ const operationsLinks: PortalLink[] = [
 const adminMaintenanceLinks: PortalLink[] = [
   { label: "Company Setup", path: "/portal/company", status: "live" },
   { label: "Users & Roles", status: "coming" },
-  { label: "Audit Events", status: "coming" },
+  { label: "Audit Events", path:"/portal/audit",status:"live" },
   { label: "Master Data", path: "/portal/masters", status: "live" },
   { label: "Provider Config", status: "coming" },
 ];

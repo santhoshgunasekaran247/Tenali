@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { HsnMaster, InvoiceLineInput } from "../types";
+import type { HsnMaster, InvoiceLineInput, InventoryProduct } from "../types";
 
 export const newTaxLine = (): InvoiceLineInput => ({ description: "", hsn: "", quantity: 1, rate: 0, gst_rate: 0 });
 
@@ -15,11 +15,13 @@ export function calculateLineTotals(lines: InvoiceLineInput[]) {
   return { subtotal: subtotalCents / 100, gstTotal: gstCents / 100, total: (subtotalCents + gstCents) / 100 };
 }
 
-export function TaxLinesEditor({ lines, masters, onChange, disabled = false }: {
+export function TaxLinesEditor({ lines, masters, onChange, disabled = false, products = [], vendorId }: {
   lines: InvoiceLineInput[];
   masters: HsnMaster[];
   onChange: (lines: InvoiceLineInput[]) => void;
   disabled?: boolean;
+  products?: InventoryProduct[];
+  vendorId?: string;
 }) {
   const updateLine = (index: number, patch: Partial<InvoiceLineInput>) => {
     onChange(lines.map((line, position) => position === index ? { ...line, ...patch } : line));
@@ -40,8 +42,22 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false }: {
         <label>Product / Description
           <input required maxLength={500} value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} />
         </label>
+        <label>Product / Inventory
+          <select value={line.product_id||""} onChange={event=>{
+            const product=products.find(item=>item.id===event.target.value);
+            const offer=product?.offers.find(item=>item.vendor_id===vendorId&&item.is_active);
+            updateLine(index,product?{product_id:product.id,variant_id:null,description:product.name,hsn:product.hsn_code||"",gst_rate:Number(masters.find(item=>item.code===product.hsn_code)?.gst_rate||0),rate:Number(vendorId?offer?.buying_price||0:product.catalog_price||0)}:{product_id:null,variant_id:null,description:"",hsn:"",gst_rate:0,rate:0});
+          }}><option value="">Manual / service item</option>{products.filter(product=>product.is_active&&(!vendorId||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorId&&offer.is_active))).map(product=><option key={product.id} value={product.id}>{product.name} ({product.portal_product_id})</option>)}</select>
+        </label>
+        {line.product_id&&products.find(item=>item.id===line.product_id)?.variants.some(variant=>variant.is_active)?<label>Variant
+          <select required value={line.variant_id||""} onChange={event=>{
+            const product=products.find(item=>item.id===line.product_id)!;const variant=product.variants.find(item=>item.id===event.target.value);
+            const offer=variant?.offers.find(item=>item.vendor_id===vendorId&&item.is_active);
+            updateLine(index,{variant_id:variant?.id||null,description:`${product.name}${variant?` - ${variant.variant_name}`:""}`,rate:Number(vendorId?offer?.buying_price||0:variant?.catalog_price||0)});
+          }}><option value="">Select variant</option>{products.find(item=>item.id===line.product_id)!.variants.filter(variant=>variant.is_active&&(!vendorId||variant.offers.some(offer=>offer.vendor_id===vendorId&&offer.is_active))).map(variant=><option key={variant.id} value={variant.id}>{variant.variant_name}</option>)}</select>
+        </label>:null}
         <label>HSN / SAC
-          <select required value={line.hsn} onChange={(event) => {
+          <select required disabled={!!line.product_id} value={line.hsn} onChange={(event) => {
             const selected = masters.find((master) => master.code === event.target.value);
             updateLine(index, { hsn: selected?.code || "", gst_rate: selected ? Number(selected.gst_rate) : 0 });
           }}>

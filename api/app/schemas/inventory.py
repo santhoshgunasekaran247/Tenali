@@ -86,6 +86,7 @@ class BulkVendorMapping(BaseModel):
 
 
 class StockAdjustment(BaseModel):
+    idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
     variant_id: UUID | None = None
     direction: Literal["IN", "OUT"]
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
@@ -100,3 +101,5 @@ class ReorderReminder(BaseModel):
 class InventoryLookupCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     name: str = Field(min_length=1, max_length=150)
+    description: str = Field(default="",max_length=2000)
+    is_active: bool = True

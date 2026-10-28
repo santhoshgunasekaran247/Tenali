@@ -146,6 +146,7 @@ class AuditJournalResponse(BaseModel):
 
 
 class BusinessPaymentCreate(BaseModel):
+    idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
     from_account_id: UUID
     amount: float
     purpose: str

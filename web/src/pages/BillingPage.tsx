@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
 import { TaxLinesEditor, calculateLineTotals, newTaxLine as newLine } from "../components/TaxLinesEditor";
 import { api } from "../api";
+import { postingKey } from "../features/postingKey";
+import type { InventoryProduct } from "../types";
 import type { Account, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
 
 type InvoiceForm = {
@@ -54,6 +56,8 @@ export function BillingPage() {
   const reconcilePageSize = 10;
   const [parties, setParties] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [inventory,setInventory]=useState<InventoryProduct[]>([]);
+  const [requestKey,setRequestKey]=useState(postingKey);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [collectionStatus, setCollectionStatus] = useState("");
@@ -88,15 +92,17 @@ export function BillingPage() {
     setLoading(true);
     setError(null);
     try {
-      const [partyRes, accountRes, invoiceRes, hsnRes] = await Promise.all([
+      const [partyRes, accountRes, invoiceRes, hsnRes, inventoryRes] = await Promise.all([
         api.parties({ active_only: true }),
         api.accounts({ active_only: true }),
         api.invoices({ collection_status: collectionStatus || undefined }),
         api.hsnMasters(),
+        api.inventoryProducts(),
       ]);
       const runsRes = await api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset);
       setParties(partyRes.items.filter((party) => party.party_type !== "vendor"));
       setAccounts(accountRes.items);
+      setInventory(inventoryRes.items);
       setHsnMasters(hsnRes.items);
       setInvoices(invoiceRes.items);
       setReconcileRuns(runsRes.items);
@@ -136,6 +142,7 @@ export function BillingPage() {
       }
 
       await api.createInvoice({
+        idempotency_key:requestKey,
         customer_party_id: form.customer_party_id,
         invoice_date: form.invoice_date || undefined,
         subtotal,
@@ -157,6 +164,7 @@ export function BillingPage() {
       });
 
       setForm(EMPTY_FORM);
+      setRequestKey(postingKey());
       setLines([newLine()]);
       setSameShipping(true);
       setMessage("Invoice posted. PDF is available in the invoice list.");
@@ -318,7 +326,7 @@ export function BillingPage() {
                   onChange={(event) => setForm((prev) => ({ ...prev, shipping_address: event.target.value }))} />
               </label>
             </>}
-            <TaxLinesEditor lines={lines} masters={hsnMasters} onChange={setLines} disabled={saving} />
+            <TaxLinesEditor lines={lines} masters={hsnMasters} products={inventory} onChange={setLines} disabled={saving} />
 
             <label>
               Amount Received Now
@@ -464,7 +472,7 @@ export function BillingPage() {
                       <td>{item.customer_name}</td>
                       <td>{item.total.toFixed(2)}</td>
                       <td>{item.amount_received.toFixed(2)}</td>
-                      <td>{item.collection_status}</td>
+                      <td>{item.status==='CANCELLED'?'CANCELLED':item.collection_status}</td>
                       <td>{item.due_date || "-"}</td>
                       <td>
                         <button className="ops-link-btn" type="button"
@@ -474,7 +482,8 @@ export function BillingPage() {
                           onClick={() => void exportInvoice(item)}>
                           <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}
                         </button>
-                        {(item.collection_status === "UNPAID" ||
+                        {item.status!=='CANCELLED'&&item.amount_received===0?<button type="button" className="ops-link-btn" onClick={()=>{const reason=window.prompt('Reason for cancellation (stock is returned; no refund is issued):');if(reason?.trim())void api.cancelInvoice(item.id,reason).then(()=>load()).catch(failure=>setError(String(failure)));}}>Cancel Invoice</button>:null}
+                        {item.status!=='CANCELLED'&&(item.collection_status === "UNPAID" ||
                           item.collection_status === "PARTIAL") && (
                           <Link
                             className="ops-link-btn"

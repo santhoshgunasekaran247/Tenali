@@ -1,0 +1,1 @@
+export const postingKey = () => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `post-${Date.now()}-${Math.random().toString(16).slice(2)}`;

@@ -29,3 +29,4 @@ create index if not exists idx_document_links_entity on document_links(entity_ty
 create index if not exists idx_variants_product_active on product_variants(product_id, is_active);
 create index if not exists idx_vendor_offers_product on vendor_contributions(product_id, variant_id, vendor_id);
 create index if not exists idx_stock_balances_item on stock_balances(company_id, product_id, variant_id);
+create index if not exists idx_stock_movement_source on stock_movements(company_id, reference_type, reference_id);

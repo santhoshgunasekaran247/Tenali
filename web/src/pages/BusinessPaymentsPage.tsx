@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { api } from "../api";
+import { postingKey } from "../features/postingKey";
 import type { Account, AccountTransaction, AttachmentInput, Party } from "../types";
 
 type PaymentForm = {
@@ -32,6 +33,7 @@ export function BusinessPaymentsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [form, setForm] = useState<PaymentForm>(EMPTY_FORM);
+  const [requestKey,setRequestKey]=useState(postingKey);
   const [attachments, setAttachments] = useState<AttachmentInput[]>([]);
   const [attachmentReading, setAttachmentReading] = useState(false);
   const [payments, setPayments] = useState<AccountTransaction[]>([]);
@@ -79,6 +81,7 @@ export function BusinessPaymentsPage() {
       }
 
       const result = await api.createBusinessPayment({
+        idempotency_key:requestKey,
         attachments,
         from_account_id: form.from_account_id,
         amount,
@@ -99,6 +102,7 @@ export function BusinessPaymentsPage() {
         setMessage("Payment posted from company account (no borrowing created).");
       }
       setForm(EMPTY_FORM);
+      setRequestKey(postingKey());
       setAttachments([]);
       setAttachmentTarget(result.account_transaction);
       await load();

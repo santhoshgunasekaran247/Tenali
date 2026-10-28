@@ -51,8 +51,39 @@ buying-price fields.
 Supplier availability is not owned stock. Owned quantities are recorded separately
 through stock-in/out adjustments with movement history and negative-stock checks.
 Existing free-text purchase/invoice lines do not automatically move inventory.
+Product-linked sales now deduct stock atomically; confirming receipt of a product-linked
+purchase adds stock once. Service lines do not move owned quantities. Select a child
+variant when the product has active variants, and map purchased items to the vendor.
 Reorder thresholds, restock targets and dates produce persistent in-app alerts and
 reminders, not email/SMS notifications.
 
 Inventory migration: `009_product_inventory`. Rollback-only database regression
 tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_inventory.py`.
+
+## Operational completion controls
+
+- AR/AP aging reconstructs payments and dated reversals through the cutoff, rather
+    than using current paid totals. Legacy payments with no dated source evidence
+    still require opening-balance reconciliation; do not invent receipt dates.
+- Clients should supply `idempotency_key` on invoice/purchase creation, business
+    payments and manual stock adjustments. Identical retries return the saved result;
+    changing values under the same key is rejected. Keys remain optional for legacy clients.
+- Unpaid invoices and purchases can be cancelled with a reason/date and atomic stock
+    reversal. Reverse their payments first. Cancellation does not issue a bank refund,
+    replace a partial return, or generate a statutory credit/debit note.
+- Reports includes transactions, journal, sales/purchases and historical AR/AP aging.
+    GSTR-2B comparison accepts the downloadable normalized CSV template and exports
+    match/mismatch/missing/duplicate review rows. It is not portal integration, an ITC
+    eligibility determination or a filing format; legacy vendor GSTINs need review.
+- Brands/categories support editing and activation while keeping codes stable.
+    Product-page contacts follow Company Setup. Audit Events captures future operational
+    changes; file bytes/signatures are excluded, and local-mode actors are unattributed.
+- Apply Alembic through `013_runtime_schema`. Migrated requests skip the legacy
+    request-time DDL that could deadlock with active postings/audit triggers.
+
+Authentication/roles are deliberately deferred to keep local testing unchanged. Do
+not expose the unauthenticated API publicly. SMTP/SMS provider delivery is not
+configured. Full chart-of-accounts accounting, verified opening balances, inventory
+valuation policy, partial credit/debit notes/refunds and accountant-approved statutory
+returns remain separate implementation/setup gates. The current money-movement
+reports must not be presented as a complete trial balance, P&L or balance sheet.
