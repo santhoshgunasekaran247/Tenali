@@ -855,6 +855,10 @@ body {
 .inventory-attributes h3 { font-size: 15px; margin: 8px 0; }
 .catalog-variant-select { display: grid; gap: 6px; font-size: 13px; margin: 16px 0; }
 .portal-kpi-grid.inventory-kpis { grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); }
+.portal-workflow-disclosure > summary { list-style: none; cursor: pointer; }
+.portal-workflow-disclosure > summary::-webkit-details-marker { display: none; }
+.portal-workflow-disclosure > summary::after { content: "+"; margin-left: auto; font-size: 20px; }
+.portal-workflow-disclosure[open] > summary::after { content: "-"; }
 @media (max-width: 900px) { .inventory-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 1200px) {
   .inventory-filter-toolbar { grid-template-columns: minmax(240px,1fr) minmax(180px,1fr); }
@@ -893,6 +897,10 @@ body {
 .company-setup-heading { padding: 24px 7vw 16px; border-bottom: 1px solid var(--site-border); background: var(--site-primary); color: var(--site-on-primary); }
 .company-setup-heading > .ops-inline-link { color: var(--site-on-primary); }
 .company-setup-heading h1 { font-size: 28px; margin: 8px 0; letter-spacing: 0; }
+.company-setup-nav { position: sticky; top: 96px; z-index: 15; display: flex; gap: 18px; overflow-x: auto; padding: 10px 7vw; border-bottom: 1px solid var(--site-border); background: var(--site-surface); white-space: nowrap; }
+.company-setup-nav a { color: var(--site-text); font-size: 12px; text-decoration: none; }
+.company-setup-nav a:hover { color: var(--site-accent); }
+.company-setup-section, .company-storefront-copy { scroll-margin-top: 156px; }
 .company-setup-status { margin: 16px 7vw; }
 .company-setup-form { margin: 22px 7vw 32px; padding: 20px; max-width: 1200px; gap: 24px; background: var(--site-surface); }
 .company-setup-section { border: 0; border-top: 1px solid var(--site-border); margin: 0; padding: 16px 0 0; min-width: 0; }

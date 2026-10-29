@@ -61,11 +61,9 @@ class TenantAuth:
                 raise HTTPException(409,"Email or workspace address is already registered. Sign in if you already have an account.")
             user = self.db.execute(text("insert into tenant_users(email,display_name,password_hash) values(:email,:name,:hash) returning id"),
                                    {"email": payload.email, "name": payload.display_name, "hash": password_hash(payload.password)}).scalar_one()
-            company = self.db.execute(text("insert into companies(company_name,tenant_slug,email) values(:name,:slug,:email) returning id"),
-                                      {"name": payload.company_name, "slug": payload.slug, "email": payload.email}).scalar_one()
+            company = self.db.execute(text("insert into companies(company_name,tenant_slug) values(:name,:slug) returning id"),
+                                      {"name": payload.company_name, "slug": payload.slug}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"), {"company": company, "user": user})
-            for order,(code,name) in enumerate([('power-charging','Power & Charging'),('home-appliances','Home Appliances'),('travel-luggage','Travel & Luggage'),('corporate-gifts','Corporate Gifts')]):
-                self.db.execute(text("insert into product_categories(company_id,code,name,display_title,home_order) values(:company,:code,:name,:name,:order)"),{'company':company,'code':code,'name':name,'order':order})
             self.db.commit()
         except IntegrityError as error:
             self.db.rollback()
@@ -95,11 +93,9 @@ class TenantAuth:
                 union all select 1 from tenant_slug_aliases alias where alias.tenant_slug=:slug limit 1"""),{"slug":slug}).first()
             if slug_taken:
                 raise HTTPException(409,"This workspace address is already registered")
-            email=self.db.execute(text('select email from tenant_users where id=:id and is_active=true'),{'id':user_id}).scalar_one()
-            company=self.db.execute(text('insert into companies(company_name,tenant_slug,email) values(:name,:slug,:email) returning id'),{'name':name,'slug':slug,'email':email}).scalar_one()
+            self.db.execute(text('select id from tenant_users where id=:id and is_active=true'),{'id':user_id}).scalar_one()
+            company=self.db.execute(text('insert into companies(company_name,tenant_slug) values(:name,:slug) returning id'),{'name':name,'slug':slug}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),{'company':company,'user':user_id})
-            for order,(code,label) in enumerate([('power-charging','Power & Charging'),('home-appliances','Home Appliances'),('travel-luggage','Travel & Luggage'),('corporate-gifts','Corporate Gifts')]):
-                self.db.execute(text('insert into product_categories(company_id,code,name,display_title,home_order) values(:company,:code,:name,:name,:order)'),{'company':company,'code':code,'name':label,'order':order})
             self.db.commit()
         except IntegrityError as error:
             self.db.rollback()

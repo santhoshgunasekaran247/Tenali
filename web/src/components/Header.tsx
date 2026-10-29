@@ -30,7 +30,9 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
     window.addEventListener("company-updated", load);
     return () => { active = false; window.removeEventListener("company-updated", load); };
   }, [auth.user?.company_id,auth.storefront]);
-  const logo = company?.logo_url||auth.storefront?.logo_url||auth.user?.logo_url;
+  const tenantLogo=company?.logo_url||auth.storefront?.logo_url||auth.user?.logo_url;
+  const logo=tenantLogo||(!auth.storefront&&!auth.user?"/tenali-logo.png":undefined);
+  const logoSrc=logo==="/tenali-logo.png"?logo:toAssetUrl(logo);
   const companyName=company?.company_name||auth.storefront?.company_name||auth.user?.company_name;
   const displayBrand=auth.storefront||company||{company_name:companyName||"Tenali",nickname:auth.user?.nickname};
   const navigation=company?.storefront_content?.navigation||auth.storefront?.storefront_content?.navigation||{};
@@ -41,10 +43,15 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   const brandHref=auth.user&&inPortal?"/portal":"/";
   const browserTitle=storefrontText(storefrontCompany?.storefront_content?.home.browser_title||"{nickname} | Catalogue & Workspace",displayBrand);
   useEffect(()=>{if(!auth.loading)document.title=companyName?browserTitle:'Tenali | Business Workspace';},[auth.loading,companyName,browserTitle]);
+  useEffect(()=>{
+    const image=new URL(logo?toAssetUrl(logo):"/tenali-logo.png",window.location.origin).href;
+    document.querySelector('meta[property="og:image"]')?.setAttribute("content",image);
+    document.querySelector('meta[name="twitter:image"]')?.setAttribute("content",image);
+  },[logo]);
   return (
     <header className="header">
       <Link className="brand" to={brandHref} aria-label={companyName||'Tenali'}>
-        {logo ? <img src={toAssetUrl(logo)} alt={companyName || "Company"} loading="eager" decoding="async" /> : auth.loading?<span className="brand-loading" aria-hidden="true"/>:<strong>{companyName||'Tenali'}</strong>}
+        {logo ? <img src={logoSrc} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : auth.loading?<span className="brand-loading" aria-hidden="true"/>:<strong>{companyName||'Tenali'}</strong>}
       </Link>
       <nav className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onClick={(event)=>{if(menuOpen&&(event.target as HTMLElement).closest("a,button"))onMenuToggle();}}>
         {auth.user ? <div className="workspace-nav-links">

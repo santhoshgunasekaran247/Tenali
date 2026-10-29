@@ -162,6 +162,7 @@ class TenantBoundaryTests(unittest.TestCase):
 
     def test_real_financial_inventory_and_file_ids_stay_private(self):
         import base64
+        from sqlalchemy import text
         first,cookies_a,_=self.register('assets-a')
         account=self.client.post('/accounts',json={'nickname':'Private bank','account_type':'bank','is_company_account':True},headers=self.headers(cookies_a))
         self.assertEqual(account.status_code,201,account.text)
@@ -192,6 +193,11 @@ class TenantBoundaryTests(unittest.TestCase):
         own=self.client.post('/auth/workspaces',json={'company_name':'Additional own company','slug':'extra-'+self.suffix},headers=self.headers(cookies_b))
         self.assertEqual(own.status_code,201,own.text)
         self.assertEqual(len(own.json()['workspaces']),2)
+        with self.factory() as db:
+            company=db.execute(text('select email from companies where id=:id'),{'id':own.json()['user']['company_id']}).mappings().one()
+            category_count=db.execute(text('select count(*) from product_categories where company_id=:id'),{'id':own.json()['user']['company_id']}).scalar_one()
+            self.assertIsNone(company['email'])
+            self.assertEqual(category_count,0)
         own_cookies=dict(self.client.cookies)
         switched=self.client.post('/auth/switch',json={'company_id':second['user']['company_id']},headers=self.headers(own_cookies))
         self.assertEqual(switched.status_code,200,switched.text)

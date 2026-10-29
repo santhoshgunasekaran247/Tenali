@@ -201,11 +201,19 @@ export function CompanySetupPage() {
         <PortalHomeLink />
         <h1>Company Setup</h1>
       </section>
+      <nav className="company-setup-nav" aria-label="Company settings sections">
+        <a href="#company-profile">Profile & Contact</a>
+        <a href="#storefront-copy">Storefront Copy</a>
+        <a href="#site-colours">Site Colours</a>
+        <a href="#brand-assets">Logo & Signature</a>
+        <a href="#invoice-wording">Invoice Wording</a>
+        <a href="#invoice-colours">Invoice Colours</a>
+      </nav>
       {loading ? <p className="company-setup-status">Loading...</p> : null}
       {error ? <p className="company-setup-status ops-error" role="alert">{error}</p> : null}
       {message ? <p className="company-setup-status" role="status">{message}</p> : null}
       {company ? <form className="company-setup-form ops-form" onSubmit={save}>
-        <fieldset disabled={saving} className="company-setup-section">
+        <fieldset id="company-profile" disabled={saving} className="company-setup-section">
           <legend>Company Details</legend>
           <div className="company-fields">
             <label>Company Name<input required maxLength={200} value={company.company_name} onChange={(event) => update({ company_name: event.target.value })} /></label>
@@ -220,7 +228,7 @@ export function CompanySetupPage() {
             <label>Social Links (JSON)<textarea rows={3} value={socialLinks} onChange={(event) => setSocialLinks(event.target.value)} /></label>
           </div>
         </fieldset>
-        <section className="company-storefront-copy">
+        <section id="storefront-copy" className="company-storefront-copy">
           <h2>Storefront Copy</h2>
           <p>Update the customer-facing wording without changing products or company records.</p>
           {(Object.keys(STOREFRONT_COPY_FIELDS) as StorefrontCopyGroup[]).map((group) => (
@@ -240,7 +248,7 @@ export function CompanySetupPage() {
             </details>
           ))}
         </section>
-        <fieldset disabled={saving} className="company-setup-section">
+        <fieldset id="site-colours" disabled={saving} className="company-setup-section">
           <legend>Site Colours</legend>
           <div className="site-theme-grid">
             {SITE_THEME_FIELDS.map(([key, label]) => <div className="site-theme-field" key={key}>
@@ -258,7 +266,7 @@ export function CompanySetupPage() {
             <button className="btn light" type="button" disabled={saving} onClick={() => update({ site_theme: { ...DEFAULT_SITE_THEME } })}><RotateCcw size={16} aria-hidden="true" />Reset Site Colours</button>
           </div>
         </fieldset>
-        <fieldset disabled={saving} className="company-setup-section">
+        <fieldset id="brand-assets" disabled={saving} className="company-setup-section">
           <legend>Logo & Signature</legend>
           <div className="company-fields">
             <AssetInput label="Company Logo" value={company.logo_url} disabled={saving} onChange={(value) => update({ logo_url: value || undefined })} onError={setError} />
@@ -267,7 +275,7 @@ export function CompanySetupPage() {
             <label>Signature Width (mm)<input type="number" min={15} max={50} required value={company.invoice_settings.signature_width_mm} onChange={(event) => updateInvoice({ signature_width_mm: Number(event.target.value) })} /></label>
           </div>
         </fieldset>
-        <fieldset disabled={saving} className="company-setup-section">
+        <fieldset id="invoice-wording" disabled={saving} className="company-setup-section">
           <legend>Invoice Wording</legend>
           <div className="company-fields">
             {([
@@ -283,7 +291,7 @@ export function CompanySetupPage() {
             <label className="company-field-wide">Footer Text<textarea rows={2} maxLength={240} value={company.invoice_settings.footer_text} onChange={(event) => updateInvoice({ footer_text: event.target.value })} /></label>
           </div>
         </fieldset>
-        <fieldset disabled={saving} className="company-setup-section">
+        <fieldset id="invoice-colours" disabled={saving} className="company-setup-section">
           <legend>Invoice Colours</legend>
           <div className="company-colors">
             {([["primary_color", "Primary / Footer"], ["accent_color", "Separator"], ["footer_text_color", "Footer Text"]] as const).map(([key, label]) => (

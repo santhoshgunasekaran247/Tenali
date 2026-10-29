@@ -224,11 +224,12 @@ export function PortalPage() {
 
       <section className="portal-groups">
         <article className="portal-group-card">
-          <div className="portal-group-head">
-            <h2>Single-Person Workflow</h2>
-            <span>One sequence for day, month, and year closing</span>
-          </div>
-          <div className="ops-workflow-grid">
+          <details className="portal-workflow-disclosure">
+            <summary className="portal-group-head">
+              <h2>Single-Person Workflow</h2>
+              <span>One sequence for day, month, and year closing</span>
+            </summary>
+            <div className="ops-workflow-grid">
             {workflowSections.map((section) => {
               const doneMap = completedBySection[section.key] || {};
               const doneCount = section.steps.filter((step) => doneMap[step.id]).length;
@@ -266,7 +267,8 @@ export function PortalPage() {
                 </article>
               );
             })}
-          </div>
+            </div>
+          </details>
         </article>
       </section>
 

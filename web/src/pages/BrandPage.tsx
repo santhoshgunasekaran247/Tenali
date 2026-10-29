@@ -152,8 +152,9 @@ export function BrandPage() {
   const backHref = tenantBase()+(isCategoryView ? "/brand.html?category=all" : "/#brands");
   const backLabel = catalogText(isCategoryView ? "all_categories_link" : "all_brands_link");
   const bestPricingMessage = encodeURIComponent(storefrontText(catalogCopy.whatsapp_prefilled_message,data.company,{brand_name:heading}));
+  const firstProductImage = isCategoryView ? data.products.map((item) => item.image_urls?.split("|").map((image) => image.trim()).find(Boolean) || item.image_url).find(Boolean) : undefined;
   const heroImage = isCategoryView
-    ? toAssetUrl(data.selected_category!.image_url)
+    ? toAssetUrl(firstProductImage || data.selected_category!.image_url)
     : toAssetUrl(`brand-logos/${data.selected_brand!.code}.png`);
   const heroAlt = isCategoryView ? heading : `${heading} logo`;
 

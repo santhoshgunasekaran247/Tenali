@@ -119,7 +119,7 @@ class StorefrontHomeCopy(BaseModel):
     brands_description: str = Field(default="Explore available product ranges with sample MRP and our price for catalogue display.", max_length=500)
     brand_catalog_label: str = Field(default="Corporate catalogue", max_length=100)
     brand_action: str = Field(default="View products →", max_length=100)
-    why_eyebrow: str = Field(default="WHY {nickname}", max_length=100)
+    why_eyebrow: str = Field(default="WHY {company_name}", max_length=100)
     why_heading_first: str = Field(default="Thoughtful sourcing.", max_length=120)
     why_heading_second: str = Field(default="Seamless execution.", max_length=120)
     why_description: str = Field(default="We understand the occasion, audience and requirement, then source, customise and coordinate the right gifting solution end-to-end.", max_length=600)

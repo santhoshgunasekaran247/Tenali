@@ -119,6 +119,8 @@ class CatalogService:
                     home_order
                 from product_categories
                 where company_id = :company_id and is_active = true
+                  and exists(select 1 from products product where product.company_id=product_categories.company_id
+                      and product.category_id=product_categories.id and product.is_active=true and product.catalog_visible=true)
                 order by home_order asc, name asc
                 """
             ),
@@ -194,6 +196,8 @@ class CatalogService:
                     home_order
                 from product_categories
                 where company_id = :company_id and is_active = true
+                  and exists(select 1 from products product where product.company_id=product_categories.company_id
+                      and product.category_id=product_categories.id and product.is_active=true and product.catalog_visible=true)
                 order by home_order asc, name asc
                 """
             ),
