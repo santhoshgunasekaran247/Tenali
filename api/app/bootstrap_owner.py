@@ -25,8 +25,8 @@ def main():
             raise SystemExit("Company not found")
         if db.execute(text("select user_id from tenant_memberships where company_id=:company and role='owner' and is_active=true"),{"company":args.company_id}).first():
             raise SystemExit("Company already has an owner; use normal team administration")
-        user=db.execute(text("insert into tenant_users(email,display_name,password_hash) values(:email,:name,:hash) returning id"),
-                        {"email":validated.email,"name":validated.display_name,"hash":password_hash(password)}).scalar_one()
+        user=db.execute(text("insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:hash) returning id"),
+                        {"company":args.company_id,"email":validated.email,"name":validated.display_name,"hash":password_hash(password)}).scalar_one()
         db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),{"company":args.company_id,"user":user})
         db.commit()
         print("Owner created. Workspace address:",company["tenant_slug"])

@@ -85,6 +85,10 @@ def login(payload: Login, request: Request, response: Response, db=Depends(ident
     auth.throttle("login-ip:"+(request.client.host if request.client else "unknown"),80)
     auth.throttle("login:"+payload.email.strip().lower()+":"+(request.client.host if request.client else "unknown"))
     tenant = host_company(db, request)
+    if tenant and request.headers.get('X-Tenant-Slug'):
+        selected=company_by_slug(db,request.headers['X-Tenant-Slug'])
+        if not selected or str(selected['id'])!=str(tenant['id']):
+            raise HTTPException(403,"Workspace does not match this domain")
     if not tenant and request.headers.get('X-Tenant-Slug'):
         tenant=company_by_slug(db,request.headers['X-Tenant-Slug'])
         if not tenant:
@@ -134,6 +138,7 @@ class WorkspaceSwitch(BaseModel):
 class WorkspaceCreate(BaseModel):
     company_name:str=Field(min_length=1,max_length=200)
     slug:str=Field(pattern=r'^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$',max_length=48)
+    password:str=Field(min_length=12,max_length=128)
     _name=field_validator('company_name')(Registration.clean_name.__func__)
     _slug=field_validator('slug')(Registration.valid_slug.__func__)
 
@@ -144,7 +149,7 @@ def create_workspace(payload:WorkspaceCreate,request:Request,response:Response,i
         raise HTTPException(403,'Create additional workspaces from the platform application')
     auth=TenantAuth(db)
     auth.throttle('workspace:'+str(identity['user_id']),5)
-    token=auth.create_workspace(str(identity['user_id']),payload.company_name,payload.slug)
+    token=auth.create_workspace(str(identity['user_id']),payload.company_name,payload.slug,payload.password)
     db.execute(text('delete from tenant_sessions where token_hash=:token'),{'token':token_digest(request.cookies.get(SESSION_COOKIE,''))})
     db.commit()
     set_session(response,request,token)

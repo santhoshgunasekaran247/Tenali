@@ -55,6 +55,7 @@ class CatalogVariantOut(BaseModel):
 
 class ProductOut(BaseModel):
     id: UUID
+    minimum_order_quantity: int = Field(ge=1, le=100)
     portal_product_id: str | None = None
     name: str
     description: str | None = None

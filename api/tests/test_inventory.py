@@ -28,6 +28,11 @@ class InventoryRulesTests(unittest.TestCase):
             resolve_catalog_price(100, 110, 0, "price")
 
     def test_product_and_reorder_validation(self):
+        self.assertEqual(ProductInput(name="Test").minimum_order_quantity, 1)
+        self.assertEqual(ProductInput(name="Test", minimum_order_quantity=100).minimum_order_quantity, 100)
+        for minimum in [0, -1, 101, 1.5, True, "5"]:
+            with self.assertRaises(ValidationError):
+                ProductInput(name="Test", minimum_order_quantity=minimum)
         with self.assertRaises(ValidationError):
             ProductInput(name="Test", discount_percent=101)
         with self.assertRaises(ValidationError):
@@ -75,6 +80,9 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.text = text
         self.connection = engine.connect()
         self.outer = self.connection.begin()
+        from schema_support import apply_customer_migration, apply_product_minimum_migration
+        apply_customer_migration(self.connection)
+        apply_product_minimum_migration(self.connection)
         self.db = Session(bind=self.connection, join_transaction_mode="create_savepoint")
         self.company, self.other, self.vendor_a, self.vendor_b = [str(uuid4()) for _ in range(4)]
         for company in [self.company, self.other]:

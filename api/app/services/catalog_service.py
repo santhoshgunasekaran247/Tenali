@@ -20,6 +20,7 @@ def _catalog_base_query() -> str:
             p.id,
             p.portal_product_id,
             p.name,
+            p.minimum_order_quantity,
             p.description,
             p.image_url,
             p.image_urls,

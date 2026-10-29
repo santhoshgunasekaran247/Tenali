@@ -53,11 +53,14 @@ class TenantBoundary(BaseHTTPMiddleware):
         if request.method == "OPTIONS" or path in {"/health", "/health/", "/docs", "/redoc", "/openapi.json", "/domain-authorization"} or path.startswith("/catalog-assets/"):
             return await call_next(request)
         try:
-            if path.startswith('/auth/'):
+            if path.startswith(('/auth/', '/shop/', '/platform/')):
                 with SessionLocal() as db:
                     if not host_company(db,request) and not platform_host(request):
                         raise HTTPException(404,'This domain is not configured for a workspace')
-                return await call_next(request)
+                response = await call_next(request)
+                response.headers["Cache-Control"] = "private, no-store"
+                response.headers["Vary"] = "Host, Cookie, X-Tenant-Slug"
+                return response
             with SessionLocal() as db:
                 is_public = request.method in {"GET","HEAD"} and (path in PUBLIC_PATHS or path.startswith("/catalog/products/"))
                 from_host = host_company(db, request)

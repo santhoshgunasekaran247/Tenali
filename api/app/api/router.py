@@ -2,6 +2,8 @@ from fastapi import APIRouter
 
 from app.api.routes.accounts import router as accounts_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.platform import router as platform_router
+from app.api.routes.shop import router as shop_router, admin_router as checkout_admin_router
 from app.api.routes.billing import router as billing_router
 from app.api.routes.catalog import router as catalog_router
 from app.api.routes.collections import router as collections_router
@@ -17,6 +19,9 @@ from app.api.routes.settlements import router as settlements_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router,prefix="/auth",tags=["authentication"])
+api_router.include_router(platform_router,prefix="/platform",tags=["platform administration"])
+api_router.include_router(shop_router,prefix="/shop",tags=["shopper accounts"])
+api_router.include_router(checkout_admin_router,prefix="/checkout-admin",tags=["checkout administration"])
 api_router.include_router(health_router)
 api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(company_router, prefix="/company", tags=["company"])

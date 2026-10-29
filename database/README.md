@@ -82,13 +82,19 @@ tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_invent
     request-time DDL that could deadlock with active postings/audit triggers.
 
 Authentication and tenant membership are now enforced. Apply migrations through
-`017_tenant_slug_aliases`; the baseline SQL alone does not provision identity/RLS policies.
+`019_product_minimum_order`; the baseline SQL alone does not provision identity/RLS policies.
 See [multi-tenant deployment](../docs/MULTI_TENANT_DEPLOYMENT.md) for registration,
 owner bootstrap, role isolation and standalone-domain/HTTPS setup. Existing companies
 must be bootstrapped by an administrator; public registration creates new companies only.
 Company Setup also controls tenant storefront copy, display name, logo, theme and the
 customer-facing `/c/<workspace-address>`. Changed workspace addresses retain their old
 paths as aliases and redirect to the current address.
+Workspace staff credentials are independent per company. Shopper accounts, platform
+operators and their sessions are separate. Revision 018 also adds encrypted workspace
+checkout settings and tenant-scoped orders; deploy the server credential-encryption
+key before configuring Razorpay/Shiprocket. Unpaid checkout reservations protect
+owned stock for 30 minutes. See the deployment guide for migration, bootstrap,
+payment verification, fulfillment reconciliation and live-provider release gates.
 SMTP/SMS provider delivery is not configured. Full chart-of-accounts accounting, verified opening balances, inventory
 valuation policy, partial credit/debit notes/refunds and accountant-approved statutory
 returns remain separate implementation/setup gates. The current money-movement

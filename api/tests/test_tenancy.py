@@ -36,7 +36,7 @@ class TenantSecurityTests(unittest.TestCase):
 
 
 @unittest.skipUnless(os.getenv('TENALI_TEST_DB')=='1','Set TENALI_TEST_DB=1 for rollback-only tenant HTTP/database tests')
-class TenantBoundaryTests(unittest.TestCase):
+class TenantDatabaseCase(unittest.TestCase):
     def setUp(self):
         from dotenv import load_dotenv
         load_dotenv('api/.env')
@@ -45,26 +45,54 @@ class TenantBoundaryTests(unittest.TestCase):
         from app.main import app
         from fastapi.testclient import TestClient
         self.connection=engine.connect()
+        self.addCleanup(self.connection.close)
         self.outer=self.connection.begin()
+        self.addCleanup(self.outer.rollback)
+        from sqlalchemy import text
+        from schema_support import apply_customer_migration, apply_product_minimum_migration
+        apply_customer_migration(self.connection,getattr(self,'prepare_legacy_accounts',None))
+        apply_product_minimum_migration(self.connection)
         self.stack=ExitStack()
+        self.addCleanup(self.stack.close)
         connection=self.connection
         class FixtureSession(Session):
+            def execute(inner,*args,**kwargs):
+                scoped_connection=inner.connection()
+                scoped_connection.exec_driver_sql('RESET ROLE')
+                context=inner.info.get('tenant_context')
+                if context:
+                    scoped_connection.exec_driver_sql('SET LOCAL ROLE tenali_runtime')
+                    scoped_connection.execute(text("select set_config('app.tenant_id',:company,true),set_config('app.actor_user_id',:actor,true)"),
+                                              {'company':str(context['company_id']),'actor':str(context.get('user_id') or '')})
+                return super().execute(*args,**kwargs)
             def close(inner):
                 super().close()
-                if connection.in_transaction():
+                from psycopg.pq import TransactionStatus
+                if connection.in_transaction() and connection.connection.driver_connection.info.transaction_status!=TransactionStatus.INERROR:
                     connection.exec_driver_sql('RESET ROLE')
                     connection.exec_driver_sql("select set_config('app.tenant_id','',true),set_config('app.actor_user_id','',true)")
-        self.factory=lambda:FixtureSession(bind=self.connection,join_transaction_mode='create_savepoint')
-        for target in ['app.core.database.SessionLocal','app.services.tenant_context.SessionLocal','app.api.routes.auth.SessionLocal','app.main.SessionLocal']:
+        self.factory=lambda:FixtureSession(bind=self.connection,join_transaction_mode='rollback_only')
+        for target in ['app.core.database.SessionLocal','app.services.tenant_context.SessionLocal','app.api.routes.auth.SessionLocal','app.api.routes.shop.SessionLocal','app.main.SessionLocal']:
             self.stack.enter_context(patch(target,self.factory))
         self.stack.enter_context(patch.dict(os.environ,{'TENALI_ENV':'development','TENALI_BASE_DOMAIN':'tenali-business.com'}))
-        self.client=self.stack.enter_context(TestClient(app,base_url='http://localhost'))
+        class FixtureClient(TestClient):
+            def request(inner,*args,**kwargs):
+                savepoint=connection.begin_nested()
+                try:
+                    response=super().request(*args,**kwargs)
+                    if savepoint.is_active:
+                        from psycopg.pq import TransactionStatus
+                        if connection.connection.driver_connection.info.transaction_status==TransactionStatus.INERROR:
+                            savepoint.rollback()
+                        else:
+                            savepoint.commit()
+                    return response
+                except BaseException:
+                    if savepoint.is_active:
+                        savepoint.rollback()
+                    raise
+        self.client=self.stack.enter_context(FixtureClient(app,base_url='http://localhost'))
         self.suffix=uuid4().hex[:8]
-
-    def tearDown(self):
-        self.stack.close()
-        self.outer.rollback()
-        self.connection.close()
 
     def register(self,prefix):
         email=f'{prefix}-{self.suffix}@example.com'
@@ -81,6 +109,8 @@ class TenantBoundaryTests(unittest.TestCase):
         self.client.cookies.clear()
         self.client.cookies.update(cookies)
 
+
+class TenantBoundaryTests(TenantDatabaseCase):
     def test_registration_isolation_id_tampering_roles_and_download_boundary(self):
         from sqlalchemy import text
         self.assertEqual(self.client.get('/accounts').status_code,401)
@@ -104,7 +134,7 @@ class TenantBoundaryTests(unittest.TestCase):
         created=self.client.post('/auth/team',json={'display_name':'Viewer','email':viewer_email,'password':'Viewer test password 123!','role':'viewer'},headers=self.headers(cookies_a))
         self.assertEqual(created.status_code,201,created.text)
         self.client.cookies.clear()
-        login=self.client.post('/auth/login',json={'email':viewer_email,'password':'Viewer test password 123!'},headers={'Origin':'http://localhost'})
+        login=self.client.post('/auth/login',json={'email':viewer_email,'password':'Viewer test password 123!'},headers={'Origin':'http://localhost','X-Tenant-Slug':first['user']['tenant_slug']})
         self.assertEqual(login.status_code,200,login.text)
         viewer_cookies=dict(self.client.cookies)
         self.assertEqual(self.client.get('/parties').status_code,200)
@@ -190,9 +220,9 @@ class TenantBoundaryTests(unittest.TestCase):
         self.assertEqual(self.client.post('/inventory/products/'+product_id+'/stock',json={'direction':'OUT','quantity':1,'notes':'Forbidden'},headers=self.headers(cookies_b)).status_code,404)
         self.assertEqual(self.client.post('/accounts/business-payments',json={'from_account_id':account.json()['id'],'purpose':'expense','amount':1},headers=self.headers(cookies_b)).status_code,404)
         self.assertEqual(self.client.post('/auth/switch',json={'company_id':first['user']['company_id']},headers=self.headers(cookies_b)).status_code,403)
-        own=self.client.post('/auth/workspaces',json={'company_name':'Additional own company','slug':'extra-'+self.suffix},headers=self.headers(cookies_b))
+        own=self.client.post('/auth/workspaces',json={'company_name':'Additional own company','slug':'extra-'+self.suffix,'password':'Independent workspace password 123!'},headers=self.headers(cookies_b))
         self.assertEqual(own.status_code,201,own.text)
-        self.assertEqual(len(own.json()['workspaces']),2)
+        self.assertEqual(len(own.json()['workspaces']),1)
         with self.factory() as db:
             company=db.execute(text('select email from companies where id=:id'),{'id':own.json()['user']['company_id']}).mappings().one()
             category_count=db.execute(text('select count(*) from product_categories where company_id=:id'),{'id':own.json()['user']['company_id']}).scalar_one()
@@ -200,5 +230,4 @@ class TenantBoundaryTests(unittest.TestCase):
             self.assertEqual(category_count,0)
         own_cookies=dict(self.client.cookies)
         switched=self.client.post('/auth/switch',json={'company_id':second['user']['company_id']},headers=self.headers(own_cookies))
-        self.assertEqual(switched.status_code,200,switched.text)
-        self.assertEqual(switched.json()['user']['company_id'],second['user']['company_id'])
+        self.assertEqual(switched.status_code,403,switched.text)

@@ -13,14 +13,15 @@ export function AccessPage({register=false}:{register?:boolean}){
   const submit=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{
     let identity;
     if(register){if(form.password!==form.confirmation)throw new Error('Passwords do not match.');identity=await auth.register({company_name:form.company_name,slug:form.slug,display_name:form.display_name,email:form.email,password:form.password});}
-    else identity=await auth.login(form.email,form.password);
+    else identity=await auth.login(form.email,form.password,!tenantBase()&&!auth.storefront?form.slug:undefined);
     const next=(location.state as {next?:string}|null)?.next;const destination=next?.startsWith('/portal')?next:'/portal';
     if(!tenantBase()&&!auth.storefront){window.location.assign(`/c/${identity.tenant_slug}${destination}`);return;}
     navigate(destination,{replace:true});
   }catch(failure){setError(failure instanceof Error?failure.message:'Unable to sign in.');}finally{setBusy(false);}};
-  return <main className="access-page"><section className="access-panel"><div className="access-title"><Building2 size={26}/><div><h1>{register?'Create Your Workspace':'Sign In'}</h1><p>{auth.storefront?.company_name||'Tenali Business Workspace'}</p></div></div>
+  return <main className="access-page"><section className="access-panel"><div className="access-title"><Building2 size={26}/><div><h1>{register?'Create Your Workspace':'Workspace Staff Sign In'}</h1><p>{auth.storefront?.company_name||'Tenali Business Workspace'}</p></div></div>
     {auth.error?<p role="alert" className="ops-error">{auth.error}<button className="ops-link-btn" onClick={()=>void auth.refresh()}>Retry</button></p>:null}{error?<p className="ops-error" role="alert">{error}</p>:null}
     <form className="ops-form" onSubmit={submit}><fieldset disabled={busy} className="access-fields">
+      {!register&&!tenantBase()&&!auth.storefront?<label>Workspace Address<input required minLength={3} maxLength={48} value={form.slug} autoComplete="organization" onChange={event=>setForm(previous=>({...previous,slug:event.target.value.toLowerCase()}))}/><span className="access-workspace-url">Use the address for the workspace whose credentials you are entering.</span></label>:null}
       {register?<><label>Company Name<input required maxLength={200} autoComplete="organization" value={form.company_name} onChange={event=>setForm(previous=>({...previous,company_name:event.target.value}))}/></label>
         <label>Workspace Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9]|-){1,46}[a-z0-9]" value={form.slug} onChange={event=>setForm(previous=>({...previous,slug:event.target.value.toLowerCase()}))}/><span className="access-workspace-url">/c/{form.slug||'your-company'}</span></label>
         <label>Your Name<input required maxLength={150} autoComplete="name" value={form.display_name} onChange={event=>setForm(previous=>({...previous,display_name:event.target.value}))}/></label></>:null}
@@ -30,6 +31,6 @@ export function AccessPage({register=false}:{register?:boolean}){
       <button className="btn" disabled={busy}>{register?<UserPlus size={16}/>:<LogIn size={16}/>} {busy?'Please wait...':register?'Create Workspace':'Sign In'}</button>
     </fieldset></form>
     {!tenantBase()&&!auth.storefront?<p>{register?'Already registered?':'New business?'} <Link to={register?'/login':'/register'}>{register?'Sign in':'Create a workspace'}</Link></p>:null}
-    {auth.storefront?<Link className="ops-inline-link" to="/">Back to Storefront</Link>:null}
+    {auth.storefront?<><p><Link to="/account">Shopper sign in / Create shopper account</Link></p><Link className="ops-inline-link" to="/">Back to Storefront</Link></>:<p><Link to="/platform">Platform administrator console</Link></p>}
   </section></main>;
 }

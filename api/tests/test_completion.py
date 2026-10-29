@@ -51,6 +51,9 @@ class HistoricalAgingTests(unittest.TestCase):
         from app.services.purchases_service import PurchasesService
         with engine.connect() as connection:
             outer=connection.begin()
+            from schema_support import apply_customer_migration, apply_product_minimum_migration
+            apply_customer_migration(connection)
+            apply_product_minimum_migration(connection)
             db=Session(bind=connection,join_transaction_mode="create_savepoint")
             try:
                 company,party=str(uuid4()),str(uuid4())

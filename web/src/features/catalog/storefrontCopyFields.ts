@@ -5,7 +5,7 @@ export const STOREFRONT_COPY_FIELDS: Record<StorefrontCopyGroup, readonly Storef
   navigation: [
     ["collection", "Collection link"], ["categories", "Categories link"], ["best_sellers", "Best sellers link"],
     ["specials", "Specials link"], ["brands", "Brands link"], ["contact", "Contact link"],
-    ["sign_in", "Sign-in link"], ["operations_portal", "Operations portal link"], ["storefront", "Storefront link"],
+    ["sign_in", "Workspace staff sign-in link"], ["shopper_account", "Shopper account link"], ["operations_portal", "Operations portal link"], ["storefront", "Storefront link"],
     ["account_menu", "Account menu"], ["new_workspace", "New workspace action"], ["account", "Account action"], ["sign_out", "Sign-out action"],
   ],
   home: [
@@ -58,6 +58,8 @@ export const STOREFRONT_COPY_FIELDS: Record<StorefrontCopyGroup, readonly Storef
     ["home_breadcrumb", "Home breadcrumb"], ["fallback_brand", "Fallback brand"], ["variant_label", "Variant selector label"],
     ["base_product", "Base product option"], ["mrp_label", "MRP label"], ["our_price_label", "Our price label"],
     ["request_quote", "Price unavailable text"], ["discount_suffix", "Discount label"], ["item_name_label", "Item name label"],
+    ["add_to_cart", "Add to cart action"], ["checkout_variant_required", "Cart variant selection prompt"],
+    ["online_purchase_help", "Online purchase explanation"], ["whatsapp_purchase_help", "WhatsApp enquiry explanation"],
     ["size_label", "Size label"], ["colour_label", "Colour label"], ["weight_label", "Weight label"],
     ["height_label", "Height label"], ["width_label", "Width label"], ["length_label", "Length label"],
     ["bulk_heading", "Bulk pricing heading"], ["bulk_description", "Bulk pricing description"], ["price_note", "Price note"],

@@ -280,6 +280,12 @@ class InventoryService:
         new_total = total + (payload.quantity if payload.direction == "IN" else -payload.quantity)
         if new_total < 0:
             raise HTTPException(422, "Stock cannot become negative")
+        if payload.direction == "OUT":
+            from app.services.shop_stock import reserved_stock
+            reserved = reserved_stock(self.db, self.company_id, product_id, variant_id,
+                                      reference_id if reference_type == "shop_order" else None)
+            if new_total < reserved:
+                raise HTTPException(422, "Stock is reserved by an active shopper checkout")
         if rows:
             for index, row in enumerate(rows):
                 self.db.execute(text("update stock_balances set quantity=:quantity where id=:id"), {"id": row["id"], "quantity": new_total if index == 0 else Decimal("0")})
@@ -288,7 +294,7 @@ class InventoryService:
                             {"company": self.company_id, "product": product_id, "variant": variant_id, "quantity": new_total})
         self.db.execute(text("""insert into stock_movements(company_id,product_id,variant_id,movement_type,quantity,notes,reference_type,reference_id)
             values(:company,:product,:variant,:movement,:quantity,:notes,:reference_type,:reference_id)"""),
-            {"company": self.company_id, "product": product_id, "variant": variant_id, "movement": "SALE" if reference_type=="invoice" else "PURCHASE" if reference_type=="purchase_receipt" else f"ADJUSTMENT_{payload.direction}", "quantity": payload.quantity,
+            {"company": self.company_id, "product": product_id, "variant": variant_id, "movement": "SALE" if reference_type in {"invoice", "shop_order"} else "PURCHASE" if reference_type=="purchase_receipt" else f"ADJUSTMENT_{payload.direction}", "quantity": payload.quantity,
              "notes": payload.notes,"reference_type":reference_type,"reference_id":reference_id})
         result = self.detail(product_id)
         if commit:

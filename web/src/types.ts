@@ -92,6 +92,7 @@ export type InventoryItemInput = {
 };
 export type InventoryProductInput = InventoryItemInput & {
   name: string; brand_id: string | null; category_id: string | null; hsn_code: string | null;
+  minimum_order_quantity: number;
   image_url: string | null; image_urls: string[]; catalog_visible: boolean;
   best_seller: boolean; sru_special: boolean; home_order: number;
 };
@@ -144,6 +145,7 @@ export type CatalogCategory = {
 
 export type CatalogProduct = {
   id: string;
+  minimum_order_quantity: number;
   portal_product_id: string;
   name: string;
   description: string;

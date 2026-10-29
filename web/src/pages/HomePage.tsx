@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { api } from "../api";
 import type { CatalogHomeResponse } from "../types";
@@ -12,12 +12,18 @@ import { useAuth } from "../features/auth";
 
 export function HomePage() {
   const {storefront}=useAuth();
+  const location = useLocation();
   const [data, setData] = useState<CatalogHomeResponse>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     api.home().then(setData).catch((e: Error) => setError(e.message));
   }, []);
+  useEffect(() => {
+    if (!data || !location.hash) return;
+    const frame = requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());
+    return () => cancelAnimationFrame(frame);
+  }, [data, location.key, location.hash]);
 
   const publicCompany=storefront||{company_name:"Tenali",nickname:undefined,storefront_content:undefined};
   const loadingCopy=publicCompany.storefront_content?.home||{};

@@ -20,6 +20,7 @@ export function WorkspaceBar(){
       <div className="workspace-identity"><strong>{auth.user.company_name}</strong><span>{auth.user.display_name} · {auth.user.role}</span></div>
       {!location.pathname.startsWith('/portal')?<Link to="/portal" className="workspace-action">{label("operations_portal","Operations Portal")}</Link>:null}
       <Link to="/portal/account" className="workspace-action">{label("account","Account")}</Link>
+      {auth.user.role==="owner"||auth.user.role==="admin"?<Link to="/portal/checkout" className="workspace-action">Shopper Checkout &amp; Orders</Link>:null}
       <button className="workspace-action" disabled={busy} onClick={()=>{setBusy(true);void auth.logout().catch(failure=>setError(String(failure))).finally(()=>setBusy(false));}}><LogOut size={15}/>{label("sign_out","Sign Out")}</button>
       {error?<p role="alert" className="ops-error">{error}</p>:null}
     </div>

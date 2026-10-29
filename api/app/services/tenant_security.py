@@ -8,7 +8,7 @@ import secrets
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PASSWORD_ITERATIONS = 600_000
-RESERVED_SLUGS = {"app", "api", "www", "admin", "login", "register", "portal", "support", "assets", "static", "auth"}
+RESERVED_SLUGS = {"app", "api", "www", "admin", "login", "register", "portal", "support", "assets", "static", "auth", "platform", "shop", "checkout"}
 
 
 def password_hash(password: str) -> str:

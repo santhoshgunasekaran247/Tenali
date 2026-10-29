@@ -59,10 +59,10 @@ class TenantAuth:
                 union all select 1 from tenant_slug_aliases alias where alias.tenant_slug=:slug limit 1"""),{"slug":payload.slug}).first()
             if slug_taken:
                 raise HTTPException(409,"Email or workspace address is already registered. Sign in if you already have an account.")
-            user = self.db.execute(text("insert into tenant_users(email,display_name,password_hash) values(:email,:name,:hash) returning id"),
-                                   {"email": payload.email, "name": payload.display_name, "hash": password_hash(payload.password)}).scalar_one()
             company = self.db.execute(text("insert into companies(company_name,tenant_slug) values(:name,:slug) returning id"),
                                       {"name": payload.company_name, "slug": payload.slug}).scalar_one()
+            user = self.db.execute(text("insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:hash) returning id"),
+                                   {"company": company, "email": payload.email, "name": payload.display_name, "hash": password_hash(payload.password)}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"), {"company": company, "user": user})
             self.db.commit()
         except IntegrityError as error:
@@ -71,7 +71,9 @@ class TenantAuth:
         return self.session(str(user), str(company))
 
     def login(self, email: str, password: str, tenant_id: str | None = None):
-        row = self.db.execute(text("select id,password_hash,is_active from tenant_users where email=:email"), {"email": email.strip().lower()}).mappings().first()
+        if not tenant_id:
+            raise HTTPException(422, "Choose your workspace address before signing in")
+        row = self.db.execute(text("select id,password_hash,is_active from tenant_users where company_id=:company and email=:email"), {"company": tenant_id, "email": email.strip().lower()}).mappings().first()
         if not row:
             password_matches(password, f"pbkdf2_sha256${PASSWORD_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
         if not row or not row["is_active"] or not password_matches(password, row["password_hash"]):
@@ -83,24 +85,24 @@ class TenantAuth:
         return self.session(str(row["id"]), str(chosen["company_id"]))
 
     def switch(self, identity: dict, company_id: str):
-        if not any(str(member["company_id"]) == company_id for member in self.memberships(str(identity["user_id"]))):
-            raise HTTPException(403, "Workspace access denied")
-        return self.session(str(identity["user_id"]), company_id)
+        raise HTTPException(403, "Each workspace requires its own login. Open the destination workspace and sign in.")
 
-    def create_workspace(self,user_id:str,name:str,slug:str):
+    def create_workspace(self,user_id:str,name:str,slug:str,password:str):
         try:
             slug_taken=self.db.execute(text("""select 1 from companies company where company.tenant_slug=:slug
                 union all select 1 from tenant_slug_aliases alias where alias.tenant_slug=:slug limit 1"""),{"slug":slug}).first()
             if slug_taken:
                 raise HTTPException(409,"This workspace address is already registered")
-            self.db.execute(text('select id from tenant_users where id=:id and is_active=true'),{'id':user_id}).scalar_one()
+            account=self.db.execute(text('select email,display_name from tenant_users where id=:id and is_active=true'),{'id':user_id}).mappings().one()
             company=self.db.execute(text('insert into companies(company_name,tenant_slug) values(:name,:slug) returning id'),{'name':name,'slug':slug}).scalar_one()
-            self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),{'company':company,'user':user_id})
+            new_user=self.db.execute(text('insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:hash) returning id'),
+                {'company':company,'email':account['email'],'name':account['display_name'],'hash':password_hash(password)}).scalar_one()
+            self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),{'company':company,'user':new_user})
             self.db.commit()
         except IntegrityError as error:
             self.db.rollback()
             raise HTTPException(409,'This workspace address is already registered') from error
-        return self.session(user_id,str(company))
+        return self.session(str(new_user),str(company))
 
     def team(self, company_id: str):
         return [dict(row) for row in self.db.execute(text("""select account.id,account.email,account.display_name,member.role,member.is_active
@@ -109,14 +111,14 @@ class TenantAuth:
 
     def add_member(self, company_id: str, payload, actor_id:str|None=None):
         try:
-            user_id = self.db.execute(text("insert into tenant_users(email,display_name,password_hash) values(:email,:name,:password) returning id"),
-                                      {"email": payload.email, "name": payload.display_name.strip(), "password": password_hash(payload.password)}).scalar_one()
+            user_id = self.db.execute(text("insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:password) returning id"),
+                                      {"company": company_id, "email": payload.email, "name": payload.display_name.strip(), "password": password_hash(payload.password)}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,:role)"), {"company": company_id, "user": user_id, "role": payload.role})
             if actor_id:self.audit(company_id,actor_id,'TEAM_MEMBER_CREATED',str(user_id),{'role':payload.role})
             self.db.commit()
         except IntegrityError as error:
             self.db.rollback()
-            raise HTTPException(409, "This email is already registered. Existing accounts must join through a verified invitation, not a password reset here.") from error
+            raise HTTPException(409, "This email is already registered in this workspace.") from error
         return self.team(company_id)
 
     def update_member(self, company_id: str, user_id: str, role: str, active: bool, actor_id:str|None=None):

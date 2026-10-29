@@ -18,6 +18,7 @@ export function itemPayload(item: InventoryItemInput): InventoryItemInput {
 
 export function productPayload(product: InventoryProduct): InventoryProductInput {
   return { ...itemPayload(product), name: product.name, brand_id: product.brand_id, category_id: product.category_id,
+    minimum_order_quantity: product.minimum_order_quantity,
     hsn_code: product.hsn_code, image_url: product.image_url, image_urls: (product.image_urls || "").split("|").filter(Boolean),
     catalog_visible: product.catalog_visible, best_seller: product.best_seller, sru_special: product.sru_special, home_order: product.home_order };
 }
@@ -30,7 +31,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
 }) {
   const [draft, setDraft] = useState<InventoryProductInput & {variant_name:string}>(() => ({
     ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, hsn_code: null, image_url: null, image_urls: [],
-    catalog_visible: false, best_seller: false, sru_special: false, home_order: 999,
+    catalog_visible: false, best_seller: false, sru_special: false, home_order: 999, minimum_order_quantity: 1,
     ...(product && !variantMode ? productPayload(product) : {}),
     ...(variantMode ? { pricing_mode: "inherit" as const, ...(variant ? itemPayload(variant) : {}) } : {}),
     variant_name: variant?.variant_name || "",
@@ -98,6 +99,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
         <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>{draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}</label>
         <label className="inventory-wide">Gallery Image URLs<textarea rows={2} value={gallery} onChange={event=>setGallery(event.target.value)}/></label>
         <label className="inventory-check"><input type="checkbox" checked={draft.catalog_visible} onChange={event=>patch({catalog_visible:event.target.checked})}/>Visible in customer catalog</label>
+        <label>Minimum online order quantity<input required type="number" min={1} max={100} step={1} value={draft.minimum_order_quantity} onChange={event=>patch({minimum_order_quantity:Number(event.target.value)})}/><small>Starts the cart at this quantity. Applies separately to each size / colour. Use 1 for no bulk minimum; online checkout supports up to 100 units per item.</small></label>
         <label className="inventory-check"><input type="checkbox" checked={draft.best_seller} onChange={event=>patch({best_seller:event.target.checked})}/>Best seller</label>
         <label className="inventory-check"><input type="checkbox" checked={draft.sru_special} onChange={event=>patch({sru_special:event.target.checked})}/>SRU special</label>
         <label>Catalog Order<input type="number" min="0" max="99999" value={draft.home_order} onChange={event=>patch({home_order:Number(event.target.value)})}/></label></>:null}

@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Create platform administrator",
+			"type": "shell",
+			"command": "Set-Location 'D:\\GitRepo\\Tenali\\api'; & 'D:\\GitRepo\\Tenali\\.venv\\Scripts\\python.exe' -m app.bootstrap_platform --email 'santhoshgunasekaran2@gmail.com' --name 'Santhosh Gunasekaran'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Tenali web",
+			"type": "shell",
+			"command": "Set-Location 'D:\\GitRepo\\Tenali\\web'; npm run dev -- --host localhost --port 5173 --strictPort",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Tenali API",
+			"type": "shell",
+			"command": "Set-Location 'D:\\GitRepo\\Tenali'; & 'D:\\GitRepo\\Tenali\\.venv\\Scripts\\python.exe' -m uvicorn app.main:app --app-dir api --env-file api\\.env --host 127.0.0.1 --port 8000 --reload --reload-dir api\\app",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

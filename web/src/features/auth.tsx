@@ -16,7 +16,7 @@ export async function authRequest<T>(path:string,options?:RequestInit):Promise<T
 }
 
 type AuthState={user:Identity|null;workspaces:Workspace[];storefront:PublicCompany|null;loading:boolean;error:string;refresh:()=>Promise<void>;
-  login:(email:string,password:string)=>Promise<Identity>;register:(payload:{company_name:string;slug:string;email:string;display_name:string;password:string})=>Promise<Identity>;
+  login:(email:string,password:string,workspace?:string)=>Promise<Identity>;register:(payload:{company_name:string;slug:string;email:string;display_name:string;password:string})=>Promise<Identity>;
   logout:()=>Promise<void>;switchWorkspace:(id:string)=>Promise<void>};
 const Context=createContext<AuthState|null>(null);
 
@@ -47,10 +47,10 @@ export function AuthProvider({children}:{children:ReactNode}){
   },[session?.user?.tenant_slug]);
   const accept=(result:Session)=>{setSession(result);setError('');window.dispatchEvent(new Event('auth-updated'));};
   return <Context.Provider value={{user:session?.user||null,workspaces:session?.workspaces||[],storefront,loading,error,refresh,
-    login:async(email,password)=>{const result=await authRequest<Session>('/login',{method:'POST',body:JSON.stringify({email,password})});accept(result);return result.user;},
+    login:async(email,password,workspace)=>{const result=await authRequest<Session>('/login',{method:'POST',headers:workspace?{'X-Tenant-Slug':workspace}:{},body:JSON.stringify({email,password})});accept(result);return result.user;},
     register:async payload=>{const result=await authRequest<Session>('/register',{method:'POST',body:JSON.stringify(payload)});accept(result);return result.user;},
     logout:async()=>{await authRequest('/logout',{method:'POST'});setSession(null);window.dispatchEvent(new Event('auth-updated'));},
-    switchWorkspace:async id=>{const result=await authRequest<Session>('/switch',{method:'POST',body:JSON.stringify({company_id:id})});accept(result);window.location.assign(`/c/${result.user.tenant_slug}/portal`);},
+    switchWorkspace:async()=>{throw new Error('Each workspace requires its own login. Open the destination workspace and sign in.');},
   }}>{children}</Context.Provider>;
 }
 

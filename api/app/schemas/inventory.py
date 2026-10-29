@@ -42,6 +42,7 @@ class ItemDetails(BaseModel):
 
 class ProductInput(ItemDetails):
     name: str = Field(min_length=1, max_length=200)
+    minimum_order_quantity: int = Field(default=1, ge=1, le=100, strict=True)
     brand_id: UUID | None = None
     category_id: UUID | None = None
     hsn_code: str | None = Field(default=None, pattern=r"^(?:\d{4}|\d{6}|\d{8})$")

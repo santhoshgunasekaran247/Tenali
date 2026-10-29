@@ -12,6 +12,11 @@ import { BrandPage } from "./pages/BrandPage";
 import { BusinessPaymentsPage } from "./pages/BusinessPaymentsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { CompanySetupPage } from "./pages/CompanySetupPage";
+import { CheckoutPage } from "./pages/CheckoutPage";
+import { CartPage } from "./pages/CartPage";
+import { CheckoutAdminPage } from "./pages/CheckoutAdminPage";
+import { ShopperAccountPage } from "./pages/ShopperAccountPage";
+import { PlatformAdminPage } from "./pages/PlatformAdminPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { InventoryMasterPage } from "./pages/InventoryMasterPage";
@@ -35,6 +40,11 @@ export default function App() {
         <Route path="/" element={<StorefrontRoot><HomePage /></StorefrontRoot>} />
         <Route path="/login" element={<AccessPage />} />
         <Route path="/register" element={<AccessPage register />} />
+        <Route path="/account" element={<ShopperAccountPage />} />
+        <Route path="/account/register" element={<ShopperAccountPage register />} />
+        <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/platform" element={<PlatformAdminPage />} />
         <Route path="/brand" element={<BrandPage />} />
         <Route path="/brand.html" element={<BrandPage />} />
         <Route path="/products/:productId" element={<ProductPage />} />
@@ -48,6 +58,7 @@ export default function App() {
         <Route path="/portal/purchases" element={<PurchasesPage />} />
         <Route path="/portal/billing" element={<BillingPage />} />
         <Route path="/portal/company" element={<CompanySetupPage />} />
+        <Route path="/portal/checkout" element={<CheckoutAdminPage />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />

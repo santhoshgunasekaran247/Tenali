@@ -34,7 +34,7 @@ const adminMaintenanceLinks: PortalLink[] = [
   { label: "Storefront Domains",path:"/portal/domains",status:"live" },
   { label: "Audit Events", path:"/portal/audit",status:"live" },
   { label: "Master Data", path: "/portal/masters", status: "live" },
-  { label: "Provider Config", status: "coming" },
+  { label: "Shopper Checkout & Orders", path: "/portal/checkout", status: "live" },
 ];
 
 const workflowSections: WorkflowSection[] = [

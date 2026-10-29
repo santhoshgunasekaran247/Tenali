@@ -6,3 +6,4 @@ python-dotenv>=1.0
 pydantic>=2.9
 alembic>=1.13
 dnspython>=2.6
+cryptography>=44.0
