@@ -164,6 +164,27 @@ class MultiStoreTests(unittest.TestCase):
             service.record_cod_settlement(self.db, self.company, CodSettlementInput(courier="Delhivery", settlement_reference="UTR1",
                 settlement_date=date.today(), account_id=self.cod_clearing["id"], items=[{"order_id": order["id"], "amount": "110.00"}]))
 
+    def test_manual_customer_link_only_affects_future_order_invoices(self):
+        from app.schemas.checkout import DispatchInput
+        from app.services import shop_orders_service as service
+
+        first = self.order("cod", quantity=1)
+        service.approve_cod(self.db, self.company, str(first["id"]))
+        before = service.dispatch_order(self.db, self.company, str(first["id"]), DispatchInput(ship_from_store_id=self.main))
+        old_party = self.db.execute(self.text("select customer_party_id from invoices where id=:id"),
+                                    {"id": before["invoice_id"]}).scalar_one()
+        self.db.execute(self.text("update shopper_accounts set customer_party_id=:party where company_id=:company and id=:id"),
+                        {"party": self.party, "company": self.company, "id": self.shopper})
+        self.db.commit()
+        second = self.order("cod", quantity=1)
+        service.approve_cod(self.db, self.company, str(second["id"]))
+        after = service.dispatch_order(self.db, self.company, str(second["id"]), DispatchInput(ship_from_store_id=self.main))
+        self.assertEqual(str(self.db.execute(self.text("select customer_party_id from invoices where id=:id"),
+                                             {"id": after["invoice_id"]}).scalar_one()), self.party)
+        self.assertEqual(self.db.execute(self.text("select customer_party_id from invoices where id=:id"),
+                                         {"id": before["invoice_id"]}).scalar_one(), old_party)
+        self.assertNotEqual(str(old_party), self.party)
+
     def test_pay_at_pickup_reserves_shop_stock_and_invoices_in_shop_series(self):
         from app.schemas.checkout import CollectInput
         from app.schemas.inventory import StockTransferCreate

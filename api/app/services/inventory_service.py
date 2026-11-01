@@ -15,6 +15,7 @@ from app.services.access import allowed_stores
 from app.services.inventory_pricing import resolve_catalog_price
 from app.services.period_lock_service import assert_period_open
 from app.services.posting_service import replay_posting, finish_posting, request_hash
+from app.services.object_storage import FileStore
 
 
 class InventoryService:
@@ -210,7 +211,10 @@ class InventoryService:
             self._product(product_id, lock=True)
         values = payload.model_dump()
         self._validate_item(values, product_id)
-        values["image_urls"] = "|".join(values["image_urls"])
+        files = FileStore(self.db)
+        images = {source: files.image(self.company_id, source) for source in dict.fromkeys([values["image_url"], *values["image_urls"]])}
+        values["image_url"] = images[values["image_url"]]
+        values["image_urls"] = "|".join(images[image] for image in values["image_urls"])
         if not product_id:
             values.update(company_id=self.company_id, portal_product_id=f"PRD-{uuid4().hex[:12].upper()}")
         product_id = self._write("products", values, product_id)

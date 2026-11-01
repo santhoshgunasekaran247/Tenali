@@ -1,6 +1,6 @@
 import { tenantFetch } from "./tenantTransport";
 
-export type Shopper = { id: string; email: string; display_name: string };
+export type Shopper = { id: string; email: string; display_name: string; phone: string | null };
 export type ShopItem = { product_id: string; variant_id: string | null; name: string; quantity: number; unit_paise: number };
 export type DeliveryAddress = { name: string; phone: string; address: string; city: string; state: string; pincode: string; country: "India" };
 export type OrderStatus = "awaiting_payment" | "paid" | "cod_requested" | "confirmed" | "fulfilment_review" | "shipping_pending" | "shipment_booked"
@@ -65,7 +65,7 @@ function csrf(cookie: string) {
   return value ? decodeURIComponent(value) : "";
 }
 
-export async function accountRequest<T>(path: string, options?: RequestInit, realm: "shop" | "platform" | "checkout-admin" = "shop"): Promise<T> {
+export async function accountRequest<T>(path: string, options?: RequestInit, realm: "shop" | "platform" | "checkout-admin" | "parties" = "shop"): Promise<T> {
   const response = await tenantFetch(`/api/${realm}${path}`, {
     ...options,
     headers: {

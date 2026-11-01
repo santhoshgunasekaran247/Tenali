@@ -15,9 +15,10 @@ type AssetInputProps = {
   disabled: boolean;
   onChange: (value: string | null) => void;
   onError: (message: string) => void;
+  privateAsset?: boolean;
 };
 
-function AssetInput({ label, value, disabled, onChange, onError }: AssetInputProps) {
+function AssetInput({ label, value, disabled, onChange, onError, privateAsset = false }: AssetInputProps) {
   const upload = async (file?: File) => {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
@@ -43,9 +44,9 @@ function AssetInput({ label, value, disabled, onChange, onError }: AssetInputPro
       {value ? <img className="company-asset-preview" src={toAssetUrl(value)} alt={`${label} preview`}
         onError={() => onError(`${label} could not be loaded.`)} /> : null}
       <label>
-        {label} URL or Asset Path
-        <input disabled={disabled} value={value?.startsWith("data:") ? "" : value || ""}
-          placeholder={value?.startsWith("data:") ? "Uploaded image" : ""}
+        {label} {privateAsset ? "protected URL" : "URL or Asset Path"}
+        <input disabled={disabled} readOnly={privateAsset} value={value?.startsWith("data:") ? "" : value || ""}
+          placeholder={value?.startsWith("data:") ? "Selected image - save to upload" : privateAsset ? "Upload a signature image below" : ""}
           onChange={(event) => onChange(event.target.value || null)} />
       </label>
       <div className="company-asset-actions">
@@ -60,6 +61,7 @@ function AssetInput({ label, value, disabled, onChange, onError }: AssetInputPro
           <Trash2 size={16} aria-hidden="true" />
         </button>
       </div>
+      <p className="social-caption">{privateAsset ? "Stored privately in Supabase when you save. Only authorised workspace users can load it." : "Stored in Supabase as a public image URL when you save. PNG, JPEG or WebP, up to 1 MB."}</p>
     </div>
   );
 }
@@ -275,7 +277,7 @@ export function CompanySetupPage() {
           <legend>Logo & Signature</legend>
           <div className="company-fields">
             <AssetInput label="Company Logo" value={company.logo_url} disabled={saving} onChange={(value) => update({ logo_url: value || undefined })} onError={setError} />
-            <AssetInput label="Signature Image" value={company.invoice_settings.signature_image} disabled={saving} onChange={(value) => updateInvoice({ signature_image: value })} onError={setError} />
+            <AssetInput label="Signature Image" privateAsset value={company.invoice_settings.signature_image} disabled={saving} onChange={(value) => updateInvoice({ signature_image: value })} onError={setError} />
             <label>Logo Width (mm)<input type="number" min={25} max={75} required value={company.invoice_settings.logo_width_mm} onChange={(event) => updateInvoice({ logo_width_mm: Number(event.target.value) })} /></label>
             <label>Signature Width (mm)<input type="number" min={15} max={50} required value={company.invoice_settings.signature_width_mm} onChange={(event) => updateInvoice({ signature_width_mm: Number(event.target.value) })} /></label>
           </div>

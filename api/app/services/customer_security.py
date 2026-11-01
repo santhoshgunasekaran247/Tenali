@@ -68,11 +68,11 @@ def ensure_csrf(response: Response, request: Request, cookie: str):
 
 def shopper_identity(db, request: Request, company_id: str):
     check_write(request, SHOP_CSRF)
-    row = db.execute(text("""select account.id,account.email,account.display_name
+    row = db.execute(text("""select account.id,account.email,account.display_name,account.phone
         from shopper_sessions session join shopper_accounts account
         on account.id=session.shopper_id and account.company_id=session.company_id
         where session.token_hash=:token and session.company_id=:company
-        and session.expires_at>now() and account.is_active=true"""),
+        and session.expires_at>now() and account.is_active=true and account.supabase_uid is not null"""),
         {"token": token_digest(request.cookies.get(SHOP_COOKIE, "")), "company": company_id}).mappings().first()
     if not row:
         raise HTTPException(401, "Sign in to your shopper account for this store")

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { PartySelect } from "../components/PartySelect";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -354,23 +355,8 @@ export function ReceivablesPage() {
             <h2>Create Receivable</h2>
           </div>
           <form className="ops-form" onSubmit={createReceivable}>
-            <label>
-              Party
-              <select
-                value={receivableForm.party_id}
-                onChange={(event) =>
-                  setReceivableForm((prev) => ({ ...prev, party_id: event.target.value }))
-                }
-                required
-              >
-                <option value="">Select party</option>
-                {parties.map((party) => (
-                  <option key={party.id} value={party.id}>
-                    {party.legal_name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <PartySelect parties={parties} value={receivableForm.party_id} label="Party" required
+              onChange={id => setReceivableForm(previous => ({ ...previous, party_id: id }))} />
             <label>
               Reference
               <input

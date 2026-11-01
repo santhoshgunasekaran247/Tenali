@@ -1,10 +1,9 @@
-import { FormEvent,useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2 } from "lucide-react";
-import { authRequest,type Identity } from "../features/auth";
+import { WorkspaceSocialAccess } from "../components/WorkspaceSocialAccess";
 
-export function NewWorkspacePage(){
-  const [form,setForm]=useState({company_name:'',slug:'',password:''});const[error,setError]=useState('');const[busy,setBusy]=useState(false);
-  const save=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{const result=await authRequest<{user:Identity}>('/workspaces',{method:'POST',headers:{'X-Tenant-Slug':''},body:JSON.stringify(form)});window.location.assign(`/c/${result.user.tenant_slug}/portal/company`);}catch(failure){setError(String(failure));setBusy(false);}};
-  return <main className="access-page"><section className="access-panel"><h1>Create Another Workspace</h1><p>The new workspace uses your email with its own password. It will not share credentials or allow session switching.</p>{error?<p role="alert" className="ops-error">{error}</p>:null}<form className="ops-form" onSubmit={save}><label>Company Name<input required maxLength={200} value={form.company_name} onChange={event=>setForm(previous=>({...previous,company_name:event.target.value}))}/></label><label>Workspace Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9]|-){1,46}[a-z0-9]" value={form.slug} onChange={event=>setForm(previous=>({...previous,slug:event.target.value.toLowerCase()}))}/></label><label>New Workspace Password<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={event=>setForm(previous=>({...previous,password:event.target.value}))}/></label><button className="btn" disabled={busy}><Building2 size={16}/>Create Workspace</button></form><Link className="ops-inline-link" to="/portal">Back to Workspace</Link></section></main>;
+export function NewWorkspacePage() {
+  return <main className="access-page"><section className="access-panel"><h1>Create Another Workspace</h1>
+    <p>Confirm your social identity for the new workspace. Existing workspace data and staff passwords remain separate.</p>
+    <WorkspaceSocialAccess register /><Link to="/portal">Back to Workspace</Link>
+  </section></main>;
 }

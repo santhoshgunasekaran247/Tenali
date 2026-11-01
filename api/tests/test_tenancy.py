@@ -74,7 +74,20 @@ class TenantDatabaseCase(unittest.TestCase):
         self.factory=lambda:FixtureSession(bind=self.connection,join_transaction_mode='rollback_only')
         for target in ['app.core.database.SessionLocal','app.services.tenant_context.SessionLocal','app.api.routes.auth.SessionLocal','app.api.routes.shop.SessionLocal','app.main.SessionLocal']:
             self.stack.enter_context(patch(target,self.factory))
-        self.stack.enter_context(patch.dict(os.environ,{'TENALI_ENV':'development','TENALI_BASE_DOMAIN':'tenali-business.com'}))
+        self.stack.enter_context(patch.dict(os.environ,{'TENALI_ENV':'development','TENALI_BASE_DOMAIN':'tenali-business.com',
+            'TENALI_SUPABASE_URL':'https://abcdefghijklmnopqrst.supabase.co','TENALI_SUPABASE_STORAGE_KEY':'server-fixture-secret'}))
+        from app.services.object_storage import ObjectStorage, PUBLIC_BUCKET, PRIVATE_BUCKET, MIME_EXTENSIONS
+        import hashlib
+        self.storage_objects={}
+        def put_file(storage,company_id,content,mime_type,public=False,kind='document'):
+            digest=hashlib.sha256(content).hexdigest()
+            bucket=PUBLIC_BUCKET if public else PRIVATE_BUCKET
+            path=f'{company_id}/{kind}-{digest}.{MIME_EXTENSIONS[mime_type]}'
+            self.storage_objects[(bucket,path)]=content
+            return {'bucket':bucket,'file_kind':kind,'object_path':path,'mime_type':mime_type,'file_size':len(content),'sha256':digest}
+        self.stack.enter_context(patch.object(ObjectStorage,'put_verified',put_file))
+        self.stack.enter_context(patch.object(ObjectStorage,'read',lambda storage,bucket,path:self.storage_objects[(bucket,path)]))
+        self.stack.enter_context(patch.object(ObjectStorage,'ensure_buckets'))
         class FixtureClient(TestClient):
             def request(inner,*args,**kwargs):
                 savepoint=connection.begin_nested()
@@ -96,8 +109,14 @@ class TenantDatabaseCase(unittest.TestCase):
 
     def register(self,prefix):
         email=f'{prefix}-{self.suffix}@example.com'
-        response=self.client.post('/auth/register',json={'company_name':prefix+' Tenant','slug':prefix+'-'+self.suffix,'display_name':'Owner','email':email,'password':'Test password for tenancy 123!'},headers={'Origin':'http://localhost'})
-        self.assertEqual(response.status_code,201,response.text)
+        # Seed a legacy password owner to keep staff-password regression fixtures independent of OAuth.
+        from app.services.tenant_auth import TenantAuth
+        with self.factory() as db:
+            TenantAuth(db).register(Registration(company_name=prefix+' Tenant',slug=prefix+'-'+self.suffix,display_name='Owner',
+                                               email=email,password='Test password for tenancy 123!'))
+        response=self.client.post('/auth/login',json={'email':email,'password':'Test password for tenancy 123!'},
+                                  headers={'Origin':'http://localhost','X-Tenant-Slug':prefix+'-'+self.suffix})
+        self.assertEqual(response.status_code,200,response.text)
         result=response.json()
         cookies=dict(self.client.cookies)
         return result,cookies,email
@@ -115,7 +134,7 @@ class TenantBoundaryTests(TenantDatabaseCase):
         from sqlalchemy import text
         self.assertEqual(self.client.get('/accounts').status_code,401)
         first,cookies_a,_=self.register('tenant-a')
-        party_a=self.client.post('/parties',json={'party_type':'customer','legal_name':'Private A'},headers=self.headers(cookies_a))
+        party_a=self.client.post('/parties',json={'party_type':'customer','legal_name':'Private A','phone':'9876543210'},headers=self.headers(cookies_a))
         self.assertEqual(party_a.status_code,201,party_a.text)
         second,cookies_b,_=self.register('tenant-b')
         self.assertNotEqual(first['user']['company_id'],second['user']['company_id'])
@@ -221,12 +240,17 @@ class TenantBoundaryTests(TenantDatabaseCase):
         self.assertEqual(self.client.post('/accounts/business-payments',json={'from_account_id':account.json()['id'],'purpose':'expense','amount':1},headers=self.headers(cookies_b)).status_code,404)
         self.assertEqual(self.client.post('/auth/switch',json={'company_id':first['user']['company_id']},headers=self.headers(cookies_b)).status_code,403)
         own=self.client.post('/auth/workspaces',json={'company_name':'Additional own company','slug':'extra-'+self.suffix,'password':'Independent workspace password 123!'},headers=self.headers(cookies_b))
+        self.assertEqual(own.status_code,410,own.text)
+        self.client.cookies.clear()
+        with patch('app.api.routes.auth.verified_identity',return_value={'uid':'extra-'+self.suffix,'email':'extra@example.com','name':'Owner'}):
+            own=self.client.post('/auth/register-social',json={'company_name':'Additional own company','slug':'extra-'+self.suffix,'id_token':'fixture'},
+                                 headers={'Origin':'http://localhost'})
         self.assertEqual(own.status_code,201,own.text)
         self.assertEqual(len(own.json()['workspaces']),1)
         with self.factory() as db:
             company=db.execute(text('select email from companies where id=:id'),{'id':own.json()['user']['company_id']}).mappings().one()
             category_count=db.execute(text('select count(*) from product_categories where company_id=:id'),{'id':own.json()['user']['company_id']}).scalar_one()
-            self.assertIsNone(company['email'])
+            self.assertEqual(company['email'],'extra@example.com')
             self.assertEqual(category_count,0)
         own_cookies=dict(self.client.cookies)
         switched=self.client.post('/auth/switch',json={'company_id':second['user']['company_id']},headers=self.headers(own_cookies))

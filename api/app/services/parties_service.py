@@ -1,10 +1,12 @@
 from __future__ import annotations
+import re
 
 from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.parties import PartyCreate, PartyUpdate
+from app.services.customer_contacts import normalize_email, normalize_phone
 
 ALLOWED_PARTY_TYPES = {
     "customer",
@@ -56,18 +58,33 @@ class PartiesService:
             query += " and is_active = true"
 
         if search:
-            query += " and (legal_name ilike :search or coalesce(nickname, '') ilike :search or coalesce(phone, '') ilike :search)"
+            query += " and (legal_name ilike :search or coalesce(nickname, '') ilike :search or coalesce(phone, '') ilike :search or coalesce(email, '') ilike :search or coalesce(phone_normalized, '') ilike :search"
             params["search"] = f"%{search.strip()}%"
+            if re.fullmatch(r"[+\d\s().-]+", search.strip()):
+                digits = re.sub(r"\D", "", search)
+                if digits:
+                    query += " or coalesce(phone_normalized, '') like :phone_search"
+                    params["phone_search"] = f"%{digits}%"
+            query += ")"
 
         query += " order by legal_name asc"
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(r) for r in rows]}
+
+    def _contacts(self, party_type: str, phone: str | None, email: str | None):
+        try:
+            return normalize_phone(phone, required=party_type in {"customer", "customer_vendor"}), normalize_email(email)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
 
     def create(self, company_id: str | None, payload: PartyCreate) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         party_type = payload.party_type.strip().lower()
         if party_type not in ALLOWED_PARTY_TYPES:
             raise HTTPException(status_code=422, detail="Invalid party_type")
+        if not payload.legal_name.strip():
+            raise HTTPException(422, "Customer/vendor name is required")
+        phone, email = self._contacts(party_type, payload.phone, payload.email)
 
         row = self.db.execute(
             text(
@@ -79,6 +96,7 @@ class PartiesService:
                     legal_name,
                     contact_person,
                     phone,
+                    phone_normalized,
                     email,
                     address,
                     gst_number
@@ -88,6 +106,7 @@ class PartiesService:
                     :nickname,
                     :legal_name,
                     :contact_person,
+                    :phone,
                     :phone,
                     :email,
                     :address,
@@ -113,8 +132,8 @@ class PartiesService:
                 "nickname": payload.nickname,
                 "legal_name": payload.legal_name.strip(),
                 "contact_person": payload.contact_person,
-                "phone": payload.phone,
-                "email": payload.email,
+                "phone": phone,
+                "email": email,
                 "address": payload.address,
                 "gst_number": payload.gst_number,
             },
@@ -153,6 +172,13 @@ class PartiesService:
             changes["legal_name"] = str(changes["legal_name"]).strip()
 
         values.update(changes)
+        if not values["legal_name"]:
+            raise HTTPException(422, "Customer/vendor name is required")
+        # Do not require legacy customers to supply missing contact data on unrelated edits.
+        require_contacts = "phone" in changes or "party_type" in changes
+        contact_type = values["party_type"] if require_contacts else "other"
+        phone, email = self._contacts(contact_type, values["phone"], values["email"])
+        values["phone"], values["email"] = phone, email
 
         updated = self.db.execute(
             text(
@@ -164,6 +190,7 @@ class PartiesService:
                     legal_name = :legal_name,
                     contact_person = :contact_person,
                     phone = :phone,
+                    phone_normalized = :phone,
                     email = :email,
                     address = :address,
                     gst_number = :gst_number,

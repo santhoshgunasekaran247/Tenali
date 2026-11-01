@@ -122,6 +122,144 @@ tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_invent
   `/collections`, `/accounts`, `/settlements`, `/reports`, `/parties`, `/masters`,
   `/checkout-admin`). Store administration is owner/admin only.
 
+## Shopper identities and customer contacts (028)
+
+- Shopper registration/login uses Supabase social providers (migration 030); handwritten
+  email/password registration is disabled (`410`). Workspace staff authentication
+  is unchanged. Accounts are keyed by `(company_id, supabase_uid)` and remain
+  independent across tenants.
+- New shoppers supply a name and phone. The backend gets the email from the
+  authenticated social identity profile, not client input or editable Supabase
+  user metadata. Phone numbers are user-entered and **unverified**: no OTP, SMS,
+  WhatsApp verification, or phone sign-in is enabled.
+- Online shopper accounts remain separate from `parties`, even if email or phone
+  matches. Owners/admins can explicitly link one active shopper to one active
+  counter customer in **Customers and vendors > Online customer accounts** after
+  confirming identity directly. Cross-tenant links and conflicting links are
+  rejected, and successful links are audited. A link affects future online invoices
+  only; past invoices/ledgers and shopper order ownership are never rewritten.
+  Unlinked online orders continue using the existing internal online-shopper party.
+- New counter customers require a phone; email remains optional. Vendors may
+  record both contacts. Shared phone numbers are allowed and never imply a merge.
+  Billing has inline customer creation without discarding the invoice draft.
+  Customer/vendor selectors search name, nickname, email and phone; labels show
+  name and contact details to distinguish similar names.
+- Phone normalization uses India for local numbers and E.164 for international
+  numbers. Existing missing contacts are not invented or silently verified.
+- Legacy shopper email/password accounts and their orders are preserved, but old
+  sessions/password sign-in are not accepted. An email collision requires
+  administrator-assisted account recovery; it is not an automatic identity merge.
+
+### Recovering a platform administrator password
+
+There is no public platform password-recovery endpoint. An authorized server
+operator can reset an existing active platform administrator from a local terminal:
+
+```powershell
+Set-Location D:\GitRepo\Tenali\api
+& ..\.venv\Scripts\python.exe -m app.bootstrap_platform --email santhoshgunasekaran2@gmail.com --reset-password
+```
+
+Enter and confirm a new password (12-128 characters) at the hidden prompts. Never
+put passwords in command arguments, source files, or chat. The command uses the
+API's configured database, preserves the administrator's identity, revokes all
+of that administrator's platform sessions, and records `PASSWORD_RESET` in
+`platform_audit` atomically. It does not change workspace or customer accounts,
+create missing accounts, or reactivate disabled administrators. Sign in again on
+the platform host's `/platform` page after resetting.
+
+### Free social-login setup
+
+1. Use the existing Supabase project:
+   [Authentication providers](https://supabase.com/dashboard/project/nbtufrknknzmrfmvuqyh/auth/providers).
+   The [Free plan](https://supabase.com/pricing) includes 50,000 monthly active
+   users, 500 MB database space and 1 GB file storage; inactive projects may pause
+   after a week. No paid upgrade or phone/SMS authentication is needed here.
+2. Enable Google and/or Facebook under Authentication > Sign In / Providers.
+   Configure provider client IDs/secrets in Supabase, with the callback
+   `https://nbtufrknknzmrfmvuqyh.supabase.co/auth/v1/callback` in each provider's
+   developer console. Yahoo is not built in: create an OIDC custom provider with
+   identifier `custom:yahoo`, Yahoo's issuer and email/profile scopes, following
+   [Custom OAuth/OIDC providers](https://supabase.com/docs/guides/auth/custom-oauth-providers).
+   The Free plan currently allows three custom providers. Enable Yahoo in Tenali
+   only after its custom provider is configured and tested. OAuth app approval
+   may be needed for public users; provider accounts must supply an email.
+3. Open the platform host's **`/platform/authentication`** page and sign in using a
+   **platform administrator** account (not a tenant owner/staff account). In
+   **Authentication > Social login** section (separate from Client administration),
+   save the Supabase Project URL
+   (`https://nbtufrknknzmrfmvuqyh.supabase.co`), public publishable or legacy anon
+   key (from Supabase Project Settings > API Keys), enabled providers and enabled
+   switch. Never use a secret/service-role key. Settings are shared
+   by every tenant, shopper and workspace owner, and saved in
+   `platform_auth_settings` (migrations 029-030); no tenant can override them.
+   The platform navigation separates **Client administration** (`/platform`) from
+   **Authentication** (`/platform/authentication`). The old `/platform#social-login`
+   link redirects to Authentication. Only platform administrators can access
+   either section; authentication settings do not appear in client administration.
+   Existing server environment values remain a fallback until portal settings
+   are saved:
+
+       TENALI_SUPABASE_URL=https://nbtufrknknzmrfmvuqyh.supabase.co
+       TENALI_SUPABASE_PUBLIC_KEY=<public-publishable-or-anon-key>
+       TENALI_SUPABASE_PROVIDERS=google,facebook
+       TENALI_SUPABASE_AUTH_ENABLED=true
+
+4. Under Supabase Authentication > URL Configuration, allow the callback for
+   every actual platform/storefront origin, including query parameters, e.g.
+   `http://127.0.0.1:5173/social-login?**` and
+   `http://localhost:5173/social-login?**`. Production callbacks must use HTTPS
+   and explicitly allowed hostnames (not a broad wildcard hostname). The callback
+   stays at the origin root even for `/c/<tenant>` pages. OAuth provider secrets
+   belong only in Supabase/provider consoles. No Firebase service-account JSON
+   or Supabase service-role key is required by Tenali's login verification.
+5. The portal's public configuration takes effect without a restart. Restart the
+   API only when changing server environment. The frontend reads only public configuration from
+   `/api/shop/auth-config`; it shows an explicit setup notice until configured.
+   Supabase access tokens are authenticated server-side through `/auth/v1/user`;
+   issuer, subject, user role and OAuth authentication method are checked before
+   accepting a configured social identity's email. Tokens are then
+   converted into the existing tenant-scoped HttpOnly shopper session.
+   OAuth runs in a popup with PKCE. The temporary verifier uses popup
+   sessionStorage, is cleared after callback, and access tokens remain in memory;
+   no persistent localStorage social session is created. Refresh tokens are not
+   retained. Existing application sessions keep their established lifetimes.
+6. Test each enabled provider with its test users before public release. Provider
+   popups must be allowed. A blocked popup or failed exchange is reported, and
+   an abandoned login times out after three minutes. The application never sends OTP.
+
+The frontend uses the Supabase SDK; it does not access tenant tables directly.
+Tenant data access remains through the API's existing Postgres role/RLS boundary.
+Provider setup, external OAuth approval, and real social login cannot be validated
+without the public key and configured provider applications.
+Migration 030 refuses to run if Firebase identities already exist, rather than
+silently matching email or substituting a Supabase UID into a Firebase namespace.
+Legacy Firebase UID columns remain preserved but are not accepted for new login.
+
+### Workspace owner social authentication (029)
+
+- New workspace creation (including **Add another company**) requires a social
+  login. `/auth/register-social` accepts company name, workspace slug and a signed
+  Supabase access token (the existing field name is `id_token`); email/name come
+  from the social provider. Handwritten-email
+  `/auth/register` and password-based `/auth/workspaces` creation return `410`.
+- Workspace owners use **Workspace social sign-in** at their workspace address
+  thereafter. Accounts are keyed by `(company_id,supabase_uid)`. The same social
+  identity may create multiple independent companies, but signing in always
+  requires the chosen company and its membership. A matching email does not link
+  a pre-existing staff account or grant membership.
+- Existing staff password sign-in and password changes remain available.
+  Social-only owners have no local password and manage recovery/security with
+  their provider. Shopper, workspace staff/owners and platform-admin sessions
+  remain separate. A shopper registration cannot grant workspace access.
+- Portal settings writes require platform authentication and CSRF protection,
+  and are recorded in `platform_audit`. The Supabase project cannot be changed
+  once any social identity exists; that would require a managed identity
+  migration. Disabling social login blocks new social authentication, but does
+  not revoke already-issued sessions or disable legacy password authentication.
+- Saving public settings is not a provider connection test. Provider secrets,
+  app approval and OAuth callback configuration still belong in Supabase/provider
+  consoles. Never upload private credentials to the portal.
 
 - An invoice's `document_data` JSON is the current itemized sales document; a
   purchase's `line_items` JSON is the current itemized purchase document. The
@@ -215,3 +353,55 @@ SMTP/SMS provider delivery is not configured. Full chart-of-accounts accounting,
 valuation policy, partial credit/debit notes/refunds and accountant-approved statutory
 returns remain separate implementation/setup gates. The current money-movement
 reports must not be presented as a complete trial balance, P&L or balance sheet.
+
+## Supabase file storage
+
+Apply migrations through `032_document_storage_scope` before deploying file-storage
+support. Set these **server-only** environment variables (local development uses
+the ignored `api\.env`):
+
+- `TENALI_SUPABASE_URL`: the hosted project's `https://<project>.supabase.co` URL.
+- `TENALI_SUPABASE_STORAGE_KEY`: a Supabase server secret/service-role key with
+  Storage access. Never put this in a `VITE_` variable, source control, or browser
+  configuration. This is separate from the public key on Platform > Authentication.
+
+Run the following from `api` using the project's Python environment:
+
+```powershell
+python -m app.migrate_storage
+python -m app.migrate_storage --apply
+python -m app.migrate_storage
+```
+
+The first command reports embedded/local references without changing data.
+`--apply` creates or verifies the `tenali-public` and `tenali-private` buckets,
+uploads files, reads them back to check their size and SHA-256, then replaces
+database content with references. Run during a maintenance window, back up the
+database first, and retain original local assets. Each completed row is committed;
+failed rows retain their original content and the command can be retried safely.
+Historical invoice snapshots, configuration JSON and image-bearing audit payloads
+are included. Audit image payloads are processed last, so an apply count can exceed
+the initial scan count when updates generate new audit entries.
+
+- Product/category photos and company logos use public Storage URLs. Only upload
+  images intended to be visible to anyone.
+- Signatures and finance attachments use the **private** bucket and stable,
+  authenticated Tenali API URLs. The backend checks the tenant and the relevant
+  module/store permissions before returning the bytes. Do not make this bucket
+  public or add anonymous read policies.
+- Browser Supabase users do not need upload policies; uploads go through Tenali.
+  Keep both buckets closed to browser writes. Uploads use immutable,
+  tenant-prefixed, content-addressed paths, so repeat saves reuse the same content.
+- The database stores object metadata/references, not new file bytes or base64.
+  The existing forms still send base64 transiently in upload requests; pressing
+  Save uploads the file. Existing external public image URLs remain unchanged.
+- Image forms accept PNG/JPEG/WebP up to 1 MB; finance attachments retain the
+  5 MB/file, five-files/record and 20 MB/record limits. Storage rejects files over
+  5 MB. Supabase quotas are shared across tenants and its free allowance is not
+  unlimited; monitor storage and bandwidth in the Supabase dashboard.
+
+Do not delete or rename buckets/objects or change the storage project without a
+separate migration: historical invoices can still reference old images. A verified
+upload followed by a failed parent database save can leave an unreferenced object;
+retries reuse it, but automatic orphan deletion is deliberately not enabled.
+Database backups alone do not back up Storage objects; protect both.

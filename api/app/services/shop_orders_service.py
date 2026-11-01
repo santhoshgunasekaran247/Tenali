@@ -144,7 +144,11 @@ def _create_order_invoice(db: Session, company_id: str, order: dict, *, invoice_
     from app.services.billing_service import BillingService
     settings = checkout_policy(db, company_id)
     _ensure_shipping_sac(db, company_id, settings)
-    party = db.execute(text(ONLINE_PARTY_SQL), {"company": company_id}).scalar_one_or_none()
+    party = db.execute(text("""select customer_party_id from shopper_accounts
+        where company_id=:company and id=:shopper"""),
+        {"company": company_id, "shopper": order["shopper_id"]}).scalar_one_or_none()
+    if not party:
+        party = db.execute(text(ONLINE_PARTY_SQL), {"company": company_id}).scalar_one_or_none()
     if not party:
         raise HTTPException(409, "The 'Online shopper' customer party is missing; run the stores migration")
     address = order["address"]

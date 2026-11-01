@@ -6,6 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.documents import AttachmentCreate, MAX_ATTACHMENTS, MAX_TOTAL_BYTES
+from app.services.object_storage import FileStore, ObjectStorage, PRIVATE_BUCKET
+from app.services.access import check_module, allowed_stores
 
 
 class DocumentsService:
@@ -31,6 +33,15 @@ class DocumentsService:
         }
         if entity_type not in queries:
             raise HTTPException(status_code=422, detail="Unsupported attachment record type")
+        identity = self.db.info.get("tenant_context", {})
+        check_module(identity, "/purchases" if entity_type == "purchase" else "/accounts")
+        stores = allowed_stores(identity)
+        if stores is not None:
+            table = "purchases" if entity_type == "purchase" else "account_transactions"
+            store = self.db.execute(text(f"select store_id from {table} where id=:id and company_id=:company"),
+                {"id": entity_id, "company": company_id}).scalar_one_or_none()
+            if store is None or str(store) not in stores:
+                raise HTTPException(403, "This attachment belongs to a store outside your access")
         query = queries[entity_type] + (" for update" if lock else "")
         if not self.db.execute(text(query), {"id": entity_id, "company_id": company_id}).scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Attachment record not found")
@@ -41,10 +52,10 @@ class DocumentsService:
             select d.id, d.file_name, d.mime_type, d.file_size, d.created_at
             from documents d join document_links link on link.document_id = d.id
             where d.company_id = :company_id and link.entity_type = :entity_type
-              and link.entity_id = :entity_id and d.file_content is not null
+              and link.entity_id = :entity_id and (d.stored_file_id is not null or d.file_content is not null)
             order by d.created_at asc, d.id asc
         """), {"company_id": company_id, "entity_type": entity_type, "entity_id": entity_id}).mappings().all()
-        return {"items": [dict(row) for row in rows]}
+        return {"items": [{**dict(row), "download_url": f"/api/documents/{row['id']}/download"} for row in rows]}
 
     def add_attachments(self, entity_type: str, entity_id: str, company_id: str,
                         attachments: list[AttachmentCreate]) -> list[dict]:
@@ -60,28 +71,34 @@ class DocumentsService:
         result = []
         for item, content in zip(attachments, decoded):
             document_id = str(uuid4())
+            stored = FileStore(self.db).save(company_id, content, item.mime_type)
             row = self.db.execute(text("""
-                insert into documents(id, company_id, document_type, file_name, storage_path, mime_type, file_size, file_content)
-                values(:id, :company_id, :document_type, :file_name, :storage_path, :mime_type, :file_size, :file_content)
+                insert into documents(id, company_id, document_type, file_name, storage_path, mime_type, file_size, stored_file_id)
+                values(:id, :company_id, :document_type, :file_name, :storage_path, :mime_type, :file_size, :stored_file_id)
                 returning id, file_name, mime_type, file_size, created_at
             """), {"id": document_id, "company_id": company_id, "document_type": f"{entity_type}_receipt",
-                    "file_name": item.file_name, "storage_path": f"database://documents/{document_id}",
-                    "mime_type": item.mime_type, "file_size": len(content), "file_content": content}).mappings().one()
+                    "file_name": item.file_name, "storage_path": f"/api/documents/{document_id}/download",
+                    "mime_type": item.mime_type, "file_size": len(content), "stored_file_id": stored["id"]}).mappings().one()
             self.db.execute(text("""
                 insert into document_links(document_id, entity_type, entity_id)
                 values(:document_id, :entity_type, :entity_id)
             """), {"document_id": document_id, "entity_type": entity_type, "entity_id": entity_id})
-            result.append(dict(row))
+            result.append({**dict(row), "download_url": f"/api/documents/{row['id']}/download"})
         return result
 
     def download(self, document_id: str, company_id: str) -> dict:
         row = self.db.execute(text("""
-            select d.file_name, d.mime_type, d.file_content, link.entity_type, link.entity_id
+            select d.file_name, d.mime_type, d.file_content, d.stored_file_id, link.entity_type, link.entity_id
             from documents d join document_links link on link.document_id = d.id
-            where d.id = :id and d.company_id = :company_id and d.file_content is not null
+            where d.id = :id and d.company_id = :company_id and (d.stored_file_id is not null or d.file_content is not null)
             order by link.created_at asc limit 1
         """), {"id": document_id, "company_id": company_id}).mappings().first()
         if not row:
             raise HTTPException(status_code=404, detail="Attachment not found")
         self._assert_entity(row["entity_type"], str(row["entity_id"]), company_id)
-        return dict(row)
+        result = dict(row)
+        if row["stored_file_id"]:
+            file = self.db.execute(text("select * from stored_files where id=:id and company_id=:company and bucket=:bucket"),
+                {"id": row["stored_file_id"], "company": company_id, "bucket": PRIVATE_BUCKET}).mappings().one()
+            result["file_content"] = ObjectStorage().read(file["bucket"], file["object_path"])
+        return result

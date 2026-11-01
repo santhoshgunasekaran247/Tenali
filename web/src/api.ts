@@ -182,6 +182,12 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  billingCustomers() {
+    return request<PartyListResponse>("/billing/customers");
+  },
+  createBillingCustomer(payload: PartyCreateInput) {
+    return request<Party>("/billing/customers", { method: "POST", body: JSON.stringify(payload) });
+  },
   updateParty(partyId: string, payload: PartyUpdateInput) {
     return request<Party>(`/parties/${encodeURIComponent(partyId)}`, {
       method: "PATCH",

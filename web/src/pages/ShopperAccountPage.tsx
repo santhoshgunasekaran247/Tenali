@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
+import { FederatedShopperLogin } from "../components/FederatedShopperLogin";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, orderStatus, paymentLabel, payOrder, loadRazorpay, rupees, shopperSession, type Shopper, type ShopOrder } from "../features/shop";
 import { useCart } from "../features/cart";
+import { clearSocialLogin } from "../features/shopperFederation";
 
 export function ShopperAccountPage({ register = false }: { register?: boolean }) {
   const { storefront, loading } = useAuth();
@@ -13,8 +15,10 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   const [checking, setChecking] = useState(true);
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [offset, setOffset] = useState(0);
-  const [form, setForm] = useState({ email: "", display_name: "", password: "", confirmation: "" });
-  const [password, setPassword] = useState({ current_password: "", new_password: "" });
+  const [profile, setProfile] = useState({ display_name: "", phone: "" });
+  useEffect(() => {
+    if (shopper) setProfile({ display_name: shopper.display_name, phone: shopper.phone || "" });
+  }, [shopper]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -34,19 +38,11 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   useEffect(() => {
     if (shopper) void refreshOrders().catch(failure => setError(String(failure)));
   }, [shopper?.id, offset]);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true); setError("");
-    try {
-      if (register && form.password !== form.confirmation) throw new Error("Passwords do not match.");
-      const result = await accountRequest<Shopper>(register ? "/register" : "/login", {
-        method: "POST", body: JSON.stringify(register ? { email: form.email, display_name: form.display_name, password: form.password } : { email: form.email, password: form.password }),
-      });
-      setShopper(result);
-      setForm({ email: "", display_name: "", password: "", confirmation: "" });
-      const next = new URLSearchParams(location.search).get("next");
-      if (next === "/checkout" || next?.startsWith("/checkout?")) navigate(next, { replace: true });
-      else navigate("/account", { replace: true });
-    } catch (failure) { setError(String(failure)); } finally { setBusy(false); }
+  const signedIn = (result: Shopper) => {
+    setShopper(result);
+    const next = new URLSearchParams(location.search).get("next");
+    if (next === "/checkout" || next?.startsWith("/checkout?")) navigate(next, { replace: true });
+    else navigate("/account", { replace: true });
   };
   const pay = async (order: ShopOrder) => {
     if (!shopper || !storefront) return;
@@ -69,29 +65,25 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
     <div className="shop-account-content">
       {error ? <p className="ops-error" role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
-      {!shopper ? <section className="access-panel">
-        <form className="ops-form" onSubmit={submit}><fieldset disabled={busy} className="access-fields">
-          {register ? <label>Your Name<input required maxLength={150} autoComplete="name" value={form.display_name} onChange={event => setForm({ ...form, display_name: event.target.value })} /></label> : null}
-          <label>Email<input required type="email" autoComplete="username" maxLength={254} value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label>
-          <label>Password<input required type="password" autoComplete={register ? "new-password" : "current-password"} minLength={register ? 12 : 1} maxLength={128} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} /></label>
-          {register ? <label>Confirm Password<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.confirmation} onChange={event => setForm({ ...form, confirmation: event.target.value })} /></label> : null}
-          <button className="btn" disabled={busy}>{busy ? "Please wait..." : register ? "Create Shopper Account" : "Sign In to Store"}</button>
-        </fieldset></form>
-        <p><Link to={`${register ? "/account" : "/account/register"}${location.search}`}>{register ? "Already registered? Sign in" : "New shopper? Create an account"}</Link></p>
-        <Link to="/login">Workspace staff sign in</Link>
-      </section> : <>
-        <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p>
+      {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <>
+        <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p><p>Phone: {shopper.phone || "Not recorded"} (unverified)</p>
+          <details><summary>Edit contact details</summary><form className="ops-form" onSubmit={(event: FormEvent) => {
+            event.preventDefault(); setBusy(true); setError(""); setMessage("");
+            void accountRequest<Shopper>("/profile", { method: "POST", body: JSON.stringify(profile) })
+              .then(result => { setShopper(result); setMessage("Contact details updated. Your phone is unverified; no customer records were merged."); })
+              .catch(failure => setError(String(failure))).finally(() => setBusy(false));
+          }}><label>Your name<input required maxLength={150} value={profile.display_name} onChange={event => setProfile({ ...profile, display_name: event.target.value })} /></label>
+            <label>Phone number<input required type="tel" maxLength={40} value={profile.phone} onChange={event => setProfile({ ...profile, phone: event.target.value })} /></label>
+            <button className="btn light" disabled={busy}>Save contact details</button></form></details>
           <button className="btn light" disabled={busy} onClick={() => {
             setBusy(true); setError("");
-            void accountRequest("/logout", { method: "POST" }).then(() => { setShopper(null); setOrders([]); })
+            void accountRequest("/logout", { method: "POST" }).then(async () => {
+              setShopper(null); setOrders([]);
+              await clearSocialLogin();
+            })
               .catch(failure => setError(String(failure))).finally(() => setBusy(false));
           }}>Sign Out of Store</button>
-          <details><summary>Change Shopper Password</summary><form className="ops-form" onSubmit={event => {
-            event.preventDefault(); setBusy(true); setError(""); setMessage("");
-            void accountRequest("/password", { method: "POST", body: JSON.stringify(password) })
-              .then(() => { setPassword({ current_password: "", new_password: "" }); setMessage("Password changed for this store only. Other shopper sessions were revoked."); })
-              .catch(failure => setError(String(failure))).finally(() => setBusy(false));
-          }}><label>Current Password<input required type="password" autoComplete="current-password" maxLength={128} value={password.current_password} onChange={event => setPassword({ ...password, current_password: event.target.value })} /></label><label>New Password<input required type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password.new_password} onChange={event => setPassword({ ...password, new_password: event.target.value })} /></label><button className="btn" disabled={busy}>Change Password</button></form></details>
+          <p>Manage sign-in security with your social login provider.</p>
         </section>
         <section><h2>My Orders</h2><button className="ops-link-btn" disabled={busy} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh Payment &amp; Shipping Status</button>
           {!orders.length ? <p>No orders on this page.</p> : null}

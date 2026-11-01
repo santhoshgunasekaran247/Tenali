@@ -10,6 +10,7 @@ from app.services.customer_security import ADMIN_COOKIE, ADMIN_CSRF, check_write
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import host_company, platform_host
 from app.services.tenant_security import Login, token_digest
+from app.services.federation_settings import FederationSettings, settings_for, save_settings
 
 router = APIRouter()
 
@@ -29,6 +30,16 @@ def admin_identity(request: Request, gate=Depends(platform_request), db=Depends(
     if not row:
         raise HTTPException(401, "Platform administrator sign-in required")
     return dict(row)
+
+
+@router.get("/social-login")
+def social_settings(identity=Depends(admin_identity), db=Depends(identity_db)):
+    return settings_for(db)
+
+
+@router.put("/social-login")
+def update_social_settings(payload: FederationSettings, identity=Depends(admin_identity), db=Depends(identity_db)):
+    return save_settings(db, payload, identity["id"])
 
 
 @router.post("/login")

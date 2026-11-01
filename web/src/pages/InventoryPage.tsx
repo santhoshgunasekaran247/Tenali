@@ -9,6 +9,7 @@ import { toAssetUrl } from "../features/catalog/utils";
 import type { HsnMaster, InventoryAlert, InventoryLookups, InventoryMissingSource, InventoryMovement, InventoryOffer, InventoryProduct, InventoryReconciliation, InventoryVariant } from "../types";
 import { StoreSelect, useStores } from "../features/stores";
 import { StockTransferDialog } from "../components/StockTransferDialog";
+import { PartySelect } from "../components/PartySelect";
 
 export function InventoryPage() {
   const [products,setProducts]=useState<InventoryProduct[]>([]);
@@ -76,7 +77,7 @@ export function InventoryPage() {
     {newProduct&&editor==='product'?<dialog ref={createDialog} className="inventory-dialog inventory-create-dialog" aria-label="Add inventory product" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();closeCreate();}}} onCancel={event=>{event.preventDefault();closeCreate();}}><ProductEditor lookups={lookups} hsn={hsn} onSaved={saved} onClose={closeCreate}/></dialog>:null}
     {view==='products'?<section className="inventory-body">
       <div className="inventory-toolbar inventory-filter-toolbar"><label>Search Products<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name, SKU, ID or brand"/></label>
-        <label>Mapped Vendor<select value={vendorFilter} onChange={event=>setVendorFilter(event.target.value)}><option value="">All products</option>{lookups.vendors.map(vendor=><option key={vendor.id} value={vendor.id}>{vendor.legal_name}</option>)}</select></label>
+        <PartySelect parties={lookups.vendors} value={vendorFilter} onChange={setVendorFilter} label="Mapped vendor" placeholder="All products" />
         <label className="inventory-check"><input type="checkbox" checked={includeInactive} onChange={event=>setIncludeInactive(event.target.checked)}/>Include inactive</label>
         <div className="inventory-toolbar-actions">
           <button className="inventory-secondary-action" type="button" aria-expanded={showLookup} onClick={()=>setShowLookup(previous=>!previous)}><Tags size={16} aria-hidden="true"/>Brands & Categories</button>
@@ -87,7 +88,7 @@ export function InventoryPage() {
         <label>Master Type<select value={lookupKind} onChange={event=>setLookupKind(event.target.value as 'brands'|'categories')}><option value="brands">Brand</option><option value="categories">Category</option></select></label>
         <label>Name<input required maxLength={150} value={lookupName} onChange={event=>setLookupName(event.target.value)}/></label><button className="btn" disabled={busy}><Plus size={16}/>Add</button>
       </form>:null}
-      <div className="inventory-bulk"><strong>{selectedIds.length} selected</strong><select aria-label="Vendor for selected products" value={bulkVendor} onChange={event=>setBulkVendor(event.target.value)}><option value="">Select vendor to map</option>{lookups.vendors.map(vendor=><option value={vendor.id} key={vendor.id}>{vendor.legal_name}</option>)}</select>
+      <div className="inventory-bulk"><strong>{selectedIds.length} selected</strong><PartySelect parties={lookups.vendors} value={bulkVendor} onChange={setBulkVendor} label="Vendor for selected products" placeholder="Select vendor to map" />
         <button className="btn" type="button" disabled={!selectedIds.length||!bulkVendor||busy} onClick={()=>void perform(async()=>{await api.inventoryBulkMap(bulkVendor,selectedIds);setVendorFilter(bulkVendor);setSelectedIds([]);},"Vendor mapped to selected products.")}>Map Selected Products</button>
       </div>
       <div className="ops-table-wrap"><table className="ops-table inventory-register"><thead><tr><th><input type="checkbox" aria-label="Select visible products" checked={filtered.length>0&&filtered.every(product=>selectedIds.includes(product.id))} onChange={event=>setSelectedIds(event.target.checked?[...new Set([...selectedIds,...filtered.map(product=>product.id)])]:selectedIds.filter(id=>!filtered.some(product=>product.id===id)))}/></th><th>Product</th><th>Brand / Category</th><th>Owned Stock</th><th>Vendors</th><th>Preferred MRP</th><th>Buying Price</th><th>Catalog Price</th><th>Catalog</th><th></th></tr></thead>

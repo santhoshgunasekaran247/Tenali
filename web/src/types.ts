@@ -69,6 +69,7 @@ export type Attachment = {
   mime_type: string;
   file_size: number;
   created_at: string;
+  download_url?: string | null;
 };
 
 export type HsnMaster = {

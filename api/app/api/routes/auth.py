@@ -16,6 +16,8 @@ from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import CSRF_COOKIE, SESSION_COOKIE, company_by_slug, host_company,platform_host
 from app.services.tenant_security import Login, MemberCreate, Registration, normalize_domain, token_digest
 from app.services.tenant_security import password_hash,password_matches
+from app.services.federation_settings import public_config
+from app.services.shopper_federation import verified_identity
 
 router = APIRouter()
 
@@ -72,9 +74,58 @@ def register(payload: Registration, request: Request, response: Response, db=Dep
     check_origin(request)
     if host_company(db, request):
         raise HTTPException(403, "Create a business workspace on the platform registration page")
+    raise HTTPException(410, "Create a workspace using social login; handwritten email registration is disabled.")
+
+
+class WorkspaceSocialRegistration(BaseModel):
+    model_config = {"extra": "forbid"}
+    company_name: str = Field(min_length=1, max_length=200)
+    slug: str = Field(pattern=r'^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$', max_length=48)
+    id_token: str = Field(min_length=1, max_length=10000, repr=False)
+    _name = field_validator("company_name")(Registration.clean_name.__func__)
+    _slug = field_validator("slug")(Registration.valid_slug.__func__)
+
+
+class WorkspaceSocialLogin(BaseModel):
+    model_config = {"extra": "forbid"}
+    id_token: str = Field(min_length=1, max_length=10000, repr=False)
+
+
+@router.get("/social-config")
+def social_config(request: Request, db=Depends(identity_db)):
+    check_origin(request)
+    return public_config(db)
+
+
+@router.post("/register-social", status_code=201)
+def register_social(payload: WorkspaceSocialRegistration, request: Request, response: Response, db=Depends(identity_db)):
+    check_origin(request)
+    if not platform_host(request) or host_company(db, request) or request.headers.get("X-Tenant-Slug"):
+        raise HTTPException(403, "Create a workspace on the platform registration page")
     auth = TenantAuth(db)
-    auth.throttle("register:"+(request.client.host if request.client else "unknown"), 8)
-    token = auth.register(payload)
+    auth.throttle("register:" + (request.client.host if request.client else "unknown"), 8)
+    social = verified_identity(payload.id_token, public_config(db))
+    token = auth.register_federated(payload.company_name, payload.slug, social)
+    set_session(response, request, token)
+    return session_response(auth, token)
+
+
+@router.post("/login-social")
+def login_social(payload: WorkspaceSocialLogin, request: Request, response: Response, db=Depends(identity_db)):
+    check_origin(request)
+    auth = TenantAuth(db)
+    auth.throttle("social-login:" + (request.client.host if request.client else "unknown"), 20)
+    tenant = host_company(db, request)
+    slug = request.headers.get("X-Tenant-Slug")
+    if slug:
+        selected = company_by_slug(db, slug)
+        if not selected or (tenant and str(selected["id"]) != str(tenant["id"])):
+            raise HTTPException(403, "Workspace selection does not match this domain")
+        tenant = selected
+    if not tenant:
+        raise HTTPException(422, "Enter your workspace address before signing in")
+    social = verified_identity(payload.id_token, public_config(db))
+    token = auth.login_federated(str(tenant["id"]), social)
     set_session(response, request, token)
     return session_response(auth, token)
 
@@ -124,6 +175,8 @@ class PasswordChange(BaseModel):
 @router.post('/password')
 def change_password(payload:PasswordChange,request:Request,identity=Depends(current_identity),db=Depends(identity_db)):
     stored=db.execute(text('select password_hash from tenant_users where id=:id for update'),{'id':str(identity['user_id'])}).scalar_one()
+    if not stored:
+        raise HTTPException(422, "This account uses social login. Manage its password with your social provider.")
     if not password_matches(payload.current_password,stored):
         raise HTTPException(422,'Current password is incorrect')
     db.execute(text('update tenant_users set password_hash=:hash where id=:id'),{'hash':password_hash(payload.new_password),'id':str(identity['user_id'])})
@@ -148,13 +201,7 @@ class WorkspaceCreate(BaseModel):
 def create_workspace(payload:WorkspaceCreate,request:Request,response:Response,identity=Depends(current_identity),db=Depends(identity_db)):
     if not platform_host(request) or request.headers.get('X-Tenant-Slug'):
         raise HTTPException(403,'Create additional workspaces from the platform application')
-    auth=TenantAuth(db)
-    auth.throttle('workspace:'+str(identity['user_id']),5)
-    token=auth.create_workspace(str(identity['user_id']),payload.company_name,payload.slug,payload.password)
-    db.execute(text('delete from tenant_sessions where token_hash=:token'),{'token':token_digest(request.cookies.get(SESSION_COOKIE,''))})
-    db.commit()
-    set_session(response,request,token)
-    return session_response(auth,token)
+    raise HTTPException(410, "Use the platform social-login registration page to create another workspace.")
 
 
 @router.post("/switch")

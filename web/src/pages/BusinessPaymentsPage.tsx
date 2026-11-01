@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { PartySelect } from "../components/PartySelect";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
 import type { Account, AccountTransaction, AttachmentInput, Party } from "../types";
@@ -173,23 +174,9 @@ export function BusinessPaymentsPage() {
               </select>
             </label>
 
-            <label>
-              Related Party
-              <select
-                value={form.related_party_id}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, related_party_id: event.target.value }))
-                }
-                required={form.purpose === "purchase" || form.purpose === "billing"}
-              >
-                <option value="">Select party</option>
-                {parties.map((party) => (
-                  <option key={party.id} value={party.id}>
-                    {party.legal_name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <PartySelect parties={parties} value={form.related_party_id} label="Related party"
+              required={form.purpose === "purchase" || form.purpose === "billing"}
+              onChange={id => setForm(previous => ({ ...previous, related_party_id: id }))} />
 
             <label>
               Amount

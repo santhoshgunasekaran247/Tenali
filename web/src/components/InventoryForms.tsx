@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import { api } from "../api";
+import { PartySelect } from "./PartySelect";
 import { toAssetUrl } from "../features/catalog/utils";
 import type { HsnMaster, InventoryItemInput, InventoryLookups, InventoryOffer, InventoryOfferInput, InventoryProduct, InventoryProductInput, InventoryVariant } from "../types";
 
@@ -89,14 +90,19 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       <label>Colour<input maxLength={100} value={draft.colour||""} onChange={event=>patch({colour:event.target.value})}/></label>
       {([["weight","Weight (kg)"],["height","Height (cm)"],["width","Width (cm)"],["length","Length (cm)"]] as const).map(([key,label])=><label key={key}>{label}<input type="number" min="0" step="0.001" value={draft[key]??""} onChange={event=>patch({[key]:event.target.value===""?null:Number(event.target.value)})}/></label>)}
       <label className="inventory-wide">Description<textarea rows={3} maxLength={6000} value={draft.description||""} onChange={event=>patch({description:event.target.value})}/></label>
-      <label>Preferred Vendor<select value={draft.preferred_vendor_id||""} onChange={event=>patch({preferred_vendor_id:event.target.value||null})}><option value="">{variantMode?"Use parent preference":"Not selected"}</option>{offers.filter(offer=>offer.is_active&&offer.vendor_active).map(offer=><option key={offer.id} value={offer.vendor_id}>{offer.vendor_name}</option>)}</select></label>
+      <PartySelect parties={offers.filter(offer => offer.is_active && offer.vendor_active).map(offer => ({
+        id: offer.vendor_id, legal_name: offer.vendor_name,
+        phone: lookups.vendors.find(vendor => vendor.id === offer.vendor_id)?.phone,
+        email: lookups.vendors.find(vendor => vendor.id === offer.vendor_id)?.email,
+      }))} value={draft.preferred_vendor_id || ""} label="Preferred vendor"
+        placeholder={variantMode ? "Use parent preference" : "Not selected"} onChange={id => patch({ preferred_vendor_id: id || null })} />
       <label>Pricing Rule<select value={draft.pricing_mode} onChange={event=>patch({pricing_mode:event.target.value as InventoryItemInput['pricing_mode'],selling_price:price??null,discount_percent:Number(discount||0)})}>{variantMode?<option value="inherit">Use parent pricing</option>:null}<option value="price">Keep catalog price</option><option value="discount">Keep discount %</option></select></label>
       <label>Catalog Price (INR)<input type="number" min="0" step="0.01" disabled={draft.pricing_mode==="inherit"} value={price??""} onChange={event=>patch({pricing_mode:"price",selling_price:event.target.value===""?null:Number(event.target.value)})}/></label>
       <label>Discount %<input type="number" min="0" max="100" step="0.01" disabled={draft.pricing_mode==="inherit"} value={discount??""} onChange={event=>patch({pricing_mode:"discount",discount_percent:Number(event.target.value)})}/></label>
       <div className="inventory-price-reference"><span>Preferred vendor MRP</span><strong>{inventoryMoney(mrp)}</strong><span>Buying price</span><strong>{inventoryMoney(buyingPrice)}</strong></div>
       <label className="inventory-check"><input type="checkbox" checked={draft.is_active} onChange={event=>patch({is_active:event.target.checked})}/>Active</label>
       {!variantMode?<><label>Primary Image URL / Asset Path<input value={draft.image_url?.startsWith('data:')?"":draft.image_url||""} placeholder={draft.image_url?.startsWith('data:')?"Uploaded image":""} onChange={event=>patch({image_url:event.target.value||null})}/></label>
-        <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>{draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}</label>
+        <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>{draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}<span className="social-caption">Saved to Supabase as a public image URL when you save the product. Up to 1 MB.</span></label>
         <label className="inventory-wide">Gallery Image URLs<textarea rows={2} value={gallery} onChange={event=>setGallery(event.target.value)}/></label>
         <label className="inventory-check"><input type="checkbox" checked={draft.catalog_visible} onChange={event=>patch({catalog_visible:event.target.checked})}/>Visible in customer catalog</label>
         <label>Minimum online order quantity<input required type="number" min={1} max={100} step={1} value={draft.minimum_order_quantity} onChange={event=>patch({minimum_order_quantity:Number(event.target.value)})}/><small>Starts the cart at this quantity. Applies separately to each size / colour. Use 1 for no bulk minimum; online checkout supports up to 100 units per item.</small></label>
@@ -127,7 +133,8 @@ export function VendorOfferEditor({ product, offer, variantId, vendors, onSaved,
   const submit=async(event:FormEvent)=>{event.preventDefault();setSaving(true);setError("");try{onSaved(await api.inventorySaveOffer(product.id,draft,offer?.id));}catch(failure){setError(failure instanceof Error?failure.message:"Unable to save vendor offer.");}finally{setSaving(false);}};
   return <section className="inventory-editor" aria-label="Vendor offer editor"><div className="inventory-section-head"><h3>{offer?"Edit Vendor Offer":"Map Vendor to Product"}</h3><button className="ops-link-btn" type="button" aria-label="Close vendor offer" title="Close vendor offer" onClick={onClose}><X size={18}/></button></div>
     {error?<p className="ops-error" role="alert">{error}</p>:null}<form className="ops-form" onSubmit={submit}><fieldset disabled={saving} className="inventory-fields">
-      <label>Vendor<select required disabled={!!offer} value={draft.vendor_id} onChange={event=>patch({vendor_id:event.target.value})}><option value="">Select vendor</option>{vendors.map(vendor=><option value={vendor.id} key={vendor.id}>{vendor.legal_name}</option>)}</select></label>
+      <PartySelect parties={vendors} value={draft.vendor_id} label="Vendor" required disabled={!!offer}
+        onChange={id => patch({ vendor_id: id })} />
       <label>Product / Variant<select disabled={!!offer} value={draft.variant_id||""} onChange={event=>patch({variant_id:event.target.value||null})}><option value="">{product.name} - Base product</option>{product.variants.map(variant=><option value={variant.id} key={variant.id}>{variant.variant_name}</option>)}</select></label>
       <label>Vendor MRP (INR)<input type="number" min="0" step="0.01" value={draft.mrp??""} onChange={event=>patch({mrp:event.target.value===""?null:Number(event.target.value)})}/></label>
       <label>Buying Price (INR)<input type="number" min="0" step="0.01" value={draft.buying_price??""} onChange={event=>patch({buying_price:event.target.value===""?null:Number(event.target.value)})}/></label>

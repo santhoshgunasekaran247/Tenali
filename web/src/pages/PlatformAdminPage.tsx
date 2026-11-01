@@ -1,11 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Building2, ShieldCheck, LogOut } from "lucide-react";
 import { accountRequest } from "../features/shop";
 import { tenantBase, tenantFetch } from "../features/tenantTransport";
+import { SocialLoginSettings } from "../components/SocialLoginSettings";
 
 type Admin = { id: string; email: string; display_name: string };
 type Workspace = { id: string; company_name: string; tenant_slug: string; is_active: boolean };
 export function PlatformAdminPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const authentication = location.pathname === "/platform/authentication";
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [offset, setOffset] = useState(0);
@@ -26,29 +31,36 @@ export function PlatformAdminPage() {
     }).catch(failure => { if (active) setError(String(failure)); }).finally(() => { if (active) setChecking(false); });
     return () => { active = false; };
   }, [unavailable]);
-  useEffect(() => { if (admin) void refresh().catch(failure => setError(String(failure))); }, [admin?.id, offset]);
+  useEffect(() => {
+    if (location.hash === "#social-login") navigate("/platform/authentication", { replace: true });
+  }, [location.hash, navigate]);
+  useEffect(() => { if (admin && !authentication) void refresh().catch(failure => setError(String(failure))); }, [admin?.id, offset, authentication]);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");
     try { setAdmin(await accountRequest<Admin>("/login", { method: "POST", body: JSON.stringify(form) }, "platform")); setForm({ email: "", password: "" }); }
     catch (failure) { setError(String(failure)); } finally { setBusy(false); }
   };
-  return <main className="shop-account-page"><header className="shop-account-heading"><h1>Platform Superadmin</h1><p>Platform operator credentials only. Workspace staff and shopper logins cannot access this console.</p><Link to="/">Back to Platform</Link></header><div className="shop-account-content">
+  return <main className="platform-console"><header className="platform-console-header"><div><span className="platform-eyebrow">TENALI PLATFORM</span><h1>{authentication ? "Authentication" : "Client administration"}</h1><p>{authentication ? "One secure sign-in configuration for every workspace and storefront." : "Manage client workspaces and their availability."}</p></div><Link to="/">Back to platform</Link></header><div className="platform-console-body">
     {unavailable ? <p>Open the platform host without a workspace path to use this console.</p> : checking ? <p>Checking platform session...</p> : <>
       {error ? <p className="ops-error" role="alert">{error}</p> : null}
-      {!admin ? <form className="ops-form access-panel" onSubmit={submit}><label>Platform Email<input type="email" required autoComplete="username" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label><label>Platform Password<input type="password" required maxLength={128} autoComplete="current-password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} /></label><button className="btn" disabled={busy}>Sign In as Platform Administrator</button></form> : <>
-        <p>{admin.display_name} · {admin.email}</p><button className="btn light" disabled={busy} onClick={() => {
+      {!admin ? <form className="ops-form access-panel platform-login" onSubmit={submit}><ShieldCheck size={30}/><h2>Platform administrator sign-in</h2><p>Use your platform credentials. Client and shopper accounts cannot access this console.</p><label>Platform Email<input type="email" required autoComplete="username" value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label><label>Platform Password<input type="password" required maxLength={128} autoComplete="current-password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} /></label><button className="btn" disabled={busy}>Sign In as Platform Administrator</button></form> : <div className="platform-layout">
+        <aside className="platform-sidebar"><nav aria-label="Platform sections"><Link to="/platform" aria-current={!authentication ? "page" : undefined}><Building2 size={18}/>Client administration</Link><Link to="/platform/authentication" aria-current={authentication ? "page" : undefined}><ShieldCheck size={18}/>Authentication</Link></nav>
+        <div className="platform-operator"><strong>{admin.display_name}</strong><span>{admin.email}</span><button className="ops-link-btn" disabled={busy} onClick={() => {
           setBusy(true); setError("");
           void accountRequest("/logout", { method: "POST" }, "platform").then(() => { setAdmin(null); setWorkspaces([]); })
             .catch(failure => setError(String(failure))).finally(() => setBusy(false));
-        }}>Sign Out of Platform</button>
-        <h2>Workspaces</h2><p>Disabling a workspace revokes its staff and shopper sessions and hides its storefront. This console does not expose provider secrets or allow staff impersonation.</p>
-        {workspaces.map(workspace => <article key={workspace.id} className="ops-card shop-order"><h3>{workspace.company_name}</h3><p>{workspace.tenant_slug} · {workspace.is_active ? "Active" : "Disabled"}</p><button disabled={busy} className="btn light" onClick={() => {
+        }}><LogOut size={15}/>Sign out</button></div></aside>
+        <div className="platform-section">{authentication ? <SocialLoginSettings key={admin.id} /> : <section aria-labelledby="platform-clients-heading">
+        <div className="platform-section-title"><h2 id="platform-clients-heading">Client workspaces</h2><p>Disabling a client hides its storefront and revokes its staff and shopper sessions.</p></div>
+        <div className="platform-client-list">{workspaces.map(workspace => <article key={workspace.id} className="platform-client-card"><div><h3>{workspace.company_name}</h3><p>{workspace.tenant_slug}</p></div><span className={`platform-status ${workspace.is_active ? "is-enabled" : ""}`}>{workspace.is_active ? "Active" : "Disabled"}</span><button disabled={busy} className="btn light" onClick={() => {
           setBusy(true); setError("");
           void accountRequest(`/workspaces/${workspace.id}`, { method: "PATCH", body: JSON.stringify({ is_active: !workspace.is_active }) }, "platform")
             .then(refresh).catch(failure => setError(String(failure))).finally(() => setBusy(false));
-        }}>{workspace.is_active ? "Disable Workspace" : "Enable Workspace"}</button></article>)}
+        }}>{workspace.is_active ? "Disable Workspace" : "Enable Workspace"}</button></article>)}</div>
+        {!workspaces.length ? <p className="social-caption">No client workspaces on this page.</p> : null}
         <div className="shop-actions"><button disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><button disabled={workspaces.length < 50 || busy} onClick={() => setOffset(offset + 50)}>Next</button></div>
-      </>}
+        </section>}</div>
+      </div>}
     </>}
   </div></main>;
 }

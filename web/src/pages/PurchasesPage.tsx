@@ -6,6 +6,7 @@ import { api } from "../api";
 import { postingKey } from "../features/postingKey";
 import { calculateLineTotals } from "../features/taxTotals";
 import { StoreSelect, useStores } from "../features/stores";
+import { PartySelect } from "../components/PartySelect";
 import type { InventoryProduct } from "../types";
 import { TaxLinesEditor, newTaxLine } from "../components/TaxLinesEditor";
 import type { Account, AttachmentInput, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
@@ -364,23 +365,8 @@ export function PurchasesPage() {
 
           <form className="ops-form" onSubmit={submit}>
             <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Receiving store" />
-            <label>
-              Vendor
-              <select
-                value={form.vendor_party_id}
-                onChange={(event) =>
-                  {setForm((prev) => ({ ...prev, vendor_party_id: event.target.value }));setLines([newTaxLine()]);}
-                }
-                required
-              >
-                <option value="">Select vendor</option>
-                {vendors.map((party) => (
-                  <option key={party.id} value={party.id}>
-                    {party.legal_name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <PartySelect parties={vendors} value={form.vendor_party_id} label="Vendor" required disabled={saving}
+              onChange={id => { setForm(previous => ({ ...previous, vendor_party_id: id })); setLines([newTaxLine()]); }} />
 
             <label>
               Purchase Date

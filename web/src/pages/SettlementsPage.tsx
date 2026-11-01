@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { PartySelect } from "../components/PartySelect";
 import type {
   Account,
   BorrowingDirection,
@@ -46,13 +47,6 @@ export function SettlementsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadVersion = useRef(0);
-
-  const partyOptions = useMemo(() => {
-    return parties.map((party) => ({
-      value: party.id,
-      label: `${party.legal_name} (${party.party_type})`,
-    }));
-  }, [parties]);
 
   const load = async () => {
     const version = ++loadVersion.current;
@@ -131,21 +125,8 @@ export function SettlementsPage() {
             <h2>Record Borrow / Repay</h2>
           </div>
           <form className="ops-form" onSubmit={submit}>
-            <label>
-              Party
-              <select
-                value={form.party_id}
-                onChange={(event) => setForm((prev) => ({ ...prev, party_id: event.target.value }))}
-                required
-              >
-                <option value="">Select party</option>
-                {partyOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <PartySelect parties={parties} value={form.party_id} label="Party" required
+              onChange={id => setForm(previous => ({ ...previous, party_id: id }))} />
 
             <label>
               Direction
@@ -240,17 +221,7 @@ export function SettlementsPage() {
           {error ? <p className="ops-error">{error}</p> : null}
 
           <div className="ops-list-tools">
-            <select
-              value={selectedParty}
-              onChange={(event) => setSelectedParty(event.target.value)}
-            >
-              <option value="">All parties</option>
-              {partyOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <PartySelect parties={parties} value={selectedParty} onChange={setSelectedParty} label="Party filter" placeholder="All parties" />
             <button className="btn" type="button" onClick={() => void load()}>
               Refresh
             </button>

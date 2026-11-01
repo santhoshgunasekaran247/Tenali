@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import text
@@ -15,11 +16,14 @@ from app.schemas.checkout import (CheckoutInput, CheckoutSettingsInput, CodDecis
                                   EnquiryInput, EnquiryUpdate, OrderCancel, PackageInput, PaymentConfirmation, ShipmentReconcile, ShopperRegistration)
 from app.services import checkout_providers as providers
 from app.services import shop_orders_service as orders_service
-from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company, verify_password
+from app.services import shopper_federation as federation
+from app.services.customer_contacts import normalize_phone
+from app.services.federation_settings import public_config
+from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company
 from app.services.shop_checkout import ORDER_COLUMNS, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
-from app.services.tenant_security import Login, password_hash, password_matches, token_digest
+from app.services.tenant_security import Login, token_digest
 
 router = APIRouter()
 admin_router = APIRouter()
@@ -47,7 +51,7 @@ def new_session(db, request, response, company_id, account):
                {"token": token_digest(token), "company": company_id, "shopper": account["id"], "expires": expiry()})
     db.commit()
     set_cookies(response, request, token, SHOP_COOKIE, SHOP_CSRF)
-    return {key: account[key] for key in ["id", "email", "display_name"]}
+    return {key: account[key] for key in ["id", "email", "display_name", "phone"]}
 
 
 def throttle(db, request, company_id):
@@ -56,30 +60,68 @@ def throttle(db, request, company_id):
 
 @router.post("/register", status_code=201)
 def register(payload: ShopperRegistration, request: Request, response: Response, company=Depends(store), db=Depends(identity_db)):
-    throttle(db, request, company["id"])
-    try:
-        account = db.execute(text("""insert into shopper_accounts(company_id,email,display_name,password_hash)
-            values(:company,:email,:name,:hash) returning id,email,display_name"""),
-            {"company": company["id"], "email": payload.email, "name": payload.display_name, "hash": password_hash(payload.password)}).mappings().one()
-        return new_session(db, request, response, company["id"], account)
-    except IntegrityError as error:
-        db.rollback()
-        raise HTTPException(409, "A shopper account with this email already exists in this store") from error
+    raise HTTPException(410, "Use federated shopper login. Email/password registration is no longer available.")
 
 
 @router.post("/login")
 def login(payload: Login, request: Request, response: Response, company=Depends(store), db=Depends(identity_db)):
+    raise HTTPException(410, "Use federated shopper login. Email/password login is no longer available.")
+
+
+class FederatedLogin(BaseModel):
+    id_token: str = Field(min_length=1, max_length=10000, repr=False)
+    phone: str | None = Field(default=None, max_length=40)
+    display_name: str | None = Field(default=None, max_length=150)
+
+
+@router.get("/auth-config")
+def auth_config(company=Depends(store), db=Depends(identity_db)):
+    return public_config(db)
+
+
+@router.post("/federated")
+def federated_login(payload: FederatedLogin, request: Request, response: Response, company=Depends(store), db=Depends(identity_db)):
     throttle(db, request, company["id"])
-    account = db.execute(text("select * from shopper_accounts where company_id=:company and email=:email"),
-                         {"company": company["id"], "email": payload.email.strip().lower()}).mappings().first()
-    verify_password(payload.password, account["password_hash"] if account and account["is_active"] else None)
-    return new_session(db, request, response, company["id"], account)
+    identity = federation.verified_identity(payload.id_token, public_config(db))
+    if not payload.phone:
+        account = db.execute(text(f"""select {federation.ACCOUNT_COLUMNS} from shopper_accounts
+            where company_id=:company and supabase_uid=:uid and is_active"""),
+            {"company": company["id"], "uid": identity["uid"]}).mappings().first()
+        if not account:
+            return {"needs_profile": True, "email": identity["email"], "display_name": identity["name"]}
+    try:
+        account = federation.federated_account(db, str(company["id"]), identity, payload.phone, payload.display_name)
+        return new_session(db, request, response, company["id"], account)
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(409, "This email is already associated with an account. Contact the store for identity review.") from error
 
 
 @router.get("/session")
 def session(request: Request, response: Response, identity=Depends(customer)):
     ensure_csrf(response, request, SHOP_CSRF)
     return identity
+
+
+class ShopperProfile(BaseModel):
+    display_name: str = Field(min_length=1, max_length=150)
+    phone: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/profile")
+def update_profile(payload: ShopperProfile, identity=Depends(customer), company=Depends(store), db=Depends(identity_db)):
+    try:
+        phone = normalize_phone(payload.phone, required=True)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    name = payload.display_name.strip()
+    if not name:
+        raise HTTPException(422, "Enter your name")
+    row = db.execute(text("""update shopper_accounts set phone=:phone,display_name=:name
+        where company_id=:company and id=:id returning id,email,display_name,phone"""),
+        {"company": company["id"], "id": identity["id"], "phone": phone, "name": name}).mappings().one()
+    db.commit()
+    return dict(row)
 
 
 @router.post("/logout")
@@ -94,17 +136,7 @@ def logout(request: Request, response: Response, identity=Depends(customer), db=
 
 @router.post("/password")
 def password(payload: PasswordChange, request: Request, company=Depends(store), identity=Depends(customer), db=Depends(identity_db)):
-    throttle(db, request, company["id"])
-    stored = db.execute(text("select password_hash from shopper_accounts where company_id=:company and id=:id for update"),
-                        {"company": company["id"], "id": identity["id"]}).scalar_one()
-    if not password_matches(payload.current_password, stored):
-        raise HTTPException(422, "Current password is incorrect")
-    db.execute(text("update shopper_accounts set password_hash=:hash where company_id=:company and id=:id"),
-               {"hash": password_hash(payload.new_password), "company": company["id"], "id": identity["id"]})
-    db.execute(text("delete from shopper_sessions where company_id=:company and shopper_id=:id and token_hash<>:current"),
-               {"company": company["id"], "id": identity["id"], "current": token_digest(request.cookies.get(SHOP_COOKIE, ""))})
-    db.commit()
-    return {"changed": True}
+    raise HTTPException(410, "Manage your password with your social login provider.")
 
 
 def public_db(company=Depends(store)):

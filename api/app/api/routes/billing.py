@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -12,8 +12,23 @@ from app.schemas.billing import (
 )
 from app.services.billing_service import BillingService
 from app.services.document_cancellation import Cancellation,cancel_document
+from app.schemas.parties import PartyCreate, PartyOut
+from app.services.parties_service import PartiesService
 
 router = APIRouter()
+
+
+@router.get("/customers")
+def billing_customers(search: str | None = None, company_id: str | None = None, db: Session = Depends(get_db)):
+    result = PartiesService(db).list(company_id, search, True)
+    return {"items": [party for party in result["items"] if party["party_type"] in {"customer", "customer_vendor"}]}
+
+
+@router.post("/customers", response_model=PartyOut, status_code=201)
+def add_billing_customer(payload: PartyCreate, company_id: str | None = None, db: Session = Depends(get_db)):
+    if payload.party_type != "customer":
+        raise HTTPException(422, "Only customers can be created from billing")
+    return PartiesService(db).create(company_id, payload)
 
 
 @router.post("/invoices/{invoice_id}/cancel")

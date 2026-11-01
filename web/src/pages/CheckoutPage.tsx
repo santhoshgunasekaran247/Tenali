@@ -44,7 +44,7 @@ export function CheckoutPage() {
     shopperSession().then(result => {
       if (!active) return;
       if (!result) { navigate(`/account?next=${encodeURIComponent(location.pathname + location.search)}`, { replace: true }); return; }
-      setShopper(result); setAddress(previous => ({ ...previous, name: result.display_name }));
+      setShopper(result); setAddress(previous => ({ ...previous, name: result.display_name, phone: result.phone?.replace(/^\+91/, "") || "" }));
     }).catch(failure => { if (active) setError(String(failure)); });
     return () => { active = false; };
   }, [loading, storefront?.id, location.search]);

@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.schemas.company import CompanyUpdate, SiteTheme, StorefrontContent
+from app.services.object_storage import FileStore
 
 
 class CompanyService:
@@ -30,6 +31,10 @@ class CompanyService:
         company = self.get(company_id)
         values = payload.model_dump()
         values["id"] = str(company["id"])
+        files = FileStore(self.db)
+        values["logo_url"] = files.image(values["id"], values["logo_url"])
+        values["invoice_settings"]["signature_image"] = files.image(
+            values["id"], values["invoice_settings"]["signature_image"], private=True)
         values["tenant_slug"] = payload.tenant_slug or company["tenant_slug"]
         already_reserved = self.db.execute(text("select 1 from tenant_slug_aliases where company_id=:company and tenant_slug=:slug"),
             {"company": str(company["id"]), "slug": values["tenant_slug"]}).scalar_one_or_none()

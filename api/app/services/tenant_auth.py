@@ -38,7 +38,9 @@ class TenantAuth:
     def identity(self, token: str | None):
         if not token:
             raise HTTPException(401, "Sign in to your workspace")
-        row = self.db.execute(text("""select account.id as user_id,account.email,account.display_name,member.company_id,member.role,member.store_ids,member.modules,
+        row = self.db.execute(text("""select account.id as user_id,account.email,account.display_name,
+            case when account.supabase_uid is not null and account.password_hash is null then 'social' else 'password' end as authentication_method,
+            member.company_id,member.role,member.store_ids,member.modules,
             company.company_name,company.nickname,company.logo_url,company.tenant_slug
             from tenant_sessions session join tenant_users account on account.id=session.user_id and account.is_active=true
             join tenant_memberships member on member.user_id=account.id and member.company_id=session.company_id and member.is_active=true
@@ -71,13 +73,44 @@ class TenantAuth:
             raise HTTPException(409, "Email or workspace address is already registered. Sign in if you already have an account.") from error
         return self.session(str(user), str(company))
 
+    def register_federated(self, company_name: str, slug: str, social: dict):
+        try:
+            taken = self.db.execute(text("""select 1 from companies where tenant_slug=:slug
+                union all select 1 from tenant_slug_aliases where tenant_slug=:slug limit 1"""), {"slug": slug}).first()
+            if taken:
+                raise HTTPException(409, "This workspace address is already registered")
+            company = self.db.execute(text("insert into companies(company_name,tenant_slug,email) values(:name,:slug,:email) returning id"),
+                                      {"name": company_name, "slug": slug, "email": social["email"]}).scalar_one()
+            self.seed_company_defaults(str(company))
+            user = self.db.execute(text("""insert into tenant_users(company_id,email,display_name,supabase_uid)
+                values(:company,:email,:name,:uid) returning id"""),
+                {"company": company, "email": social["email"], "name": social["name"] or social["email"], "uid": social["uid"]}).scalar_one()
+            self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),
+                            {"company": company, "user": user})
+            self.audit(str(company), str(user), "WORKSPACE_CREATED_SOCIAL", str(company))
+            self.db.commit()
+        except IntegrityError as error:
+            self.db.rollback()
+            raise HTTPException(409, "This workspace address is already registered") from error
+        return self.session(str(user), str(company))
+
+    def login_federated(self, tenant_id: str, social: dict):
+        row = self.db.execute(text("""select account.id from tenant_users account
+            join tenant_memberships member on member.user_id=account.id and member.company_id=account.company_id and member.is_active
+            join companies company on company.id=account.company_id and company.is_active
+            where account.company_id=:company and account.supabase_uid=:uid and account.is_active"""),
+            {"company": tenant_id, "uid": social["uid"]}).mappings().first()
+        if not row:
+            raise HTTPException(403, "This social account is not linked to this workspace. Use your staff password or contact the owner.")
+        return self.session(str(row["id"]), tenant_id)
+
     def login(self, email: str, password: str, tenant_id: str | None = None):
         if not tenant_id:
             raise HTTPException(422, "Choose your workspace address before signing in")
         row = self.db.execute(text("select id,password_hash,is_active from tenant_users where company_id=:company and email=:email"), {"company": tenant_id, "email": email.strip().lower()}).mappings().first()
         if not row:
             password_matches(password, f"pbkdf2_sha256${PASSWORD_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-        if not row or not row["is_active"] or not password_matches(password, row["password_hash"]):
+        if not row or not row["is_active"] or not row["password_hash"] or not password_matches(password, row["password_hash"]):
             raise HTTPException(401, "Email or password is incorrect")
         memberships = self.memberships(str(row["id"]))
         chosen = next((member for member in memberships if str(member["company_id"]) == tenant_id), None) if tenant_id else next(iter(memberships), None)

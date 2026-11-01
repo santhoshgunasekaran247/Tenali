@@ -7,6 +7,7 @@ import { api } from "../api";
 import { postingKey } from "../features/postingKey";
 import { calculateLineTotals } from "../features/taxTotals";
 import { StoreSelect, useStores } from "../features/stores";
+import { BillingCustomer } from "../components/BillingCustomer";
 import type { InventoryProduct } from "../types";
 import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
 
@@ -99,7 +100,7 @@ export function BillingPage() {
     setError(null);
     try {
       const [partyRes, accountRes, invoiceRes, hsnRes, inventoryRes, companyRes] = await Promise.all([
-        api.parties({ active_only: true }),
+        api.billingCustomers(),
         api.accounts({ active_only: true }),
         api.invoices({ collection_status: collectionStatus || undefined, store_id: storeFilter || undefined }),
         api.hsnMasters(),
@@ -286,31 +287,22 @@ export function BillingPage() {
 
           <form className="ops-form" onSubmit={submit}>
             <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Billing store" />
-            <label>
-              Customer
-              <select
-                value={form.customer_party_id}
-                onChange={(event) =>
+            <BillingCustomer parties={parties} value={form.customer_party_id} disabled={saving}
+                onChange={(id) =>
                   setForm((prev) => {
-                    const customer = parties.find((party) => party.id === event.target.value);
+                    const customer = parties.find((party) => party.id === id);
                     return {
                       ...prev,
-                      customer_party_id: event.target.value,
+                      customer_party_id: id,
                       billing_address: customer?.address || "",
                       place_of_supply: SUPPLY_STATES.find((state) => state.startsWith(`${customer?.gst_number?.slice(0, 2)} - `)) || "",
                     };
                   })
                 }
-                required
-              >
-                <option value="">Select customer</option>
-                {parties.map((party) => (
-                  <option key={party.id} value={party.id}>
-                    {party.legal_name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onCreated={party => {
+                  setParties(previous => [...previous, party]);
+                  setForm(previous => ({ ...previous, customer_party_id: party.id, billing_address: party.address || "", place_of_supply: "" }));
+                }} />
 
             <label>
               Invoice Date

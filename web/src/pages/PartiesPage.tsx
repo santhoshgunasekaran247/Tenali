@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { SiteFooter } from "../components/SiteFooter";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { OnlineCustomerLinks } from "../components/OnlineCustomerLinks";
+import { useAuth } from "../features/auth";
 import type { Party, PartyCreateInput, PartyType } from "../types";
 
 const PARTY_TYPES: Array<{ value: PartyType; label: string }> = [
@@ -27,6 +29,7 @@ const INITIAL_FORM: FormState = {
 };
 
 export function PartiesPage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Party[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -111,6 +114,7 @@ export function PartiesPage() {
           <h1>Customers and vendors</h1>
           <p>Capture and maintain your party master for billing, purchases, settlements and reporting.</p>
         </section>
+        {user && ["owner", "admin"].includes(user.role) ? <OnlineCustomerLinks key={user.company_id} /> : null}
 
         <section className="ops-grid">
           <article className="ops-card">
@@ -164,6 +168,8 @@ export function PartiesPage() {
               <label>
                 Phone
                 <input
+                  type="tel"
+                  required={form.party_type === "customer" || form.party_type === "customer_vendor"}
                   value={form.phone}
                   onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
                   placeholder="+91..."
@@ -209,7 +215,7 @@ export function PartiesPage() {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, nickname or phone"
+                placeholder="Search by name, nickname, email or phone"
               />
               <label className="ops-toggle">
                 <input

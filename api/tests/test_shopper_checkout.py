@@ -164,9 +164,11 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         return {"Origin": "http://localhost", "X-Tenant-Slug": self.slug, "X-CSRF-Token": cookies.get("tenali_shopper_csrf", "")}
 
     def create_shopper(self, email=None, password="Shopper fixture password 123!"):
-        response = self.client.post("/shop/register", json={"email": email or self.staff_email, "display_name": "Shopper", "password": password},
-                                    headers={"Origin": "http://localhost", "X-Tenant-Slug": self.slug})
-        self.assertEqual(response.status_code, 201, response.text)
+        identity = {"uid": "fixture-" + (email or self.staff_email), "email": email or self.staff_email, "name": "Shopper"}
+        with patch("app.services.shopper_federation.verified_identity", return_value=identity):
+            response = self.client.post("/shop/federated", json={"id_token": "fixture-token", "display_name": "Shopper", "phone": "9876543210"},
+                                        headers={"Origin": "http://localhost", "X-Tenant-Slug": self.slug})
+        self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
     def main_store(self):
@@ -368,10 +370,14 @@ class ShopperCheckoutTests(TenantDatabaseCase):
     def test_staff_credentials_are_workspace_scoped_and_realms_are_separate(self):
         second_slug = "shop-b-" + self.suffix
         second_password = "Different workspace fixture password 123!"
-        response = self.client.post("/auth/register", json={"company_name": "Shop B", "slug": second_slug, "display_name": "Same email",
-                                                           "email": self.staff_email, "password": second_password},
-                                    headers={"Origin": "http://localhost"})
-        self.assertEqual(response.status_code, 201, response.text)
+        from app.services.tenant_auth import TenantAuth
+        from app.services.tenant_security import Registration
+        with self.factory() as db:
+            TenantAuth(db).register(Registration(company_name="Shop B",slug=second_slug,display_name="Same email",
+                                                email=self.staff_email,password=second_password))
+        response = self.client.post("/auth/login",json={"email":self.staff_email,"password":second_password},
+                                    headers={"Origin":"http://localhost","X-Tenant-Slug":second_slug})
+        self.assertEqual(response.status_code, 200, response.text)
         self.assertNotEqual(response.json()["user"]["user_id"], self.first["user"]["user_id"])
         for slug, password, expected in [(second_slug, "Test password for tenancy 123!", 401),
                                          (self.slug, second_password, 401), (second_slug, second_password, 200)]:
