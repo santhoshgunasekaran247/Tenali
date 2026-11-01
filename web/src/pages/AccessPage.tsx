@@ -30,6 +30,6 @@ export function AccessPage({register=false}:{register?:boolean}){
       <button className="btn access-submit" disabled={busy||(!tenantBase()&&!auth.storefront&&!form.slug)}><LogIn size={16}/>{busy?'Please wait...':'Sign in to workspace'}</button>
     </fieldset></form>
     {!tenantBase()&&!auth.storefront?<p>New business? <Link to="/register">Create a workspace</Link></p>:null}
-    {auth.storefront?<><p><Link to="/account">Shopper sign in / Create shopper account</Link></p><Link className="ops-inline-link" to="/">Back to Storefront</Link></>:<p><Link to="/platform">Platform administrator console</Link></p>}
+    {auth.storefront?<><p><Link to="/account">Shopper sign in / Create shopper account</Link></p><Link className="ops-inline-link" to="/">Back to Storefront</Link></>:null}
   </section></main>;
 }

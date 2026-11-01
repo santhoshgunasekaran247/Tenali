@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.api.routes.auth import identity_db
-from app.services.customer_security import ADMIN_COOKIE, ADMIN_CSRF, check_write, ensure_csrf, expiry, set_cookies, verify_password
+from app.services.customer_security import ADMIN_COOKIE, ADMIN_CSRF, SHOP_COOKIE, check_write, ensure_csrf, expiry, set_cookies, verify_password
 from app.services.tenant_auth import TenantAuth
-from app.services.tenant_context import host_company, platform_host
+from app.services.tenant_context import host_company, platform_host, SESSION_COOKIE
 from app.services.tenant_security import Login, token_digest
 from app.services.federation_settings import FederationSettings, settings_for, save_settings
 
@@ -18,6 +18,20 @@ router = APIRouter()
 def platform_request(request: Request, db=Depends(identity_db)):
     if not platform_host(request) or host_company(db, request) or request.headers.get("X-Tenant-Slug"):
         raise HTTPException(403, "Platform administration is available only on the platform host")
+    if request.cookies.get(SESSION_COOKIE):
+        try:
+            TenantAuth(db).identity(request.cookies[SESSION_COOKIE])
+        except HTTPException as error:
+            if error.status_code != 401:
+                raise
+        else:
+            raise HTTPException(403, "Workspace accounts cannot access platform administration. Sign out of the workspace first.")
+    if request.cookies.get(SHOP_COOKIE) and db.execute(text("""select 1 from shopper_sessions s
+        join shopper_accounts a on a.id=s.shopper_id and a.company_id=s.company_id and a.is_active
+        join companies c on c.id=s.company_id and c.is_active
+        where s.token_hash=:token and s.expires_at>now()"""),
+        {"token": token_digest(request.cookies[SHOP_COOKIE])}).first():
+        raise HTTPException(403, "Shopper accounts cannot access platform administration. Sign out of the shopper account first.")
     check_write(request)
 
 

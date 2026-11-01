@@ -152,6 +152,13 @@ tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_invent
 
 ### Recovering a platform administrator password
 
+Platform administration is not part of a client workspace. Open `/platform`
+directly on the platform host using a separate platform administrator account.
+Tenant paths/domains, tenant-selection headers, and active workspace or shopper
+sessions are rejected, even when a platform session cookie is also present.
+Sign out of the tenant/shopper session first or use a separate browser profile
+for platform operations. Tenant sign-in pages do not link to this console.
+
 There is no public platform password-recovery endpoint. An authorized server
 operator can reset an existing active platform administrator from a local terminal:
 
@@ -353,6 +360,37 @@ SMTP/SMS provider delivery is not configured. Full chart-of-accounts accounting,
 valuation policy, partial credit/debit notes/refunds and accountant-approved statutory
 returns remain separate implementation/setup gates. The current money-movement
 reports must not be presented as a complete trial balance, P&L or balance sheet.
+
+## Operations dashboard
+
+The live dashboard is a separate screen at `/portal/dashboard`, linked from the
+Operations Portal and workspace account menu, with a link back to the portal.
+The portal itself retains its workflow checklists and module navigation without
+loading dashboard data. The dashboard uses the sales/inventory overview layout.
+`/api/dashboard` aggregates all matching records (not the first
+page of module lists). Its optional `month=YYYY-MM-01` and `store_id=<uuid>` filters
+are validated; tenant/company overrides and unassigned stores are rejected.
+
+- Reporting month controls posted purchase/invoice totals, top five billed
+  products by quantity and the sales-order channel table. Cancelled purchase
+  bills/invoices are excluded. Header-only invoices count in totals but not in
+  product rankings.
+- Pending order activity and unreceived purchase quantities include all dates.
+  Stale payment/COD/confirmation holds are excluded from pending counts and shown
+  as closed in the channel table. There is no invented "packed" status.
+- Product/category counts and the active-product percentage describe the shared
+  workspace catalogue. On-hand quantities and low-stock checks use only the
+  selected/accessible stores. Low-stock counts include active products/variants
+  with enabled reorder thresholds, not merely inactive/unconfirmed catalogue rows.
+  Mixed-unit sums are operational counts, not inventory valuation.
+- Module restrictions also apply to dashboard data: unavailable sections are
+  omitted, not loaded in the browser and hidden afterward. Order summaries follow
+  the existing owner/admin-only checkout administration permission. Borrowing
+  remains explicitly workspace-wide and is omitted for store-filtered/restricted
+  users; the application does not allocate borrowing to a store.
+- Empty results are shown as empty/zero; failures show a retry action rather than
+  successful-looking zero totals. Workflow checklists are scoped to workspace and
+  user in this browser; they are not shared closing approvals.
 
 ## Supabase file storage
 

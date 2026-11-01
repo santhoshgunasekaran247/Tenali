@@ -58,6 +58,19 @@ export type CompanySetup = Company & { tenant_slug: string; storefront_content: 
 export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active">;
 
 export type AttachmentEntity = "purchase" | "business_payment";
+export type OperationsDashboard = {
+  month: string;
+  store_id: string | null;
+  inventory: { total_products: number; active_products: number; categories: number; quantity_in_hand: number; low_stock_items: number } | null;
+  orders: {
+    to_confirm: number; to_ship: number; to_deliver: number; to_collect: number; needs_review: number; to_invoice: number;
+    channels: { channel: string; total: number; awaiting_payment: number; confirmed: number; to_ship: number; dispatched: number; completed: number; closed: number; needs_review: number; ready_for_pickup: number }[];
+  } | null;
+  purchases: { bills: number; total: number; pending_receipts: number; quantity_to_receive: number } | null;
+  sales: { invoices: number; total: number; top_items: { product_id: string; name: string; image_url: string | null; uom: string; quantity: number }[] } | null;
+  receivables: { open: number; bad_debt: number; reminders_due: number } | null;
+  borrowing_outstanding: number | null;
+};
 export type AttachmentInput = {
   file_name: string;
   mime_type: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";

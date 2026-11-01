@@ -24,6 +24,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { HomePage } from "./pages/HomePage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { PortalPage } from "./pages/PortalPage";
+import { OperationsDashboardPage } from "./pages/OperationsDashboardPage";
 import { ProductPage } from "./pages/ProductPage";
 import { PurchasesPage } from "./pages/PurchasesPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="/products/:productId" element={<ProductPage />} />
         <Route element={<RequireWorkspace />}>
         <Route path="/portal" element={<PortalPage />} />
+        <Route path="/portal/dashboard" element={<OperationsDashboardPage />} />
         <Route path="/portal/parties" element={<PartiesPage />} />
         <Route path="/portal/accounts" element={<AccountsPage />} />
         <Route path="/portal/settlements" element={<SettlementsPage />} />

@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api } from "../api";
 import { useAuth } from "../features/auth";
 
 type PortalLink = {
@@ -115,8 +114,8 @@ function sectionScope(section: WorkflowSection["key"]): string {
   return todayKey();
 }
 
-function checkpointStorageKey(section: WorkflowSection["key"]): string {
-  return `ops-workflow:${section}:${sectionScope(section)}`;
+function checkpointStorageKey(company: string, user: string, section: WorkflowSection["key"]): string {
+  return `ops-workflow:${company}:${user}:${section}:${sectionScope(section)}`;
 }
 
 function LinkTile({ item }: { item: PortalLink }) {
@@ -141,65 +140,27 @@ function LinkTile({ item }: { item: PortalLink }) {
 export function PortalPage() {
   const auth=useAuth();
   const showAdminMaintenance=auth.user?.role==='owner'||auth.user?.role==='admin';
-  const [kpi, setKpi] = useState({
-    openReceivables: 0,
-    dueReminders: 0,
-    badDebtCount: 0,
-    netBorrowingOutstanding: 0,
-    inventoryAlerts: 0,
-  });
-  const [kpiLoading, setKpiLoading] = useState(true);
+  const canAccess = (path?: string) => {
+    const module = operationsLinks.find(item => item.path === path)?.module;
+    return !module || showAdminMaintenance || !auth.user?.modules || auth.user.modules.includes(module);
+  };
+  const storageKey = (section: WorkflowSection["key"]) => checkpointStorageKey(auth.user!.company_id, auth.user!.user_id, section);
   const [completedBySection, setCompletedBySection] = useState<Record<string, Record<string, boolean>>>({});
 
   useEffect(() => {
     const initial: Record<string, Record<string, boolean>> = {};
     for (const section of workflowSections) {
-      const stored = window.localStorage.getItem(checkpointStorageKey(section.key));
+      const stored = window.localStorage.getItem(storageKey(section.key));
       initial[section.key] = stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
     }
     setCompletedBySection(initial);
-  }, []);
-
-  useEffect(() => {
-    const loadKpi = async () => {
-      setKpiLoading(true);
-      try {
-        const [receivableRes, reminderRes, borrowingSummaryRes, inventoryRes] = await Promise.all([
-          api.receivables(),
-          api.dueReceivableReminders(),
-          api.borrowingSummary(),
-          api.inventoryAlerts(),
-        ]);
-
-        const openReceivables = receivableRes.items.filter(
-          (item) => item.status === "UNPAID" || item.status === "PARTIAL"
-        ).length;
-        const badDebtCount = receivableRes.items.filter((item) => item.status === "BAD_DEBT").length;
-        const netBorrowingOutstanding = borrowingSummaryRes.items.reduce(
-          (sum, row) => sum + row.net_outstanding,
-          0
-        );
-
-        setKpi({
-          openReceivables,
-          dueReminders: reminderRes.items.length,
-          badDebtCount,
-          netBorrowingOutstanding,
-          inventoryAlerts: inventoryRes.items.length,
-        });
-      } finally {
-        setKpiLoading(false);
-      }
-    };
-
-    void loadKpi();
-  }, []);
+  }, [auth.user?.company_id, auth.user?.user_id]);
 
   const setCompleted = (sectionKey: WorkflowSection["key"], stepId: string, checked: boolean) => {
     setCompletedBySection((prev) => {
       const nextSection = { ...(prev[sectionKey] || {}), [stepId]: checked };
       const next = { ...prev, [sectionKey]: nextSection };
-      window.localStorage.setItem(checkpointStorageKey(sectionKey), JSON.stringify(nextSection));
+      window.localStorage.setItem(storageKey(sectionKey), JSON.stringify(nextSection));
       return next;
     });
   };
@@ -207,7 +168,7 @@ export function PortalPage() {
   const resetSection = (sectionKey: WorkflowSection["key"]) => {
     setCompletedBySection((prev) => {
       const next = { ...prev, [sectionKey]: {} };
-      window.localStorage.removeItem(checkpointStorageKey(sectionKey));
+      window.localStorage.removeItem(storageKey(sectionKey));
       return next;
     });
   };
@@ -225,6 +186,16 @@ export function PortalPage() {
 
       <section className="portal-groups">
         <article className="portal-group-card">
+          <div className="portal-group-head">
+            <h2>Operations Dashboard</h2>
+            <span>Sales, inventory and purchasing at a glance</span>
+          </div>
+          <Link className="btn" to="/portal/dashboard">Open Dashboard</Link>
+        </article>
+      </section>
+
+      <section className="portal-groups">
+        <article className="portal-group-card">
           <details className="portal-workflow-disclosure">
             <summary className="portal-group-head">
               <h2>Single-Person Workflow</h2>
@@ -233,7 +204,8 @@ export function PortalPage() {
             <div className="ops-workflow-grid">
             {workflowSections.map((section) => {
               const doneMap = completedBySection[section.key] || {};
-              const doneCount = section.steps.filter((step) => doneMap[step.id]).length;
+              const visibleSteps = section.steps.filter(step => canAccess(step.path?.split("?")[0]));
+              const doneCount = visibleSteps.filter((step) => doneMap[step.id]).length;
               return (
                 <article className="ops-workflow-card" key={section.key}>
                   <div className="ops-workflow-card-head">
@@ -241,10 +213,10 @@ export function PortalPage() {
                     <span>{section.cadence}</span>
                   </div>
                   <p className="ops-workflow-progress">
-                    {doneCount}/{section.steps.length} completed
+                    {doneCount}/{visibleSteps.length} completed
                   </p>
                   <div className="ops-workflow-steps">
-                    {section.steps.map((step) => (
+                    {visibleSteps.map((step) => (
                       <label className="ops-workflow-step" key={step.id}>
                         <input
                           type="checkbox"
@@ -273,35 +245,8 @@ export function PortalPage() {
         </article>
       </section>
 
-      <section className="portal-kpi-grid inventory-kpis">
-        <Link className="portal-kpi-card portal-kpi-link" to="/portal/inventory?view=alerts"><p>Inventory Reorder Alerts</p><strong>{kpiLoading?"...":kpi.inventoryAlerts}</strong></Link>
-        <Link className="portal-kpi-card portal-kpi-link" to="/portal/receivables?status=OPEN">
-          <p>Open Receivables</p>
-          <strong>{kpiLoading ? "..." : kpi.openReceivables}</strong>
-        </Link>
-        <Link className="portal-kpi-card portal-kpi-link" to="/portal/receivables?focus=reminders">
-          <p>Reminders Due</p>
-          <strong>{kpiLoading ? "..." : kpi.dueReminders}</strong>
-        </Link>
-        <Link className="portal-kpi-card portal-kpi-link" to="/portal/receivables?status=BAD_DEBT">
-          <p>Bad Debt Cases</p>
-          <strong>{kpiLoading ? "..." : kpi.badDebtCount}</strong>
-        </Link>
-        <Link className="portal-kpi-card portal-kpi-link" to="/portal/settlements">
-          <p>Net Borrowing Outstanding</p>
-          <strong>
-            {kpiLoading
-              ? "..."
-              : kpi.netBorrowingOutstanding.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-          </strong>
-        </Link>
-      </section>
-
       <section className="portal-groups">
-        {showAdminMaintenance?<article className="portal-group-card">
+        <article className="portal-group-card">
           <div className="portal-group-head">
             <h2>Operations</h2>
             <span>Daily execution modules</span>
@@ -311,9 +256,9 @@ export function PortalPage() {
               <LinkTile key={item.label} item={item} />
             ))}
           </div>
-        </article>:null}
+        </article>
 
-        <article className="portal-group-card">
+        {showAdminMaintenance?<article className="portal-group-card">
           <div className="portal-group-head">
             <h2>Admin & Maintenance</h2>
             <span>Governance, setup, and controls</span>
@@ -323,7 +268,7 @@ export function PortalPage() {
               <LinkTile key={item.label} item={item} />
             ))}
           </div>
-        </article>
+        </article>:null}
       </section>
     </div>
   );
