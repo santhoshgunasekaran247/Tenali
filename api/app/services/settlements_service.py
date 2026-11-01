@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.services.runtime_schema import managed_schema
 
 from app.schemas.settlements import BorrowingEntryCreate
+from app.services.borrowing_ledger import ACTIVE_BORROWING, available_repayment, lock_borrowing_party
 from app.services.period_lock_service import assert_period_open
 
 ALLOWED_DIRECTIONS = {"borrow", "repay"}
@@ -42,10 +43,22 @@ class SettlementsService:
                     amount numeric(14,2) not null check (amount > 0),
                     transaction_date date not null default current_date,
                     account_id uuid references accounts(id),
+                    source_transaction_id uuid references account_transactions(id),
                     reference text,
                     notes text,
                     created_at timestamptz not null default now()
                 )
+                """
+            )
+        )
+        self.db.execute(
+            text("alter table borrowings add column if not exists source_transaction_id uuid references account_transactions(id)")
+        )
+        self.db.execute(
+            text(
+                """
+                create unique index if not exists uq_borrowings_source_transaction
+                on borrowings(company_id, source_transaction_id) where source_transaction_id is not null
                 """
             )
         )
@@ -66,7 +79,7 @@ class SettlementsService:
         resolved_company_id = self._resolve_company_id(company_id)
         self._ensure_table()
 
-        query = """
+        query = f"""
             select
                 b.id,
                 b.company_id,
@@ -78,6 +91,7 @@ class SettlementsService:
                 b.account_id,
                 b.reference,
                 b.notes,
+                not ({ACTIVE_BORROWING}) as is_reversed,
                 b.created_at
             from borrowings b
             join parties p on p.id = b.party_id
@@ -99,7 +113,7 @@ class SettlementsService:
 
         rows = self.db.execute(
             text(
-                """
+                f"""
                 select
                     b.party_id,
                     p.legal_name as party_name,
@@ -108,7 +122,7 @@ class SettlementsService:
                     coalesce(sum(case when b.direction = 'borrow' then b.amount else -b.amount end), 0) as net_outstanding
                 from borrowings b
                 join parties p on p.id = b.party_id
-                where b.company_id = :company_id
+                where b.company_id = :company_id and {ACTIVE_BORROWING}
                 group by b.party_id, p.legal_name
                 order by net_outstanding desc, p.legal_name asc
                 """
@@ -127,18 +141,15 @@ class SettlementsService:
         if payload.amount <= 0:
             raise HTTPException(status_code=422, detail="amount must be greater than zero")
 
-        party = self.db.execute(
-            text(
-                """
-                select id, legal_name
-                from parties
-                where id = :party_id and company_id = :company_id
-                """
-            ),
-            {"party_id": str(payload.party_id), "company_id": resolved_company_id},
-        ).mappings().first()
-        if not party:
-            raise HTTPException(status_code=404, detail="Party not found")
+        party = lock_borrowing_party(self.db, resolved_company_id, str(payload.party_id))
+
+        if payload.account_id:
+            account = self.db.execute(
+                text("select id from accounts where id = :id and company_id = :company and is_active = true"),
+                {"id": str(payload.account_id), "company": resolved_company_id},
+            ).scalar_one_or_none()
+            if not account:
+                raise HTTPException(404, "Borrowing account not found")
 
         transaction_date = payload.transaction_date or date.today()
         assert_period_open(
@@ -147,6 +158,10 @@ class SettlementsService:
             transaction_date=transaction_date,
             action_label="Posting borrowing/settlement entry",
         )
+        if direction == "repay":
+            available = available_repayment(self.db, resolved_company_id, str(payload.party_id), transaction_date)
+            if payload.amount > available:
+                raise HTTPException(422, f"Repayment exceeds the available outstanding balance ({available:.2f})")
         row = self.db.execute(
             text(
                 """
@@ -200,7 +215,7 @@ class SettlementsService:
             if payload.notes:
                 description += f" - {payload.notes}"
 
-            self.db.execute(
+            transaction_id = self.db.execute(
                 text(
                     """
                     insert into account_transactions (
@@ -228,6 +243,7 @@ class SettlementsService:
                         :source_type,
                         :source_id
                     )
+                    returning id
                     """
                 ),
                 {
@@ -243,6 +259,10 @@ class SettlementsService:
                     "source_type": "borrowing",
                     "source_id": str(row["id"]),
                 },
+            ).scalar_one()
+            self.db.execute(
+                text("update borrowings set source_transaction_id = :transaction where id = :id and company_id = :company"),
+                {"transaction": transaction_id, "id": row["id"], "company": resolved_company_id},
             )
 
         self.db.commit()

@@ -123,6 +123,8 @@ export function CompanySetupPage() {
         nickname: company.nickname || undefined,
         address: company.address || undefined,
         gst_number: company.gst_number || undefined,
+        gst_registered: company.gst_registered !== false,
+        whatsapp_number: company.whatsapp_number || undefined,
         udyam_number: company.udyam_number || undefined,
         tenant_slug: company.tenant_slug,
         phone: company.phone || undefined,
@@ -220,7 +222,10 @@ export function CompanySetupPage() {
             <label>Display Name<input maxLength={100} value={company.nickname || ""} onChange={(event) => update({ nickname: event.target.value })} /></label>
             <label>Storefront Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" value={company.tenant_slug} onChange={(event) => update({ tenant_slug: event.target.value.toLowerCase() })} /><span className="access-workspace-url">/c/{company.tenant_slug}</span></label>
             <label className="company-field-wide">Registered Address<textarea rows={4} maxLength={2000} value={company.address || ""} onChange={(event) => update({ address: event.target.value })} /></label>
-            <label>GSTIN<input pattern="[0-9]{2}[A-Z0-9]{13}" maxLength={15} value={company.gst_number || ""} onChange={(event) => update({ gst_number: event.target.value.toUpperCase() })} /></label>
+            <label className="ops-toggle"><input type="checkbox" checked={company.gst_registered !== false} onChange={(event) => update({ gst_registered: event.target.checked })} />GST registered (turnover above the threshold)</label>
+            {company.gst_registered === false ? <p className="ops-copy-note">Not registered: invoices are issued as Bills of Supply with no GST and no GSTIN is required. Purchase bills still record the GST your vendors charge.</p> : null}
+            <label>GSTIN<input pattern="[0-9]{2}[A-Z0-9]{13}" maxLength={15} disabled={company.gst_registered === false} value={company.gst_number || ""} onChange={(event) => update({ gst_number: event.target.value.toUpperCase() })} /></label>
+            <label>WhatsApp number (default for all stores)<input placeholder="+919876543210" value={company.whatsapp_number || ""} onChange={(event) => update({ whatsapp_number: event.target.value })} /></label>
             <label>Udyam Number<input maxLength={50} value={company.udyam_number || ""} onChange={(event) => update({ udyam_number: event.target.value })} /></label>
             <label>Phone<input type="tel" maxLength={60} value={company.phone || ""} onChange={(event) => update({ phone: event.target.value })} /></label>
             <label>Email<input type="email" maxLength={254} value={company.email || ""} onChange={(event) => update({ email: event.target.value })} /></label>

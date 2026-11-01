@@ -7,7 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from app.core.database import SessionLocal
-from app.services.tenant_auth import TenantAuth
+from app.services.tenant_auth import TenantAuth
+from app.services.access import check_module
 
 SESSION_COOKIE = "tenali_session"
 CSRF_COOKIE = "tenali_csrf"
@@ -90,6 +91,9 @@ class TenantBoundary(BaseHTTPMiddleware):
                         raise HTTPException(403, "This account has read-only access")
                     if path.startswith("/company") and request.method not in {"GET", "HEAD"} and identity["role"] not in {"owner", "admin"}:
                         raise HTTPException(403, "Administrator access is required")
+                    if path.startswith("/stores") and request.method not in {"GET", "HEAD"} and identity["role"] not in {"owner", "admin"}:
+                        raise HTTPException(403, "Administrator access is required")
+                    check_module(identity, path)
                     if request.method not in {"GET", "HEAD"}:
                         origin = request.headers.get("Origin")
                         if origin and urlparse(origin).netloc.lower() != request.url.netloc.lower():

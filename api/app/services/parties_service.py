@@ -48,6 +48,7 @@ class PartiesService:
                 is_active
             from parties
             where company_id = :company_id
+              and system_role is null
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
 

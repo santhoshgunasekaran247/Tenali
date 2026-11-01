@@ -20,7 +20,7 @@ class InvoiceDocumentTests(unittest.TestCase):
         )
 
     def test_equal_split_and_shipping_default(self):
-        document = build_invoice_document(self.payload, self.company, self.customer)
+        document = build_invoice_document(self.payload, self.company, self.customer, prices_include_gst=False)
         self.assertEqual(document["subtotal"], "200.00")
         self.assertEqual(document["total"], "236.00")
         self.assertEqual(document["lines"][0]["cgst"], "18.00")
@@ -29,7 +29,7 @@ class InvoiceDocumentTests(unittest.TestCase):
 
     def test_interstate_igst(self):
         self.payload.place_of_supply = "29 - Karnataka"
-        document = build_invoice_document(self.payload, self.company, self.customer)
+        document = build_invoice_document(self.payload, self.company, self.customer, prices_include_gst=False)
         self.assertTrue(document["interstate"])
         self.assertEqual(document["lines"][0]["igst"], "36.00")
         self.assertEqual(document["lines"][0]["cgst"], "0")
@@ -37,10 +37,38 @@ class InvoiceDocumentTests(unittest.TestCase):
     def test_odd_paise_preserves_total(self):
         self.payload.lines[0].quantity = Decimal("1")
         self.payload.lines[0].rate = Decimal("0.05")
-        document = build_invoice_document(self.payload, self.company, self.customer)
+        document = build_invoice_document(self.payload, self.company, self.customer, prices_include_gst=False)
         line = document["lines"][0]
         self.assertEqual(Decimal(line["cgst"]) + Decimal(line["sgst"]), Decimal(document["gst_total"]))
         self.assertEqual(document["total"], "0.06")
+
+    def test_fractional_quantity_rounds_before_gst(self):
+        self.payload.lines[0].quantity = Decimal("0.075")
+        self.payload.lines[0].rate = Decimal("27.40")
+        document = build_invoice_document(self.payload, self.company, self.customer, prices_include_gst=False)
+        self.assertEqual((document["subtotal"], document["gst_total"], document["total"]),
+                         ("2.06", "0.37", "2.43"))
+
+    def test_inclusive_prices_back_out_gst_and_keep_shelf_total(self):
+        self.payload.lines[0].quantity = Decimal("1")
+        self.payload.lines[0].rate = Decimal("1180.00")
+        document = build_invoice_document(self.payload, self.company, self.customer)
+        self.assertEqual((document["subtotal"], document["gst_total"], document["total"], document["pricing"]),
+                         ("1000.00", "180.00", "1180.00", "inclusive"))
+        self.assertEqual((document["lines"][0]["cgst"], document["lines"][0]["sgst"]), ("90.00", "90.00"))
+        self.payload.lines[0].quantity = Decimal("0.075")
+        self.payload.lines[0].rate = Decimal("27.40")
+        document = build_invoice_document(self.payload, self.company, self.customer)
+        self.assertEqual((document["subtotal"], document["gst_total"], document["total"]), ("1.75", "0.31", "2.06"))
+        self.payload.lines[0].price_includes_gst = False
+        document = build_invoice_document(self.payload, self.company, self.customer)
+        self.assertEqual(document["total"], "2.43")
+
+    def test_store_gstin_and_state_override_company(self):
+        store = {"code": "BLR", "name": "Bengaluru shop", "gst_number": "29ABCDE1234F1Z5", "state_code": "29", "address": "Bengaluru"}
+        document = build_invoice_document(self.payload, self.company, self.customer, store)
+        self.assertTrue(document["interstate"])
+        self.assertEqual((document["seller"]["gst_number"], document["seller"]["store"]["code"]), ("29ABCDE1234F1Z5", "BLR"))
 
     def test_snapshot_is_independent_of_master_data(self):
         self.company["invoice_settings"] = {"thank_you_note": "Original thanks", "signatory_name": "Original signer"}

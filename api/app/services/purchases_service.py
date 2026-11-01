@@ -11,10 +11,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.purchases import PurchaseCreate, PurchasePaymentCreate, PurchaseReceiptConfirm
+from app.services.financial_amounts import document_total
+from app.services.purchase_ledger import purchase_payment_totals, sync_purchase_payments
 from app.services.period_lock_service import assert_period_open
 from app.services.masters_service import MastersService
 from app.services.documents_service import DocumentsService
 from app.services.commerce_stock import resolve_product_lines, book_stock
+from app.services.document_numbers import next_document_number
+from app.services.financial_amounts import line_amounts
+from app.services.access import allowed_stores
+from app.services.stores_service import stock_store
 from app.services.posting_service import replay_posting, finish_posting, request_hash
 from app.services.runtime_schema import managed_schema
 
@@ -177,56 +183,7 @@ class PurchasesService:
         )
 
     def _sync_purchase_payment_summary(self, purchase_id: str, company_id: str) -> None:
-        payment_total = self.db.execute(
-            text(
-                """
-                select coalesce(sum(amount), 0)
-                from purchase_payments
-                where purchase_id = :purchase_id and company_id = :company_id and reversed_at is null
-                """
-            ),
-            {
-                "purchase_id": purchase_id,
-                "company_id": company_id,
-            },
-        ).scalar_one()
-        amount_paid = Decimal(str(payment_total or 0))
-
-        purchase = self.db.execute(
-            text(
-                """
-                select total
-                from purchases
-                where id = :purchase_id and company_id = :company_id
-                """
-            ),
-            {
-                "purchase_id": purchase_id,
-                "company_id": company_id,
-            },
-        ).mappings().first()
-        if not purchase:
-            raise HTTPException(status_code=404, detail="Purchase not found")
-
-        total = Decimal(str(purchase["total"]))
-        payment_status = self._derive_payment_status(total=total, amount_paid=amount_paid)
-        self.db.execute(
-            text(
-                """
-                update purchases
-                set
-                    amount_paid = :amount_paid,
-                    payment_status = :payment_status
-                where id = :purchase_id and company_id = :company_id
-                """
-            ),
-            {
-                "amount_paid": amount_paid,
-                "payment_status": payment_status,
-                "purchase_id": purchase_id,
-                "company_id": company_id,
-            },
-        )
+        sync_purchase_payments(self.db, company_id, purchase_id)
 
     def _derive_payment_status(self, total: Decimal, amount_paid: Decimal) -> str:
         if total - amount_paid <= Decimal("0.0001"):
@@ -246,6 +203,7 @@ class PurchasesService:
         company_id: str | None,
         vendor_party_id: str | None = None,
         payment_status: str | None = None,
+        store_id: str | None = None,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -254,6 +212,9 @@ class PurchasesService:
             select
                 p.id,
                 p.company_id,
+                p.store_id,
+                s.code as store_code,
+                p.voucher_number,
                 p.vendor_party_id,
                 v.legal_name as vendor_name,
                 p.bill_number,
@@ -278,6 +239,7 @@ class PurchasesService:
                 p.created_at
             from purchases p
             join parties v on v.id = p.vendor_party_id
+            left join stores s on s.id = p.store_id
             where p.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
@@ -285,6 +247,13 @@ class PurchasesService:
         if vendor_party_id:
             query += " and p.vendor_party_id = :vendor_party_id"
             params["vendor_party_id"] = vendor_party_id
+        if store_id:
+            query += " and p.store_id = :store_id"
+            params["store_id"] = store_id
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
+        if permitted is not None:
+            query += " and p.store_id = any(cast(:permitted as uuid[]))"
+            params["permitted"] = permitted
 
         normalized_status: str | None = None
         if payment_status:
@@ -319,6 +288,7 @@ class PurchasesService:
         ).mappings().first()
         if not vendor:
             raise HTTPException(status_code=404, detail="Vendor party not found")
+        store = stock_store(self.db, resolved_company_id, str(payload.store_id) if payload.store_id else None)
 
         line_items = []
         if payload.lines:
@@ -327,27 +297,25 @@ class PurchasesService:
             subtotal = Decimal("0")
             gst_total = Decimal("0")
             for line in payload.lines:
-                taxable = (line.quantity * line.rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                gst = (taxable * line.gst_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                line_items.append({**line.model_dump(mode="json"), "taxable": str(taxable), "gst_amount": str(gst), "total": str(taxable + gst)})
+                # Vendor bills quote exclusive rates unless the line says otherwise.
+                inclusive = bool(line.price_includes_gst)
+                taxable, gst = line_amounts(line.quantity, line.rate, line.gst_rate, inclusive)
+                line_items.append({**line.model_dump(mode="json"), "price_includes_gst": inclusive, "taxable": str(taxable), "gst_amount": str(gst), "total": str(taxable + gst)})
                 subtotal += taxable
                 gst_total += gst
-            payload.subtotal = float(subtotal)
-            payload.gst_total = float(gst_total)
-            payload.total = float(subtotal + gst_total)
+            payload.subtotal = subtotal
+            payload.gst_total = gst_total
+            payload.total = subtotal + gst_total
 
         if payload.subtotal < 0 or payload.gst_total < 0:
             raise HTTPException(status_code=422, detail="subtotal and gst_total must be non-negative")
 
-        total = payload.total if payload.total is not None else payload.subtotal + payload.gst_total
-        if total <= 0:
-            raise HTTPException(status_code=422, detail="total must be greater than zero")
-
-        amount_paid = Decimal(str(payload.amount_paid))
-        total_amount = Decimal(str(total))
+        total_amount = document_total(payload.subtotal, payload.gst_total, payload.total)
+        total = total_amount
+        amount_paid = payload.amount_paid
         if amount_paid < 0:
             raise HTTPException(status_code=422, detail="amount_paid cannot be negative")
-        if amount_paid - total_amount > Decimal("0.0001"):
+        if amount_paid > total_amount:
             raise HTTPException(status_code=422, detail="amount_paid cannot exceed total")
         if amount_paid > 0 and not payload.account_id:
             raise HTTPException(
@@ -355,7 +323,7 @@ class PurchasesService:
                 detail="account_id is required when amount_paid > 0",
             )
 
-        if amount_paid > 0 and not payload.payment_mode:
+        if amount_paid > 0 and not (payload.payment_mode or "").strip():
             raise HTTPException(status_code=422, detail="payment_mode required when amount_paid > 0")
 
         if payload.account_id:
@@ -387,6 +355,8 @@ class PurchasesService:
                 """
                 insert into purchases (
                     company_id,
+                    store_id,
+                    voucher_number,
                     vendor_party_id,
                     bill_number,
                     purchase_date,
@@ -408,6 +378,8 @@ class PurchasesService:
                     line_items
                 ) values (
                     :company_id,
+                    :store_id,
+                    :voucher_number,
                     :vendor_party_id,
                     :bill_number,
                     :purchase_date,
@@ -428,11 +400,13 @@ class PurchasesService:
                     'POSTED',
                     cast(:line_items as jsonb)
                 )
-                returning id, company_id, vendor_party_id, bill_number, purchase_date, subtotal, gst_total, total, amount_paid, payment_status, payment_mode, account_id, reference, due_date, notes, receipt_type, receipt_status, received_at, received_notes, status, line_items, created_at
+                returning id, company_id, store_id, voucher_number, vendor_party_id, bill_number, purchase_date, subtotal, gst_total, total, amount_paid, payment_status, payment_mode, account_id, reference, due_date, notes, receipt_type, receipt_status, received_at, received_notes, status, line_items, created_at
                 """
             ),
             {
                 "company_id": resolved_company_id,
+                "store_id": str(store["id"]),
+                "voucher_number": next_document_number(self.db, resolved_company_id, store, "purchase", purchase_date),
                 "vendor_party_id": str(payload.vendor_party_id),
                 "bill_number": payload.bill_number,
                 "purchase_date": purchase_date,
@@ -441,7 +415,7 @@ class PurchasesService:
                 "total": total,
                 "amount_paid": amount_paid,
                 "payment_status": payment_status,
-                "payment_mode": payload.payment_mode,
+                "payment_mode": payload.payment_mode.strip() if payload.payment_mode else None,
                 "account_id": str(payload.account_id) if payload.account_id else None,
                 "reference": payload.reference,
                 "due_date": payload.due_date,
@@ -552,7 +526,7 @@ class PurchasesService:
         DocumentsService(self.db).add_attachments(
             "purchase", str(purchase["id"]), resolved_company_id, payload.attachments
         )
-        finish_posting(self.db,resolved_company_id,"purchase",payload,{**purchase,"vendor_name":vendor["legal_name"],"balance_amount":float(total_amount-amount_paid)},original_hash)
+        finish_posting(self.db,resolved_company_id,"purchase",payload,{**purchase,"vendor_name":vendor["legal_name"],"store_code":store["code"],"balance_amount":float(total_amount-amount_paid)},original_hash)
         self.db.commit()
 
         result = self.db.execute(
@@ -561,6 +535,9 @@ class PurchasesService:
                 select
                     p.id,
                     p.company_id,
+                    p.store_id,
+                    s.code as store_code,
+                    p.voucher_number,
                     p.vendor_party_id,
                     v.legal_name as vendor_name,
                     p.bill_number,
@@ -581,9 +558,11 @@ class PurchasesService:
                     p.received_at,
                     p.received_notes,
                     p.status,
+                    p.line_items,
                     p.created_at
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
+                left join stores s on s.id = p.store_id
                 where p.id = :purchase_id and p.company_id = :company_id
                 """
             ),
@@ -614,9 +593,10 @@ class PurchasesService:
         purchase = self.db.execute(
             text(
                 """
-                select id, company_id, total, amount_paid, payment_status, status
+                select id, company_id, total, amount_paid, payment_status, status, purchase_date
                 from purchases
                 where id = :purchase_id and company_id = :company_id
+                for update
                 """
             ),
             {"purchase_id": purchase_id, "company_id": resolved_company_id},
@@ -639,10 +619,10 @@ class PurchasesService:
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
 
-        current_paid = Decimal(str(purchase["amount_paid"]))
+        current_paid, _ = purchase_payment_totals(self.db, resolved_company_id, dict(purchase))
         total = Decimal(str(purchase["total"]))
         new_amount_paid = current_paid + Decimal(str(payload.amount))
-        if new_amount_paid - total > Decimal("0.0001"):
+        if new_amount_paid > total:
             raise HTTPException(status_code=422, detail="payment exceeds remaining balance")
 
         existing = self.db.execute(
@@ -664,6 +644,8 @@ class PurchasesService:
             raise HTTPException(status_code=409, detail="Duplicate payment submission detected")
 
         payment_date = payload.payment_date or date.today()
+        if payment_date < purchase["purchase_date"]:
+            raise HTTPException(422, "Payment date cannot precede the purchase date")
         assert_period_open(
             db=self.db,
             company_id=resolved_company_id,
@@ -694,6 +676,8 @@ class PurchasesService:
                     :payment_date,
                     :notes
                 )
+                on conflict (company_id, idempotency_key)
+                    where idempotency_key is not null do nothing
                 returning id
                 """
             ),
@@ -711,7 +695,7 @@ class PurchasesService:
         ).mappings().first()
 
         if not payment:
-            raise HTTPException(status_code=500, detail="Failed to create purchase payment")
+            raise HTTPException(status_code=409, detail="Duplicate payment submission detected")
 
         self.db.execute(
             text(
@@ -788,6 +772,9 @@ class PurchasesService:
                 select
                     p.id,
                     p.company_id,
+                    p.store_id,
+                    s.code as store_code,
+                    p.voucher_number,
                     p.vendor_party_id,
                     v.legal_name as vendor_name,
                     p.bill_number,
@@ -808,9 +795,11 @@ class PurchasesService:
                     p.received_at,
                     p.received_notes,
                     p.status,
+                    p.line_items,
                     p.created_at
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
+                left join stores s on s.id = p.store_id
                 where p.id = :purchase_id and p.company_id = :company_id
                 """
             ),
@@ -882,7 +871,7 @@ class PurchasesService:
         purchase = self.db.execute(
             text(
                 """
-                select id, receipt_status, receipt_type, line_items, status
+                select id, receipt_status, receipt_type, line_items, status, store_id
                 from purchases
                 where id = :purchase_id and company_id = :company_id
                 for update
@@ -897,7 +886,7 @@ class PurchasesService:
 
         receipt_type = self._normalize_receipt_type(payload.receipt_type or purchase["receipt_type"])
         if purchase["receipt_status"] != "RECEIVED" and receipt_type != "SERVICE":
-            book_stock(self.db,resolved_company_id,purchase["line_items"],"IN","purchase_receipt",purchase_id)
+            book_stock(self.db,resolved_company_id,purchase["line_items"],"IN","purchase_receipt",purchase_id,str(purchase["store_id"]))
 
         self.db.execute(
             text(
@@ -928,6 +917,9 @@ class PurchasesService:
                 select
                     p.id,
                     p.company_id,
+                    p.store_id,
+                    s.code as store_code,
+                    p.voucher_number,
                     p.vendor_party_id,
                     v.legal_name as vendor_name,
                     p.bill_number,
@@ -948,9 +940,11 @@ class PurchasesService:
                     p.received_at,
                     p.received_notes,
                     p.status,
+                    p.line_items,
                     p.created_at
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
+                left join stores s on s.id = p.store_id
                 where p.id = :purchase_id and p.company_id = :company_id
                 """
             ),
@@ -1000,6 +994,7 @@ class PurchasesService:
                     p.reference,p.status,p.cancelled_at
                 from purchases p
                 join parties v on v.id = p.vendor_party_id
+                left join stores s on s.id = p.store_id
                 where p.company_id = :company_id
                   and p.purchase_date between :from_date and :to_date
                 order by p.purchase_date asc, p.created_at asc

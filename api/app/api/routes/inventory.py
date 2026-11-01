@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.schemas.inventory import BulkVendorMapping, InventoryLookupCreate, ProductInput, ReorderReminder, StockAdjustment, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductInput, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
 from app.services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -92,6 +92,35 @@ def movements(product_id: UUID, service: InventoryService = Depends(inventory_se
 @router.get("/alerts")
 def alerts(service: InventoryService = Depends(inventory_service)):
     return service.alerts()
+
+@router.get("/reconciliation")
+def reconciliation(service: InventoryService = Depends(inventory_service)):
+    return service.stock_reconciliation()
+
+
+@router.get("/transfers")
+def transfers(limit: int = 100, service: InventoryService = Depends(inventory_service)):
+    return service.list_transfers(limit)
+
+
+@router.post("/transfers", status_code=201)
+def create_transfer(payload: StockTransferCreate, service: InventoryService = Depends(inventory_service)):
+    return service.transfer_stock(payload)
+
+
+@router.post("/transfers/{transfer_id}/reverse", status_code=201)
+def reverse_transfer(transfer_id: UUID, payload: StockTransferReverse, service: InventoryService = Depends(inventory_service)):
+    return service.reverse_transfer(str(transfer_id), payload.notes)
+
+
+@router.get("/reconciliation/missing-sources")
+def missing_sources(service: InventoryService = Depends(inventory_service)):
+    return service.missing_movement_sources()
+
+
+@router.post("/movements/{movement_id}/external-source")
+def attribute_external_source(movement_id: UUID, payload: ExternalMovementSource, service: InventoryService = Depends(inventory_service)):
+    return service.attribute_external_source(str(movement_id), payload)
 
 
 @router.put("/products/{product_id}/reminder")

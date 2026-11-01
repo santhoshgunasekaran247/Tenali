@@ -1,5 +1,6 @@
 import type {
-  InventoryAlert, InventoryLookups, InventoryMovement, InventoryOfferInput, InventoryProduct, InventoryProductInput, InventoryItemInput,
+  InventoryAlert, InventoryLookups, InventoryMissingSource, InventoryMovement, InventoryReconciliation, InventoryOfferInput, InventoryProduct, InventoryProductInput, InventoryItemInput,
+  Store, StoreInput, StockTransfer, StockTransferInput,
   SiteTheme,
   Attachment,
   AttachmentEntity,
@@ -73,7 +74,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text();
-    let message=body;try{message=JSON.parse(body).detail||body;}catch{}
+    let message = body;
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && "detail" in parsed) {
+        const detail: unknown = parsed.detail;
+        if (typeof detail === "string") message = detail;
+        else if (Array.isArray(detail)) {
+          message = detail.map((item: unknown) => {
+            if (!item || typeof item !== "object" || !("msg" in item)) return String(item);
+            const location = "loc" in item && Array.isArray(item.loc) ? item.loc.join(".") : "";
+            return `${location ? `${location}: ` : ""}${String(item.msg)}`;
+          }).join("; ");
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
     throw new Error(message || `Request failed: ${response.status}`);
   }
 
@@ -95,8 +112,18 @@ export const api = {
   inventorySaveVariant: (product: string, payload: InventoryItemInput & {variant_name: string}, id?: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/variants${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),
   inventorySaveOffer: (product: string, payload: InventoryOfferInput, id?: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/offers${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),
   inventoryBulkMap: (vendor_id: string, product_ids: string[]) => request<{mapped_count:number}>("/inventory/products/vendor-mappings", {method:"POST",body:JSON.stringify({vendor_id,product_ids})}),
-  inventoryAdjustStock: (product: string, payload: {variant_id:string|null;direction:"IN"|"OUT";quantity:number;notes:string;idempotency_key?:string}) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/stock`, {method:"POST",body:JSON.stringify(payload)}),
+  stores: (includeInactive = true) => request<{items:Store[]}>("/stores?include_inactive=" + includeInactive),
+  saveStore: (payload: StoreInput, id?: string) => request<Store>(`/stores${id ? `/${encodeURIComponent(id)}` : ""}`, {method: id ? "PUT" : "POST", body: JSON.stringify(payload)}),
+  setDefaultStore: (id: string) => request<Store>(`/stores/${encodeURIComponent(id)}/default`, {method: "POST"}),
+  stockTransfers: () => request<{items:StockTransfer[]}>("/inventory/transfers"),
+  createStockTransfer: (payload: StockTransferInput) => request<StockTransfer>("/inventory/transfers", {method: "POST", body: JSON.stringify(payload)}),
+  reverseStockTransfer: (id: string, notes: string) => request<StockTransfer>(`/inventory/transfers/${encodeURIComponent(id)}/reverse`, {method: "POST", body: JSON.stringify({notes})}),
+  inventoryAdjustStock: (product: string, payload: {store_id?:string|null;variant_id:string|null;direction:"IN"|"OUT";quantity:number;notes:string;idempotency_key?:string}) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/stock`, {method:"POST",body:JSON.stringify(payload)}),
   inventoryMovements: (product: string) => request<{items:InventoryMovement[]}>(`/inventory/products/${encodeURIComponent(product)}/movements`),
+  inventoryReconciliation: () => request<{items:InventoryReconciliation[]}>("/inventory/reconciliation"),
+  inventoryMissingSources: () => request<{items:InventoryMissingSource[]}>("/inventory/reconciliation/missing-sources"),
+  inventoryAttributeExternalSource: (movement: string, external_reference: string, notes: string) =>
+    request<InventoryMovement>(`/inventory/movements/${encodeURIComponent(movement)}/external-source`, {method:"POST", body: JSON.stringify({external_reference, notes})}),
   inventoryAlerts: () => request<{items:InventoryAlert[]}>("/inventory/alerts"),
   inventoryRemind: (product:string,variant_id:string|null,reminder_date:string) => request<{items:InventoryAlert[]}>(`/inventory/products/${encodeURIComponent(product)}/reminder`, {method:"PUT",body:JSON.stringify({variant_id,reminder_date})}),
   attachments: (entity: AttachmentEntity, id: string) => request<{ items: Attachment[] }>(
@@ -387,9 +414,10 @@ export const api = {
       `/collections/receivables/${encodeURIComponent(receivableId)}/reminders${qs ? `?${qs}` : ""}`
     );
   },
-  async invoices(filters?: { collection_status?: string }) {
+  async invoices(filters?: { collection_status?: string; store_id?: string }) {
     const params = new URLSearchParams();
     if (filters?.collection_status) params.set("collection_status", filters.collection_status);
+    if (filters?.store_id) params.set("store_id", filters.store_id);
     const qs = params.toString();
     return request<InvoiceListResponse>(`/billing/invoices${qs ? `?${qs}` : ""}`);
   },
@@ -424,9 +452,10 @@ export const api = {
       `/billing/invoices/reconcile-runs?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`
     );
   },
-  async purchases(filters?: { payment_status?: string; vendor_party_id?: string }) {
+  async purchases(filters?: { payment_status?: string; vendor_party_id?: string; store_id?: string }) {
     const params = new URLSearchParams();
     if (filters?.payment_status) params.set("payment_status", filters.payment_status);
+    if (filters?.store_id) params.set("store_id", filters.store_id);
     if (filters?.vendor_party_id) params.set("vendor_party_id", filters.vendor_party_id);
     const qs = params.toString();
     return request<PurchaseListResponse>(`/purchases${qs ? `?${qs}` : ""}`);

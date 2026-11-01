@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../features/auth";
 import { cartItemKey, useCart } from "../features/cart";
@@ -10,6 +10,7 @@ export function CartPage() {
   const { storefront, loading } = useAuth();
   const cart = useCart();
   const navigate = useNavigate();
+  const [search] = useSearchParams();
   const [products, setProducts] = useState<Record<string, CatalogProduct>>({});
   const [failures, setFailures] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -55,7 +56,7 @@ export function CartPage() {
   const checkout = (event: FormEvent) => {
     event.preventDefault();
     if (!ready || !enabled || rows.some(row => row.problem)) { setError("Resolve the cart messages before checkout."); return; }
-    navigate("/checkout");
+    navigate(search.get("pickup") ? `/checkout?pickup=${encodeURIComponent(search.get("pickup")!)}` : "/checkout");
   };
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront) return <main className="loading">Open a workspace storefront to view its cart.</main>;

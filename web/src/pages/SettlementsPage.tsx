@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import type {
@@ -45,6 +45,7 @@ export function SettlementsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadVersion = useRef(0);
 
   const partyOptions = useMemo(() => {
     return parties.map((party) => ({
@@ -54,6 +55,7 @@ export function SettlementsPage() {
   }, [parties]);
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
     try {
@@ -63,14 +65,17 @@ export function SettlementsPage() {
         api.borrowingSummary(),
         api.borrowings({ party_id: selectedParty || undefined, limit: 200 }),
       ]);
+      if (version !== loadVersion.current) return;
       setParties(partyResponse.items);
       setAccounts(accountResponse.items);
       setSummary(summaryResponse.items);
       setEntries(entriesResponse.items);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load settlements.");
+      if (version === loadVersion.current) {
+        setError(loadError instanceof Error ? loadError.message : "Unable to load settlements.");
+      }
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   };
 
@@ -315,7 +320,7 @@ export function SettlementsPage() {
                     <tr key={entry.id}>
                       <td>{entry.transaction_date}</td>
                       <td>{entry.party_name}</td>
-                      <td>{entry.direction === "borrow" ? "Borrowed" : "Repaid"}</td>
+                      <td>{entry.direction === "borrow" ? "Borrowed" : "Repaid"}{entry.is_reversed ? " (reversed)" : ""}</td>
                       <td>{formatMoney(entry.amount)}</td>
                       <td>{entry.reference || "-"}</td>
                       <td>{entry.notes || "-"}</td>

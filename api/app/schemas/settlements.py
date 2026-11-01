@@ -5,11 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.money import PositiveMoney
+
 
 class BorrowingEntryCreate(BaseModel):
     party_id: UUID
     direction: str
-    amount: float
+    amount: PositiveMoney
     transaction_date: date | None = None
     account_id: UUID | None = None
     reference: str | None = None
@@ -28,6 +30,7 @@ class BorrowingEntryOut(BaseModel):
     account_id: UUID | None = None
     reference: str | None = None
     notes: str | None = None
+    is_reversed: bool = False
     created_at: datetime
 
 

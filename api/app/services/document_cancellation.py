@@ -4,7 +4,9 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
-from app.services.commerce_stock import book_stock
+from app.services.collection_ledger import lock_invoice_receivables, receipt_totals
+from app.services.commerce_stock import book_stock, booked_store
+from app.services.purchase_ledger import purchase_payment_totals
 from app.services.period_lock_service import assert_period_open
 
 
@@ -21,7 +23,11 @@ def cancel_document(db, company_id: str, kind: str, document_id: str, payload: C
         raise HTTPException(404,"Document not found")
     if row["status"]=="CANCELLED":
         return {"id":document_id,"status":"CANCELLED"}
-    paid=row["amount_received"] if kind=="invoice" else row["amount_paid"]
+    if kind == "invoice":
+        invoice, receivable = lock_invoice_receivables(db, company_id, document_id)
+        paid, _ = receipt_totals(db, company_id, receivable, invoice)
+    else:
+        paid, _ = purchase_payment_totals(db, company_id, dict(row))
     if paid:
         raise HTTPException(422,"Reverse the document's payment transactions before cancellation; cancellation does not issue a refund")
     effective=payload.cancellation_date or date.today()
@@ -31,10 +37,12 @@ def cancel_document(db, company_id: str, kind: str, document_id: str, payload: C
     assert_period_open(db,company_id,effective,"Cancelling document")
     if kind=="invoice":
         lines=(row["document_data"] or {}).get("lines",[])
-        book_stock(db,company_id,lines,"IN","invoice_cancellation",document_id)
+        store=booked_store(db,company_id,"invoice",document_id) or str(row["store_id"])
+        book_stock(db,company_id,lines,"IN","invoice_cancellation",document_id,store)
         db.execute(text("update receivables set status='SETTLED',updated_at=now() where invoice_id=:id and company_id=:company"),{"id":document_id,"company":company_id})
     elif row["receipt_status"]=="RECEIVED" and row["receipt_type"]!="SERVICE":
-        book_stock(db,company_id,row["line_items"],"OUT","purchase_cancellation",document_id)
+        store=booked_store(db,company_id,"purchase_receipt",document_id) or str(row["store_id"])
+        book_stock(db,company_id,row["line_items"],"OUT","purchase_cancellation",document_id,store)
     db.execute(text(f"update {table} set status='CANCELLED',cancelled_at=:date,cancellation_reason=:reason where id=:id"),{"date":effective,"reason":payload.reason,"id":document_id})
     db.commit()
     return {"id":document_id,"status":"CANCELLED"}

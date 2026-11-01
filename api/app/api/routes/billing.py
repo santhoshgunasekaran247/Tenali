@@ -26,10 +26,11 @@ def cancel_invoice(invoice_id: str,payload:Cancellation,company_id:str|None=None
 def list_invoices(
     company_id: str | None = None,
     collection_status: str | None = None,
+    store_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     service = BillingService(db)
-    return service.list_invoices(company_id=company_id, collection_status=collection_status)
+    return service.list_invoices(company_id=company_id, collection_status=collection_status, store_id=store_id)
 
 
 @router.post("/invoices", response_model=InvoiceOut, status_code=201)

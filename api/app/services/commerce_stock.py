@@ -36,7 +36,7 @@ def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = No
         line.description = product["name"] + (f" - {variant['variant_name']}" if variant else "")
 
 
-def book_stock(db, company_id: str, lines: list[dict], direction: str, source: str, source_id: str):
+def book_stock(db, company_id: str, lines: list[dict], direction: str, source: str, source_id: str, store_id: str):
     grouped = defaultdict(Decimal)
     for line in lines:
         if line.get("product_id"):
@@ -48,4 +48,11 @@ def book_stock(db, company_id: str, lines: list[dict], direction: str, source: s
             {"company": company_id, "product": product_id, "variant": variant_id, "source": source, "id": source_id}).scalar_one_or_none():
             continue
         service.adjust_stock(product_id, StockAdjustment(variant_id=variant_id, direction=direction, quantity=quantity, notes=f"{source}: {source_id}"),
-                             commit=False, reference_type=source, reference_id=source_id)
+                             commit=False, reference_type=source, reference_id=source_id, store_id=store_id)
+
+
+def booked_store(db, company_id: str, source: str, source_id: str) -> str | None:
+    """Store that originally booked stock for a document, so cancellations return it to the same place."""
+    row = db.execute(text("""select store_id from stock_movements where company_id=:company and reference_type=:source
+        and reference_id=:id order by created_at limit 1"""), {"company": company_id, "source": source, "id": source_id}).scalar_one_or_none()
+    return str(row) if row else None

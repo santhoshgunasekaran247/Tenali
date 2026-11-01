@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+GSTIN_PATTERN = r"^\d{2}[A-Z0-9]{13}$"
+
 
 def validate_image_source(value: str | None) -> str | None:
     if not value:
@@ -242,7 +244,10 @@ class CompanyUpdate(BaseModel):
     tenant_slug: str | None = Field(default=None, min_length=3, max_length=48, pattern=r"^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$")
     nickname: str | None = Field(default=None, max_length=100)
     address: str | None = Field(default=None, max_length=2000)
-    gst_number: str | None = Field(default=None, pattern=r"^\d{2}[A-Z0-9]{13}$")
+    gst_number: str | None = Field(default=None, pattern=GSTIN_PATTERN)
+    # False for businesses below the GST threshold: invoices become Bills of Supply with no tax and no GSTIN requirement.
+    gst_registered: bool = True
+    whatsapp_number: str | None = Field(default=None, pattern=r"^\+[1-9][0-9]{7,14}$")
     udyam_number: str | None = Field(default=None, max_length=50)
     phone: str | None = Field(default=None, max_length=60)
     email: str | None = Field(default=None, max_length=254)

@@ -16,20 +16,21 @@ type WorkflowSection = {
   steps: Array<{ id: string; label: string; path?: string }>;
 };
 
-const operationsLinks: PortalLink[] = [
-  { label: "Parties", path: "/portal/parties", status: "live" },
-  { label: "Accounts", path: "/portal/accounts", status: "live" },
-  { label: "Reports & Exports", path: "/portal/reports", status: "live" },
-  { label: "Borrowing & Settlements", path: "/portal/settlements", status: "live" },
-  { label: "Business Payments", path: "/portal/business-payments", status: "live" },
-  { label: "Receivables & Collections", path: "/portal/receivables", status: "live" },
-  { label: "Sales Billing", path: "/portal/billing", status: "live" },
-  { label: "Purchases", path: "/portal/purchases", status: "live" },
-  { label: "Product Inventory", path: "/portal/inventory", status: "live" },
+const operationsLinks: (PortalLink & { module: string })[] = [
+  { label: "Parties", path: "/portal/parties", status: "live", module: "parties" },
+  { label: "Accounts", path: "/portal/accounts", status: "live", module: "accounts" },
+  { label: "Reports & Exports", path: "/portal/reports", status: "live", module: "reports" },
+  { label: "Borrowing & Settlements", path: "/portal/settlements", status: "live", module: "settlements" },
+  { label: "Business Payments", path: "/portal/business-payments", status: "live", module: "accounts" },
+  { label: "Receivables & Collections", path: "/portal/receivables", status: "live", module: "receivables" },
+  { label: "Sales Billing", path: "/portal/billing", status: "live", module: "billing" },
+  { label: "Purchases", path: "/portal/purchases", status: "live", module: "purchases" },
+  { label: "Product Inventory", path: "/portal/inventory", status: "live", module: "inventory" },
 ];
 
 const adminMaintenanceLinks: PortalLink[] = [
   { label: "Company Setup", path: "/portal/company", status: "live" },
+  { label: "Stores & Warehouses", path: "/portal/stores", status: "live" },
   { label: "Users & Roles",path:"/portal/team",status:"live" },
   { label: "Storefront Domains",path:"/portal/domains",status:"live" },
   { label: "Audit Events", path:"/portal/audit",status:"live" },
@@ -306,7 +307,7 @@ export function PortalPage() {
             <span>Daily execution modules</span>
           </div>
           <div className="portal-grid">
-            {operationsLinks.map((item) => (
+            {operationsLinks.filter((item) => !auth.user?.modules || ["owner", "admin"].includes(auth.user.role) || auth.user.modules.includes(item.module)).map((item) => (
               <LinkTile key={item.label} item={item} />
             ))}
           </div>

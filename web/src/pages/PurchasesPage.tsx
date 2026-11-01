@@ -4,8 +4,10 @@ import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
+import { calculateLineTotals } from "../features/taxTotals";
+import { StoreSelect, useStores } from "../features/stores";
 import type { InventoryProduct } from "../types";
-import { TaxLinesEditor, calculateLineTotals, newTaxLine } from "../components/TaxLinesEditor";
+import { TaxLinesEditor, newTaxLine } from "../components/TaxLinesEditor";
 import type { Account, AttachmentInput, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
 
 type PurchaseForm = {
@@ -86,7 +88,9 @@ export function PurchasesPage() {
   const [attachmentTarget, setAttachmentTarget] = useState<Purchase | null>(null);
   const [lines, setLines] = useState<InvoiceLineInput[]>([newTaxLine()]);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
-  const { subtotal, gstTotal, total } = calculateLineTotals(lines);
+  const storeContext = useStores();
+  const [storeFilter, setStoreFilter] = useState("");
+  const { subtotal, gstTotal, total } = calculateLineTotals(lines, false);
   const [paymentTarget, setPaymentTarget] = useState<Purchase | null>(null);
   const [paymentForm, setPaymentForm] = useState<PaymentForm>(EMPTY_PAYMENT_FORM);
   const [paymentHistory, setPaymentHistory] = useState<PurchasePayment[]>([]);
@@ -107,7 +111,7 @@ export function PurchasesPage() {
       const [partyRes, accountRes, purchaseRes, hsnRes,inventoryRes] = await Promise.all([
         api.parties({ active_only: true }),
         api.accounts({ active_only: true }),
-        api.purchases({ payment_status: paymentStatus || undefined }),
+        api.purchases({ payment_status: paymentStatus || undefined, store_id: storeFilter || undefined }),
         api.hsnMasters(),
         api.inventoryProducts(),
       ]);
@@ -130,7 +134,7 @@ export function PurchasesPage() {
 
   useEffect(() => {
     void load();
-  }, [paymentStatus]);
+  }, [paymentStatus, storeFilter]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -145,6 +149,9 @@ export function PurchasesPage() {
       if (lines.some((line) => !hsnMasters.some((master) => master.code === line.hsn))) {
         throw new Error("Select an active HSN / SAC code for every item.");
       }
+      if (![subtotal, gstTotal, total].every(Number.isFinite)) {
+        throw new Error("Line amounts are invalid or exceed the supported monetary limit.");
+      }
       if (!subtotal || subtotal < 0) throw new Error("Subtotal must be greater than or equal to zero.");
       if (total <= 0) throw new Error("Total must be greater than zero.");
       if (amountPaid < 0) throw new Error("Amount paid cannot be negative.");
@@ -158,6 +165,7 @@ export function PurchasesPage() {
 
       const created = await api.createPurchase({
         idempotency_key:requestKey,
+        store_id: storeContext.selectedId || undefined,
         attachments,
         lines,
         vendor_party_id: form.vendor_party_id,
@@ -355,6 +363,7 @@ export function PurchasesPage() {
           {message ? <p className="ops-success-banner">{message}</p> : null}
 
           <form className="ops-form" onSubmit={submit}>
+            <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Receiving store" />
             <label>
               Vendor
               <select
@@ -509,6 +518,7 @@ export function PurchasesPage() {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Voucher</th>
                   <th>Vendor</th>
                   <th>Bill #</th>
                   <th>Total</th>
@@ -523,12 +533,13 @@ export function PurchasesPage() {
               <tbody>
                 {purchases.length === 0 ? (
                   <tr>
-                    <td colSpan={10}>No purchases found.</td>
+                    <td colSpan={11}>No purchases found.</td>
                   </tr>
                 ) : (
                   purchases.map((item) => (
                     <tr key={item.id}>
                       <td>{item.purchase_date}</td>
+                      <td>{item.voucher_number || ""}</td>
                       <td>{item.vendor_name}</td>
                       <td>{item.bill_number || "-"}</td>
                       <td>{item.total.toFixed(2)}</td>

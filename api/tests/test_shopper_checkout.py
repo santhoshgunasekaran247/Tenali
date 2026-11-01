@@ -1,4 +1,5 @@
 import hashlib
+from decimal import Decimal
 import hmac
 import json
 import os
@@ -168,7 +169,29 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def main_store(self):
+        with self.factory() as db:
+            return str(db.execute(text("select id from stores where company_id=:company and is_default"), {"company": self.company_id}).scalar_one())
+
+    def online_store(self):
+        """Create the WEB channel store fulfilled from MAIN with a Razorpay clearing account, once per test."""
+        if getattr(self, "_web_store", None):
+            return self._web_store
+        account = self.client.post("/accounts", json={"nickname": "Razorpay clearing", "account_type": "other", "is_company_account": True},
+                                   headers=self.staff_headers())
+        self.assertEqual(account.status_code, 201, account.text)
+        self.clearing_account = account.json()["id"]
+        with self.factory() as db:
+            db.execute(text("update companies set address='Chennai', gst_number='33ABCDE1234F1Z5' where id=:id"), {"id": self.company_id})
+            db.commit()
+        created = self.client.post("/stores", json={"code": "WEB", "name": "Online store", "kind": "online", "fulfilment_store_id": self.main_store(),
+                                                   "settlement_account_id": self.clearing_account}, headers=self.staff_headers())
+        self.assertEqual(created.status_code, 201, created.text)
+        self._web_store = created.json()["id"]
+        return self._web_store
+
     def configure(self):
+        self.online_store()
         response = self.client.put("/checkout-admin/settings",
                                   json={**CREDENTIALS, "enabled": True, "shipping_paise": 500, "pickup_location": "Primary"},
                                   headers=self.staff_headers())
@@ -217,6 +240,7 @@ class ShopperCheckoutTests(TenantDatabaseCase):
     def test_test_mode_payment_cannot_create_real_shiprocket_shipment(self):
         test_settings = {**CREDENTIALS, "razorpay_key_id": "rzp_test_fixture", "enabled": True,
                          "shipping_paise": 500, "pickup_location": "Primary"}
+        self.online_store()
         configured = self.client.put("/checkout-admin/settings", json=test_settings, headers=self.staff_headers())
         self.assertEqual(configured.status_code, 200, configured.text)
         self.assertEqual(self.client.get("/checkout-admin/settings", headers=self.staff_headers()).json()["payment_mode"], "test")
@@ -232,10 +256,14 @@ class ShopperCheckoutTests(TenantDatabaseCase):
 
     def product(self, minimum=1, stock=2):
         with self.factory() as db:
-            product_id = db.execute(text("""insert into products(company_id,portal_product_id,name,mrp,selling_price,pricing_mode,catalog_visible,minimum_order_quantity)
-                values(:company,:code,'Shop fixture',200,100,'price',true,:minimum) returning id"""),
+            db.execute(text("""insert into hsn_masters(company_id,code,description,gst_rate,is_active)
+                select :company,'8516','Fixture',18,true where not exists (select 1 from hsn_masters where company_id=:company and code='8516')"""),
+                {"company": self.company_id})
+            product_id = db.execute(text("""insert into products(company_id,portal_product_id,name,mrp,selling_price,pricing_mode,catalog_visible,minimum_order_quantity,hsn_code)
+                values(:company,:code,'Shop fixture',200,100,'price',true,:minimum,'8516') returning id"""),
                 {"company": self.company_id, "code": uuid4().hex, "minimum": minimum}).scalar_one()
-            db.execute(text("insert into stock_balances(company_id,product_id,quantity) values(:company,:product,:quantity)"),
+            db.execute(text("""insert into stock_balances(company_id,store_id,product_id,quantity)
+                values(:company,(select id from stores where company_id=:company and is_default),:product,:quantity)"""),
                        {"company": self.company_id, "product": product_id, "quantity": stock})
             db.commit()
         return str(product_id)
@@ -249,8 +277,9 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         self.assertEqual(variant_response.status_code, 201, variant_response.text)
         variant = str(variant_response.json()["variants"][0]["id"])
         with self.factory() as db:
-            db.execute(text("""insert into stock_balances(company_id,product_id,variant_id,quantity)
-                values(:company,:product,:variant,20)"""), {"company": self.company_id, "product": first, "variant": variant})
+            db.execute(text("""insert into stock_balances(company_id,store_id,product_id,variant_id,quantity)
+                values(:company,(select id from stores where company_id=:company and is_default),:product,:variant,20)"""),
+                       {"company": self.company_id, "product": first, "variant": variant})
             db.commit()
         catalog = self.client.get(f"/catalog/products/{first}", headers={"X-Tenant-Slug": self.slug})
         self.assertEqual(catalog.status_code, 200, catalog.text)
@@ -291,11 +320,20 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         self.assertEqual(order["total_paise"], 60500)
         paid = self.client.post(f"/shop/orders/{order['id']}/confirm", json=self.confirmation(order), headers=self.shop_headers())
         self.assertEqual(paid.status_code, 200, paid.text)
+        dispatched = self.client.post(f"/checkout-admin/orders/{order['id']}/dispatch", json={}, headers=self.staff_headers())
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
         with self.factory() as db:
             quantities = db.execute(text("""select product_id,quantity from stock_balances where company_id=:company
                 and (variant_id=:variant or product_id=:second)"""),
                 {"company": self.company_id, "variant": variant, "second": second}).mappings().all()
             self.assertEqual({str(row["product_id"]): row["quantity"] for row in quantities}, {first: 16, second: 18})
+            invoice = db.execute(text("select invoice_number, total, amount_received, collection_status from invoices where id=:id"),
+                                 {"id": dispatched.json()["invoice_id"]}).mappings().one()
+            self.assertTrue(invoice["invoice_number"].startswith("INV-WEB-"))
+            self.assertEqual((invoice["total"], invoice["amount_received"], invoice["collection_status"]), (Decimal("605.00"), Decimal("605.00"), "SETTLED"))
+            shipping = db.execute(text("select document_data->'lines' from invoices where id=:id"), {"id": dispatched.json()["invoice_id"]}).scalar_one()
+            self.assertEqual([line["description"] for line in shipping][-1], "Shipping and delivery")
+            self.assertTrue(all(line["price_includes_gst"] for line in shipping))
 
     def test_minimum_quantity_is_editable_only_inside_own_workspace(self):
         product = self.product()
@@ -373,17 +411,40 @@ class ShopperCheckoutTests(TenantDatabaseCase):
             self.assertEqual(paid.status_code, 200, paid.text)
             self.assertEqual(paid.json()["status"], "paid")
         with self.factory() as db:
+            # Capture records an advance in the clearing account; stock stays reserved until dispatch.
             quantity = db.execute(text("select sum(quantity) from stock_balances where company_id=:company and product_id=:product"),
                                   {"company": self.company_id, "product": product_id}).scalar_one()
-            self.assertEqual(quantity, 1)
-            self.assertEqual(db.execute(text("select count(*) from stock_movements where reference_type='shop_order' and reference_id=:id"),
-                                        {"id": order["id"]}).scalar_one(), 1)
+            self.assertEqual(quantity, 2)
+            advances = db.execute(text("""select count(*), sum(amount) from account_transactions where company_id=:company
+                and source_type='shop_order' and source_id=:id"""), {"company": self.company_id, "id": order["id"]}).one()
+            self.assertEqual(tuple(advances), (1, Decimal("105.00")))
+        self.assertEqual(self.client.post("/inventory/products/" + product_id + "/stock",
+                                         json={"direction": "OUT", "quantity": 2, "notes": "Reserved check", "idempotency_key": str(uuid4())},
+                                         headers=self.staff_headers()).status_code, 422)
         for _ in range(2):
             shipped = self.client.post(f"/checkout-admin/orders/{order['id']}/ship", json={"weight": 1, "length": 10, "width": 10, "height": 10},
                                        headers=self.staff_headers())
             self.assertEqual(shipped.status_code, 200, shipped.text)
             self.assertEqual(shipped.json()["status"], "shipment_booked")
         self.assertEqual(sum(call[2] == "/orders/create/adhoc" for call in self.provider_calls), 1)
+        for _ in range(2):
+            dispatched = self.client.post(f"/checkout-admin/orders/{order['id']}/dispatch", json={}, headers=self.staff_headers())
+            self.assertEqual(dispatched.status_code, 200, dispatched.text)
+            self.assertEqual(dispatched.json()["status"], "dispatched")
+        with self.factory() as db:
+            quantity = db.execute(text("select sum(quantity) from stock_balances where company_id=:company and product_id=:product"),
+                                  {"company": self.company_id, "product": product_id}).scalar_one()
+            self.assertEqual(quantity, 1)
+            invoice_id = dispatched.json()["invoice_id"]
+            self.assertEqual(db.execute(text("select count(*) from stock_movements where reference_type='invoice' and reference_id=:id"),
+                                        {"id": invoice_id}).scalar_one(), 1)
+            self.assertEqual(db.execute(text("select count(*) from invoices where id=:id and store_id=:store"),
+                                        {"id": invoice_id, "store": self.online_store()}).scalar_one(), 1)
+            # The advance was attached to the invoice; no second inflow exists and the clearing balance is unchanged.
+            inflows = db.execute(text("""select count(*), sum(amount) from account_transactions where company_id=:company
+                and to_account_id=:account and from_account_id is null"""), {"company": self.company_id, "account": self.clearing_account}).one()
+            self.assertEqual(tuple(inflows), (1, Decimal("105.00")))
+            self.assertEqual(db.execute(text("select collection_status from invoices where id=:id"), {"id": invoice_id}).scalar_one(), "SETTLED")
 
     def test_shopper_orders_stock_reservations_and_webhooks_are_scoped(self):
         self.configure()
@@ -418,13 +479,24 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         self.provider_order += "late"
         late, _ = self.checkout(product_id)
         with self.factory() as db:
-            db.execute(text("update shop_orders set created_at=now()-interval '31 minutes' where id=:id"), {"id": late["id"]})
+            db.execute(text("update shop_orders set expires_at=now()-interval '1 minute' where id=:id"), {"id": late["id"]})
             db.execute(text("update stock_balances set quantity=0 where company_id=:company and product_id=:product"),
                        {"company": self.company_id, "product": product_id})
             db.commit()
-        reviewed = self.client.post(f"/shop/orders/{late['id']}/confirm", json=self.confirmation(late, "late"), headers=self.shop_headers())
-        self.assertEqual(reviewed.status_code, 200, reviewed.text)
-        self.assertEqual(reviewed.json()["status"], "payment_review")
+        # An expired hold no longer reserves stock, so the manual adjustment is accepted now.
+        self.assertEqual(self.client.post("/inventory/products/" + product_id + "/stock",
+                                         json={"direction": "IN", "quantity": 1, "notes": "Expired hold", "idempotency_key": str(uuid4())},
+                                         headers=self.staff_headers()).status_code, 200)
+        with self.factory() as db:
+            db.execute(text("update stock_balances set quantity=0 where company_id=:company and product_id=:product"),
+                       {"company": self.company_id, "product": product_id})
+            db.commit()
+        captured = self.client.post(f"/shop/orders/{late['id']}/confirm", json=self.confirmation(late, "late"), headers=self.shop_headers())
+        self.assertEqual(captured.status_code, 200, captured.text)
+        self.assertEqual(captured.json()["status"], "paid")
+        reviewed = self.client.post(f"/checkout-admin/orders/{late['id']}/dispatch", json={}, headers=self.staff_headers())
+        self.assertEqual(reviewed.status_code, 409, reviewed.text)
+        self.assertIn("fulfilment_review", self.client.get("/checkout-admin/orders?status=fulfilment_review", headers=self.staff_headers()).text)
         blocked = self.client.post(f"/checkout-admin/orders/{late['id']}/ship", json={"weight": 1, "length": 10, "width": 10, "height": 10}, headers=self.staff_headers())
         self.assertEqual(blocked.status_code, 409, blocked.text)
         with self.factory() as db:

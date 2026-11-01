@@ -88,15 +88,54 @@ class BulkVendorMapping(BaseModel):
 
 class StockAdjustment(BaseModel):
     idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
+    store_id: UUID | None = None
     variant_id: UUID | None = None
     direction: Literal["IN", "OUT"]
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
     notes: str = Field(min_length=1, max_length=1000)
 
 
+class StockTransferLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    product_id: UUID
+    variant_id: UUID | None = None
+    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+
+
+class StockTransferCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+    from_store_id: UUID
+    to_store_id: UUID
+    transfer_date: date | None = None
+    reference: str | None = Field(default=None, max_length=200)
+    notes: str = Field(min_length=1, max_length=1000)
+    lines: list[StockTransferLine] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def check_distinct_lines(self):
+        keys = [(line.product_id, line.variant_id) for line in self.lines]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Each product/variant may appear only once per transfer")
+        if self.from_store_id == self.to_store_id:
+            raise ValueError("Choose two different stores")
+        return self
+
+
+class StockTransferReverse(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    notes: str = Field(min_length=1, max_length=1000)
+
+
 class ReorderReminder(BaseModel):
     variant_id: UUID | None = None
     reminder_date: date
+
+
+class ExternalMovementSource(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    external_reference: str = Field(min_length=1, max_length=200)
+    notes: str = Field(min_length=1, max_length=1000)
 
 
 class InventoryLookupCreate(BaseModel):

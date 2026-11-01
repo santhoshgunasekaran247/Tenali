@@ -7,6 +7,7 @@ import { useAuth } from "../features/auth";
 import type { CatalogProduct, Company } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../features/catalog/utils";
+import { NearbyStores } from "../components/NearbyStores";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { accountRequest } from "../features/shop";
 import { useCart } from "../features/cart";
@@ -160,6 +161,7 @@ export function ProductPage() {
               {company?.phone?<p>{text("whatsapp_purchase_help","Use WhatsApp for bulk pricing, customisation or availability questions. An enquiry does not place an order or take payment.")}</p>:null}
             </div>
             {checkoutError?<p role="alert" className="ops-error">Online checkout unavailable: {checkoutError}. You can still enquire with the store.</p>:null}
+            {product.id?<NearbyStores productId={product.id} variantId={variantId||null} productName={`${product.name}${variant?` - ${variant.variant_name}`:''}`} quantity={Math.max(1,Number(quantity)||1)} checkoutEnabled={checkoutEnabled}/>:null}
           </div>
         </section>
       </main>

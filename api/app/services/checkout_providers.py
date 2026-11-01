@@ -31,6 +31,8 @@ def encrypt_credentials(company_id: str, credentials: dict) -> str:
 
 
 def decrypt_credentials(company_id: str, encrypted: str) -> dict:
+    if not encrypted:
+        raise HTTPException(409, "Online payment credentials are not configured; enable cash on delivery or pickup, or save Razorpay credentials")
     try:
         data = json.loads(cipher().decrypt(encrypted.encode()))
     except (InvalidToken, ValueError, UnicodeError) as error:

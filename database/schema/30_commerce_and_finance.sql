@@ -71,6 +71,7 @@ create table if not exists borrowings (
     amount numeric(14,2) not null check (amount > 0),
     transaction_date date not null default current_date,
     account_id uuid references accounts(id),
+    source_transaction_id uuid references account_transactions(id),
     reference text,
     notes text,
     created_at timestamptz not null default now()

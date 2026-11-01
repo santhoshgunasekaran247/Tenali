@@ -48,6 +48,8 @@ export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
   const data = invoice.document_data;
   if (!data?.lines.length) throw new Error("This legacy invoice has no saved product details for a tax invoice.");
   const settings = { ...DEFAULT_INVOICE_SETTINGS, ...data.seller.invoice_settings };
+  // Unregistered sellers issue a Bill of Supply; the snapshot decides, not the editable title.
+  if (data.gst_registered === false) settings.title = "BILL OF SUPPLY";
   const NAVY = colorRgb(settings.primary_color);
   const GOLD = colorRgb(settings.accent_color);
   const [logo, signature] = await Promise.all([

@@ -18,6 +18,14 @@ from app.schemas.accounts import (
     PeriodLockReopen,
     TransactionReverseCreate,
 )
+from app.services.borrowing_ledger import available_repayment, lock_borrowing_party, lock_transaction_borrowing
+from app.services.purchase_ledger import sync_purchase_payments
+from app.services.collection_ledger import (
+    lock_invoice_receivables,
+    lock_receivable,
+    sync_invoice_without_receivable,
+    sync_receivable,
+)
 from app.services.period_lock_service import assert_period_open, ensure_period_locks_table
 from app.services.documents_service import DocumentsService
 from app.services.posting_service import replay_posting, finish_posting
@@ -68,6 +76,7 @@ class AccountsService:
                     amount numeric(14,2) not null check (amount > 0),
                     transaction_date date not null default current_date,
                     account_id uuid references accounts(id),
+                    source_transaction_id uuid references account_transactions(id),
                     reference text,
                     notes text,
                     created_at timestamptz not null default now()
@@ -75,153 +84,20 @@ class AccountsService:
                 """
             )
         )
+        self.db.execute(
+            text("alter table borrowings add column if not exists source_transaction_id uuid references account_transactions(id)")
+        )
+        self.db.execute(
+            text(
+                """
+                create unique index if not exists uq_borrowings_source_transaction
+                on borrowings(company_id, source_transaction_id) where source_transaction_id is not null
+                """
+            )
+        )
 
     def _sync_purchase_payment_summary(self, purchase_id: str, company_id: str) -> None:
-        purchase = self.db.execute(
-            text(
-                """
-                select id, total
-                from purchases
-                where id = :purchase_id and company_id = :company_id
-                """
-            ),
-            {
-                "purchase_id": purchase_id,
-                "company_id": company_id,
-            },
-        ).mappings().first()
-        if not purchase:
-            return
-
-        amount_paid = Decimal(
-            str(
-                self.db.execute(
-                    text(
-                        """
-                        select coalesce(sum(amount), 0)
-                        from purchase_payments
-                        where purchase_id = :purchase_id
-                          and company_id = :company_id
-                          and reversed_at is null
-                        """
-                    ),
-                    {
-                        "purchase_id": purchase_id,
-                        "company_id": company_id,
-                    },
-                ).scalar_one()
-                or 0
-            )
-        )
-        total = Decimal(str(purchase["total"]))
-        if total - amount_paid <= Decimal("0.0001"):
-            payment_status = "PAID"
-        elif amount_paid > Decimal("0"):
-            payment_status = "PARTIAL"
-        else:
-            payment_status = "UNPAID"
-
-        self.db.execute(
-            text(
-                """
-                update purchases
-                set
-                    amount_paid = :amount_paid,
-                    payment_status = :payment_status
-                where id = :purchase_id and company_id = :company_id
-                """
-            ),
-            {
-                "amount_paid": amount_paid,
-                "payment_status": payment_status,
-                "purchase_id": purchase_id,
-                "company_id": company_id,
-            },
-        )
-
-    def _sync_receivable_payment_summary(self, receivable_id: str, company_id: str) -> None:
-        receivable = self.db.execute(
-            text(
-                """
-                select id, invoice_id, amount_due
-                from receivables
-                where id = :receivable_id and company_id = :company_id
-                """
-            ),
-            {
-                "receivable_id": receivable_id,
-                "company_id": company_id,
-            },
-        ).mappings().first()
-        if not receivable:
-            return
-
-        amount_due = Decimal(str(receivable["amount_due"]))
-        amount_received = Decimal(
-            str(
-                self.db.execute(
-                    text(
-                        """
-                        select coalesce(sum(amount), 0)
-                        from receivable_payments
-                        where receivable_id = :receivable_id
-                          and company_id = :company_id
-                          and reversed_at is null
-                        """
-                    ),
-                    {
-                        "receivable_id": receivable_id,
-                        "company_id": company_id,
-                    },
-                ).scalar_one()
-                or 0
-            )
-        )
-
-        if amount_received <= Decimal("0"):
-            status = "UNPAID"
-        elif amount_due - amount_received <= Decimal("0.0001"):
-            status = "SETTLED"
-        else:
-            status = "PARTIAL"
-
-        self.db.execute(
-            text(
-                """
-                update receivables
-                set
-                    amount_received = :amount_received,
-                    status = :status,
-                    updated_at = now()
-                where id = :receivable_id and company_id = :company_id
-                """
-            ),
-            {
-                "amount_received": amount_received,
-                "status": status,
-                "receivable_id": receivable_id,
-                "company_id": company_id,
-            },
-        )
-
-        self.db.execute(
-            text(
-                """
-                update invoices
-                set
-                    collection_status = :status,
-                    amount_received = :amount_received,
-                    bad_debt_reason = case when :status = 'BAD_DEBT' then bad_debt_reason else null end
-                where id = :invoice_id and company_id = :company_id
-                """
-            ),
-            {
-                "invoice_id": str(receivable["invoice_id"]) if receivable["invoice_id"] else None,
-                "company_id": company_id,
-                "status": status,
-                "amount_received": amount_received,
-            },
-        )
+        sync_purchase_payments(self.db, company_id, purchase_id)
 
     def _apply_source_reversal_effects(
         self,
@@ -260,6 +136,8 @@ class AccountsService:
                     purchase_id=str(payment["purchase_id"]),
                     company_id=company_id,
                 )
+            else:
+                raise HTTPException(409, "Purchase payment is missing or already reversed")
             return
 
         if normalized_source_type == "purchase":
@@ -303,6 +181,7 @@ class AccountsService:
                         company_id=company_id,
                     )
                     return
+                raise HTTPException(409, "Original purchase payment cannot be identified")
             self._sync_purchase_payment_summary(
                 purchase_id=original_source_id,
                 company_id=company_id,
@@ -330,100 +209,20 @@ class AccountsService:
                 },
             ).mappings().first()
             if payment:
-                self._sync_receivable_payment_summary(
-                    receivable_id=str(payment["receivable_id"]),
-                    company_id=company_id,
+                receivable, invoice = lock_receivable(
+                    self.db, company_id, str(payment["receivable_id"])
                 )
+                sync_receivable(self.db, company_id, receivable, invoice)
+            else:
+                raise HTTPException(409, "Collection payment is missing or already reversed")
             return
 
         if normalized_source_type == "invoice":
-            invoice = self.db.execute(
-                text(
-                    """
-                    select id, total
-                    from invoices
-                    where id = :invoice_id and company_id = :company_id
-                    """
-                ),
-                {
-                    "invoice_id": original_source_id,
-                    "company_id": company_id,
-                },
-            ).mappings().first()
-            if not invoice:
-                return
-
-            amount_received = Decimal(
-                str(
-                    self.db.execute(
-                        text(
-                            """
-                            select coalesce(sum(t.amount), 0)
-                            from account_transactions t
-                            where t.company_id = :company_id
-                              and t.source_type = 'invoice'
-                              and t.source_id = :invoice_id
-                              and t.to_account_id is not null
-                              and not exists (
-                                  select 1
-                                  from account_transactions r
-                                  where r.company_id = t.company_id
-                                    and r.reversal_of_transaction_id = t.id
-                              )
-                            """
-                        ),
-                        {
-                            "company_id": company_id,
-                            "invoice_id": original_source_id,
-                        },
-                    ).scalar_one()
-                    or 0
-                )
-            )
-            total = Decimal(str(invoice["total"]))
-            if amount_received <= Decimal("0"):
-                collection_status = "UNPAID"
-            elif total - amount_received <= Decimal("0.0001"):
-                collection_status = "SETTLED"
+            invoice, receivable = lock_invoice_receivables(self.db, company_id, original_source_id)
+            if receivable:
+                sync_receivable(self.db, company_id, receivable, invoice)
             else:
-                collection_status = "PARTIAL"
-
-            self.db.execute(
-                text(
-                    """
-                    update invoices
-                    set
-                        amount_received = :amount_received,
-                        collection_status = :collection_status,
-                        bad_debt_reason = case when :collection_status = 'BAD_DEBT' then bad_debt_reason else null end
-                    where id = :invoice_id and company_id = :company_id
-                    """
-                ),
-                {
-                    "invoice_id": original_source_id,
-                    "company_id": company_id,
-                    "amount_received": amount_received,
-                    "collection_status": collection_status,
-                },
-            )
-            self.db.execute(
-                text(
-                    """
-                    update receivables
-                    set
-                        amount_received = :amount_received,
-                        status = :collection_status,
-                        updated_at = now()
-                    where invoice_id = :invoice_id and company_id = :company_id
-                    """
-                ),
-                {
-                    "invoice_id": original_source_id,
-                    "company_id": company_id,
-                    "amount_received": amount_received,
-                    "collection_status": collection_status,
-                },
-            )
+                sync_invoice_without_receivable(self.db, company_id, invoice)
             return
 
     def _ensure_transaction_extensions(self) -> None:
@@ -1150,6 +949,8 @@ class AccountsService:
                 status_code=422,
                 detail="Non-company account must be linked to a party to auto-record borrowing",
             )
+        if not account["is_company_account"] and payload.create_borrowing:
+            lock_borrowing_party(self.db, resolved_company_id, str(account["party_id"]))
 
         transaction_date = payload.transaction_date or date.today()
         assert_period_open(
@@ -1236,6 +1037,7 @@ class AccountsService:
                         amount,
                         transaction_date,
                         account_id,
+                        source_transaction_id,
                         reference,
                         notes
                     ) values (
@@ -1245,6 +1047,7 @@ class AccountsService:
                         :amount,
                         :transaction_date,
                         :account_id,
+                        :source_transaction_id,
                         :reference,
                         :notes
                     )
@@ -1257,6 +1060,7 @@ class AccountsService:
                     "amount": payload.amount,
                     "transaction_date": transaction_date,
                     "account_id": str(payload.from_account_id),
+                    "source_transaction_id": str(tx["id"]),
                     "reference": payload.reference,
                     "notes": payload.notes or f"Auto-captured borrowing for {purpose} payment",
                 },
@@ -1273,6 +1077,66 @@ class AccountsService:
             "borrowing_id": borrowing_id,
         }
 
+    def _lock_reversal_source(self, company_id: str, transaction_id: str, source: dict) -> dict | None:
+        source_type = str(source["source_type"]).strip().lower() if source["source_type"] else None
+        source_id = str(source["source_id"]) if source["source_id"] else None
+        business_payment = source["category"] in {"business_purchase", "business_billing", "business_expense"}
+        if not business_payment and source_type == "invoice" and source_id:
+            lock_invoice_receivables(self.db, company_id, source_id)
+        elif not business_payment and source_type == "receivable_payment" and source_id:
+            receivable_id = self.db.execute(
+                text("select receivable_id from receivable_payments where id = :id and company_id = :company"),
+                {"id": source_id, "company": company_id},
+            ).scalar_one_or_none()
+            if not receivable_id:
+                raise HTTPException(409, "Collection payment is missing")
+            lock_receivable(self.db, company_id, str(receivable_id))
+        elif not business_payment and source_type in {"purchase", "purchase_payment"} and source_id:
+            purchase_id = source_id
+            if source_type == "purchase_payment":
+                purchase_id = self.db.execute(
+                    text("select purchase_id from purchase_payments where id = :id and company_id = :company"),
+                    {"id": source_id, "company": company_id},
+                ).scalar_one_or_none()
+                if not purchase_id:
+                    raise HTTPException(409, "Purchase payment is missing")
+            purchase = self.db.execute(
+                text("select id from purchases where id = :id and company_id = :company for update"),
+                {"id": purchase_id, "company": company_id},
+            ).scalar_one_or_none()
+            if not purchase:
+                raise HTTPException(409, "Purchase for this transaction is missing")
+        borrowing = lock_transaction_borrowing(self.db, company_id, transaction_id, source_type, source_id)
+        if business_payment and not borrowing and source["from_account_id"]:
+            possible_legacy_borrowing = self.db.execute(
+                text(
+                    """
+                    select b.id
+                    from borrowings b
+                    join accounts a on a.id = b.account_id and a.company_id = b.company_id
+                    where b.company_id = :company and a.id = :account_id
+                      and not a.is_company_account and b.party_id = a.party_id
+                      and b.direction = 'borrow' and b.amount = :amount
+                      and b.transaction_date = :transaction_date
+                      and b.source_transaction_id is null
+                      and not exists (
+                          select 1 from account_transactions linked
+                          where linked.company_id = b.company_id
+                            and linked.source_type = 'borrowing' and linked.source_id = b.id
+                      )
+                    limit 1
+                    """
+                ),
+                {"company": company_id, "account_id": source["from_account_id"],
+                 "amount": source["amount"], "transaction_date": source["transaction_date"]},
+            ).scalar_one_or_none()
+            if possible_legacy_borrowing:
+                raise HTTPException(
+                    409,
+                    "This legacy business payment may have an unlinked borrowing; resolve the link before reversal",
+                )
+        return borrowing
+
     def reverse_transaction(
         self,
         transaction_id: str,
@@ -1280,7 +1144,22 @@ class AccountsService:
         payload: TransactionReverseCreate,
     ) -> dict:
         self._ensure_transaction_extensions()
+        self._ensure_borrowings_table()
         resolved_company_id = self._resolve_company_id(company_id)
+
+        source = self.db.execute(
+            text(
+                """
+                select source_type, source_id, category, from_account_id, amount, transaction_date
+                from account_transactions
+                where id = :transaction_id and company_id = :company_id
+                """
+            ),
+            {"transaction_id": transaction_id, "company_id": resolved_company_id},
+        ).mappings().first()
+        if not source:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        borrowing = self._lock_reversal_source(resolved_company_id, transaction_id, dict(source))
 
         original = self.db.execute(
             text(
@@ -1302,6 +1181,7 @@ class AccountsService:
                     created_at
                 from account_transactions
                 where id = :transaction_id and company_id = :company_id
+                for update
                 """
             ),
             {
@@ -1333,6 +1213,14 @@ class AccountsService:
             raise HTTPException(status_code=422, detail="Transaction already reversed")
 
         reversal_date = payload.transaction_date or date.today()
+        if reversal_date < original["transaction_date"]:
+            raise HTTPException(422, "Reversal date cannot precede the original transaction")
+        if borrowing and borrowing["direction"] == "borrow":
+            available = available_repayment(
+                self.db, resolved_company_id, str(borrowing["party_id"]), reversal_date
+            )
+            if borrowing["amount"] > available:
+                raise HTTPException(422, "Reverse linked repayments before reversing this borrowing")
         assert_period_open(
             db=self.db,
             company_id=resolved_company_id,
@@ -1406,7 +1294,7 @@ class AccountsService:
             },
         ).mappings().first()
 
-        if reversal:
+        if reversal and original["category"] not in {"business_purchase", "business_billing", "business_expense"}:
             self._apply_source_reversal_effects(
                 company_id=resolved_company_id,
                 original_source_type=(str(original["source_type"]) if original["source_type"] else None),

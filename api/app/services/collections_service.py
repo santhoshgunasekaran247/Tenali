@@ -15,6 +15,13 @@ from app.schemas.collections import (
     ReceivableReminderUpdate,
     ReceivableStatusUpdate,
 )
+from app.services.collection_ledger import (
+    lock_invoice_receivables,
+    lock_receivable,
+    payment_status,
+    receipt_totals,
+    sync_receivable,
+)
 from app.services.period_lock_service import assert_period_open
 from app.services.runtime_schema import managed_schema
 
@@ -156,6 +163,19 @@ class CollectionsService:
         if not party:
             raise HTTPException(status_code=404, detail="Party not found")
 
+        if payload.invoice_id:
+            invoice, existing = lock_invoice_receivables(
+                self.db, resolved_company_id, str(payload.invoice_id)
+            )
+            if existing:
+                raise HTTPException(409, "Invoice already has a receivable")
+            if invoice["status"] == "CANCELLED":
+                raise HTTPException(422, "A cancelled invoice cannot have a receivable")
+            if str(invoice["customer_party_id"]) != str(payload.party_id):
+                raise HTTPException(422, "Receivable party must match the invoice customer")
+            if Decimal(str(payload.amount_due)) != invoice["total"]:
+                raise HTTPException(422, "Receivable amount must match the invoice total")
+
         row = self.db.execute(
             text(
                 """
@@ -205,15 +225,13 @@ class CollectionsService:
                 "notes": payload.notes,
             },
         ).mappings().first()
-        self.db.commit()
-
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create receivable")
-
-        result = dict(row)
-        result["party_name"] = party["legal_name"]
-        result["balance_amount"] = float(result["amount_due"]) - float(result["amount_received"])
-        return result
+        if payload.invoice_id:
+            receivable, invoice = lock_receivable(self.db, resolved_company_id, str(row["id"]))
+            sync_receivable(self.db, resolved_company_id, receivable, invoice)
+        self.db.commit()
+        return self._get_receivable(company_id=resolved_company_id, receivable_id=str(row["id"]))
 
     def list_receivables(self, company_id: str | None, status: str | None = None) -> dict:
         self._ensure_tables()
@@ -350,10 +368,6 @@ class CollectionsService:
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
-        cancelled=self.db.execute(text("""select r.id from receivables r join invoices i on i.id=r.invoice_id
-            where r.id=:id and r.company_id=:company and i.status='CANCELLED'"""),{"id":receivable_id,"company":resolved_company_id}).scalar_one_or_none()
-        if cancelled:
-            raise HTTPException(422,"A cancelled invoice cannot receive collections")
 
         if payload.amount <= 0:
             raise HTTPException(status_code=422, detail="amount must be greater than zero")
@@ -362,18 +376,9 @@ class CollectionsService:
         if not payload.account_id:
             raise HTTPException(status_code=422, detail="account_id is required for collection payments")
 
-        receivable = self.db.execute(
-            text(
-                """
-                select id, amount_due, amount_received, status
-                from receivables
-                where id = :receivable_id and company_id = :company_id
-                """
-            ),
-            {"receivable_id": receivable_id, "company_id": resolved_company_id},
-        ).mappings().first()
-        if not receivable:
-            raise HTTPException(status_code=404, detail="Receivable not found")
+        receivable, invoice = lock_receivable(self.db, resolved_company_id, receivable_id)
+        if invoice and invoice["status"] == "CANCELLED":
+            raise HTTPException(422, "A cancelled invoice cannot receive collections")
         if receivable["status"] == "BAD_DEBT":
             raise HTTPException(status_code=422, detail="Cannot collect payment on bad debt")
 
@@ -391,10 +396,10 @@ class CollectionsService:
         if not account:
             raise HTTPException(status_code=404, detail="Collection account not found")
 
-        current_received = Decimal(str(receivable["amount_received"]))
+        current_received, _ = receipt_totals(self.db, resolved_company_id, receivable, invoice)
         amount_due = Decimal(str(receivable["amount_due"]))
         new_received = current_received + Decimal(str(payload.amount))
-        if new_received - amount_due > Decimal("0.0001"):
+        if new_received > amount_due:
             raise HTTPException(status_code=422, detail="Collected amount exceeds due amount")
 
         existing = self.db.execute(
@@ -416,6 +421,8 @@ class CollectionsService:
             raise HTTPException(status_code=409, detail="Duplicate collection submission detected")
 
         payment_date = payload.payment_date or date.today()
+        if invoice and payment_date < invoice["invoice_date"]:
+            raise HTTPException(422, "Collection date cannot precede the invoice date")
         assert_period_open(
             db=self.db,
             company_id=resolved_company_id,
@@ -446,6 +453,8 @@ class CollectionsService:
                     :payment_date,
                     :notes
                 )
+                on conflict (company_id, idempotency_key)
+                    where idempotency_key is not null do nothing
                 returning id, receivable_id, company_id, account_id, amount, payment_mode, idempotency_key, reference, payment_date, notes, created_at
                 """
             ),
@@ -462,7 +471,8 @@ class CollectionsService:
             },
         ).mappings().first()
 
-        self._sync_receivable_payment_summary(receivable_id=receivable_id, company_id=resolved_company_id)
+        if not payment:
+            raise HTTPException(status_code=409, detail="Duplicate collection submission detected")
 
         self.db.execute(
             text(
@@ -504,18 +514,13 @@ class CollectionsService:
                 "description": payload.notes or "Sales collection",
                 "transaction_date": payment_date,
                 "source_type": "receivable_payment",
-                "source_id": str(payment["id"]) if payment else None,
+                "source_id": str(payment["id"]),
             },
         )
 
-        self._sync_invoice_from_receivable(
-            receivable_id=receivable_id,
-            company_id=resolved_company_id,
-        )
+        sync_receivable(self.db, resolved_company_id, receivable, invoice)
 
         self.db.commit()
-        if not payment:
-            raise HTTPException(status_code=500, detail="Failed to create payment")
         return dict(payment)
 
     def update_receivable_status(
@@ -528,12 +533,28 @@ class CollectionsService:
         if status not in ALLOWED_RECEIVABLE_STATUS:
             raise HTTPException(status_code=422, detail="Invalid status")
 
+        receivable, invoice = lock_receivable(self.db, resolved_company_id, receivable_id)
+        if invoice and invoice["status"] == "CANCELLED":
+            raise HTTPException(422, "A cancelled invoice cannot change collection status")
+        assert_period_open(self.db, resolved_company_id, date.today(), "Changing receivable status")
+        received, _ = receipt_totals(self.db, resolved_company_id, receivable, invoice)
+        derived_status = payment_status(Decimal(receivable["amount_due"]), received)
+        reason = (payload.bad_debt_reason or "").strip()
+        if status == "BAD_DEBT":
+            if not reason:
+                raise HTTPException(422, "A bad debt reason is required")
+            if derived_status == "SETTLED":
+                raise HTTPException(422, "A fully paid receivable cannot be marked bad debt")
+        elif status != derived_status:
+            raise HTTPException(422, f"Status must match the payment ledger: {derived_status}")
+
         row = self.db.execute(
             text(
                 """
                 update receivables
                 set
                     status = :status,
+                    amount_received = :amount_received,
                     bad_debt_reason = :bad_debt_reason,
                     reminder_date = :reminder_date,
                     updated_at = now()
@@ -543,7 +564,8 @@ class CollectionsService:
             ),
             {
                 "status": status,
-                "bad_debt_reason": payload.bad_debt_reason if status == "BAD_DEBT" else None,
+                "amount_received": received,
+                "bad_debt_reason": reason if status == "BAD_DEBT" else None,
                 "reminder_date": payload.reminder_date,
                 "receivable_id": receivable_id,
                 "company_id": resolved_company_id,
@@ -601,22 +623,9 @@ class CollectionsService:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
-        current = self.db.execute(
-            text(
-                """
-                select reminder_date
-                from receivables
-                where id = :receivable_id
-                  and company_id = :company_id
-                  and status in ('UNPAID','PARTIAL')
-                """
-            ),
-            {
-                "receivable_id": receivable_id,
-                "company_id": resolved_company_id,
-            },
-        ).mappings().first()
-        if not current:
+        current, invoice = lock_receivable(self.db, resolved_company_id, receivable_id)
+        _, status, _ = sync_receivable(self.db, resolved_company_id, current, invoice)
+        if status not in {"UNPAID", "PARTIAL"} or (invoice and invoice["status"] == "CANCELLED"):
             raise HTTPException(status_code=404, detail="Receivable not found or not collectible")
 
         row = self.db.execute(
@@ -627,9 +636,9 @@ class CollectionsService:
                     last_reminded_at = now(),
                     reminder_date = :next_reminder_date,
                     notes = case
-                        when :notes is null or :notes = '' then notes
-                        when notes is null or notes = '' then :notes
-                        else notes || E'\\n' || :notes
+                        when cast(:notes as text) is null or cast(:notes as text) = '' then notes
+                        when notes is null or notes = '' then cast(:notes as text)
+                        else notes || E'\\n' || cast(:notes as text)
                     end,
                     updated_at = now()
                 where id = :receivable_id
@@ -787,71 +796,6 @@ class CollectionsService:
                 "bad_debt_reason": (
                     receivable["bad_debt_reason"] if receivable["status"] == "BAD_DEBT" else None
                 ),
-            },
-        )
-
-    def _sync_receivable_payment_summary(self, receivable_id: str, company_id: str) -> None:
-        receivable = self.db.execute(
-            text(
-                """
-                select id, amount_due
-                from receivables
-                where id = :receivable_id and company_id = :company_id
-                """
-            ),
-            {
-                "receivable_id": receivable_id,
-                "company_id": company_id,
-            },
-        ).mappings().first()
-        if not receivable:
-            raise HTTPException(status_code=404, detail="Receivable not found")
-
-        amount_due = Decimal(str(receivable["amount_due"]))
-        total_received = Decimal(
-            str(
-                self.db.execute(
-                    text(
-                        """
-                        select coalesce(sum(amount), 0)
-                        from receivable_payments
-                        where receivable_id = :receivable_id
-                          and company_id = :company_id
-                          and reversed_at is null
-                        """
-                    ),
-                    {
-                        "receivable_id": receivable_id,
-                        "company_id": company_id,
-                    },
-                ).scalar_one()
-                or 0
-            )
-        )
-
-        if total_received <= Decimal("0"):
-            status = "UNPAID"
-        elif amount_due - total_received <= Decimal("0.0001"):
-            status = "SETTLED"
-        else:
-            status = "PARTIAL"
-
-        self.db.execute(
-            text(
-                """
-                update receivables
-                set
-                    amount_received = :amount_received,
-                    status = :status,
-                    updated_at = now()
-                where id = :receivable_id and company_id = :company_id
-                """
-            ),
-            {
-                "amount_received": total_received,
-                "status": status,
-                "receivable_id": receivable_id,
-                "company_id": company_id,
             },
         )
 

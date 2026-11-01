@@ -11,10 +11,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.routes.auth import PasswordChange, administrator, identity_db
 from app.core.database import SessionLocal, get_db
-from app.schemas.checkout import CheckoutInput, CheckoutSettingsInput, PackageInput, PaymentConfirmation, ShipmentReconcile, ShopperRegistration
+from app.schemas.checkout import (CheckoutInput, CheckoutSettingsInput, CodDecision, CodSettlementInput, CollectInput, DispatchInput,
+                                  EnquiryInput, EnquiryUpdate, OrderCancel, PackageInput, PaymentConfirmation, ShipmentReconcile, ShopperRegistration)
 from app.services import checkout_providers as providers
+from app.services import shop_orders_service as orders_service
 from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company, verify_password
-from app.services.shop_checkout import ORDER_COLUMNS, confirm_payment, create_order, create_shipment, price_item, reconcile_payment, reconcile_shipment, settings_for
+from app.services.shop_checkout import ORDER_COLUMNS, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
 from app.services.tenant_security import Login, password_hash, password_matches, token_digest
@@ -105,22 +107,47 @@ def password(payload: PasswordChange, request: Request, company=Depends(store), 
     return {"changed": True}
 
 
+def public_db(company=Depends(store)):
+    with SessionLocal() as db:
+        db.info["tenant_context"] = {"company_id": str(company["id"]), "user_id": None}
+        yield db
+
+
 @router.get("/availability")
 def availability(company=Depends(store), db=Depends(identity_db)):
-    settings = db.execute(text("select enabled,shipping_paise from checkout_settings where company_id=:company"),
-                          {"company": company["id"]}).mappings().first()
-    return {"enabled": bool(settings and settings["enabled"]), "shipping_paise": settings["shipping_paise"] if settings else None}
+    settings = db.execute(text("""select enabled,shipping_paise,prepaid_enabled,cod_enabled,cod_limit,pickup_enabled
+        from checkout_settings where company_id=:company"""), {"company": company["id"]}).mappings().first()
+    pickup_stores = [dict(row) for row in db.execute(text("""select id,code,name,address,pincode,whatsapp_number from stores
+        where company_id=:company and is_active and holds_stock and allows_pickup order by name"""), {"company": company["id"]}).mappings()]
+    online = db.execute(text("select 1 from stores where company_id=:company and kind='online' and is_active"), {"company": company["id"]}).first()
+    whatsapp = orders_service.whatsapp_number(db, str(company["id"]), None)
+    return {"enabled": bool(settings and settings["enabled"] and online), "shipping_paise": settings["shipping_paise"] if settings else None,
+            "prepaid_enabled": bool(settings and settings["prepaid_enabled"]), "cod_enabled": bool(settings and settings["cod_enabled"]),
+            "cod_limit": float(settings["cod_limit"]) if settings else None, "pickup_enabled": bool(settings and settings["pickup_enabled"]),
+            "pickup_stores": pickup_stores, "whatsapp_number": whatsapp}
+
+
+@router.get("/nearby")
+def nearby(product_id: UUID, variant_id: UUID | None = None, lat: float | None = Query(None, ge=-90, le=90),
+           lng: float | None = Query(None, ge=-180, le=180), pincode: str | None = Query(None, pattern=r"^[1-9][0-9]{5}$"),
+           request: Request = None, company=Depends(store), db=Depends(public_db), privileged=Depends(identity_db)):
+    throttle(privileged, request, company["id"])
+    return orders_service.nearby_availability(db, str(company["id"]), str(product_id), str(variant_id) if variant_id else None, lat, lng, pincode)
+
+
+@router.post("/enquiries", status_code=201)
+def enquire(payload: EnquiryInput, request: Request, company=Depends(store), db=Depends(public_db), privileged=Depends(identity_db)):
+    throttle(privileged, request, company["id"])
+    return orders_service.create_enquiry(db, str(company["id"]), payload)
 
 
 @router.post("/quote")
 def quote(payload: CheckoutInput, company=Depends(store), identity=Depends(customer), db=Depends(shop_db), privileged=Depends(identity_db)):
     settings = settings_for(privileged, str(company["id"]))
-    keys = [(str(item.product_id), str(item.variant_id or "")) for item in payload.items]
-    if len(set(keys)) != len(keys):
-        raise HTTPException(422, "Combine duplicate cart entries into a single quantity")
-    items = [price_item(db, str(company["id"]), item) for item in sorted(payload.items, key=lambda item: (str(item.product_id), str(item.variant_id or "")))]
-    subtotal = sum(item["unit_paise"] * item["quantity"] for item in items)
-    return {"items": items, "subtotal_paise": subtotal, "shipping_paise": settings["shipping_paise"], "total_paise": subtotal + settings["shipping_paise"]}
+    result = quote_order(db, settings, str(company["id"]), payload)
+    db.rollback()
+    return {"items": result["items"], "subtotal_paise": result["subtotal_paise"], "shipping_paise": result["shipping_paise"],
+            "total_paise": result["total_paise"], "pickup_store": result["pickup"]["name"] if result["pickup"] else None}
 
 
 @router.post("/orders", status_code=201)
@@ -131,6 +158,8 @@ def checkout(payload: CheckoutInput, company=Depends(store), identity=Depends(cu
 
 @router.get("/orders")
 def orders(offset: int = Query(0, ge=0), company=Depends(store), identity=Depends(customer), db=Depends(shop_db)):
+    orders_service.expire_orders(db, str(company["id"]))
+    db.commit()
     return {"items": [dict(row) for row in db.execute(text(f"""select {ORDER_COLUMNS} from shop_orders
         where company_id=:company and shopper_id=:shopper order by created_at desc,id limit 50 offset :offset"""),
         {"company": company["id"], "shopper": identity["id"], "offset": offset}).mappings()]}
@@ -191,16 +220,23 @@ def shopper_reconcile_payment(order_id: UUID, company=Depends(store), identity=D
     return reconcile_payment(db, str(company["id"]), str(order_id))
 
 
+POLICY_FIELDS = ["prepaid_enabled", "shipping_sac", "shipping_gst_rate", "cod_enabled", "cod_limit", "cod_approval_hours", "cod_overdue_days",
+                 "cod_serviceable_pincodes", "pickup_enabled", "pickup_hold_hours", "pickup_reminder_hours", "prepaid_hold_minutes"]
+
+
 @admin_router.get("/settings")
 def read_settings(identity=Depends(administrator), db=Depends(identity_db)):
-    settings = db.execute(text("select enabled,shipping_paise,pickup_location,credentials from checkout_settings where company_id=:company"),
+    settings = db.execute(text("select * from checkout_settings where company_id=:company"),
                           {"company": identity["company_id"]}).mappings().first()
     if not settings:
         return {"configured": False, "payment_mode": None}
-    credentials = providers.decrypt_credentials(str(identity["company_id"]), settings["credentials"])
+    payment_mode = None
+    if settings["credentials"]:
+        credentials = providers.decrypt_credentials(str(identity["company_id"]), settings["credentials"])
+        payment_mode = "test" if credentials.get("razorpay_key_id", "").startswith("rzp_test_") else "live"
     return {"configured": True, "enabled": settings["enabled"], "shipping_paise": settings["shipping_paise"],
-            "pickup_location": settings["pickup_location"],
-            "payment_mode": "test" if credentials["razorpay_key_id"].startswith("rzp_test_") else "live"}
+            "pickup_location": settings["pickup_location"], "payment_mode": payment_mode, "credentials_saved": bool(settings["credentials"]),
+            **{field: settings[field] for field in POLICY_FIELDS}}
 
 
 @admin_router.put("/settings")
@@ -215,15 +251,27 @@ def save_settings(payload: CheckoutSettingsInput, identity=Depends(administrator
                 else getattr(payload, key) for key in keys if getattr(payload, key) is not None}
     credentials = {} if len(supplied) == len(keys) or not stored else providers.decrypt_credentials(str(identity["company_id"]), stored)
     credentials.update(supplied)
-    if any(not credentials.get(key) for key in keys):
-        raise HTTPException(422, "First-time setup requires the Razorpay key ID, key secret, webhook secret and Shiprocket API-user email and password.")
-    encrypted = providers.encrypt_credentials(str(identity["company_id"]), credentials)
-    db.execute(text("""insert into checkout_settings(company_id,enabled,shipping_paise,pickup_location,credentials)
-        values(:company,:enabled,:shipping,:pickup,:credentials) on conflict(company_id) do update set
+    if payload.prepaid_enabled and any(not credentials.get(key) for key in keys):
+        raise HTTPException(422, "Online payment requires the Razorpay key ID, key secret, webhook secret and Shiprocket API-user email and password; or disable online payment to run cash-on-delivery and pickup only.")
+    if payload.enabled and not (payload.prepaid_enabled or payload.cod_enabled or payload.pickup_enabled):
+        raise HTTPException(422, "Enable at least one of online payment, cash on delivery or store pickup")
+    encrypted = providers.encrypt_credentials(str(identity["company_id"]), credentials) if credentials else ""
+    policy = {field: getattr(payload, field) for field in POLICY_FIELDS}
+    db.execute(text("""insert into checkout_settings(company_id,enabled,shipping_paise,pickup_location,credentials,
+            prepaid_enabled,shipping_sac,shipping_gst_rate,cod_enabled,cod_limit,cod_approval_hours,cod_overdue_days,cod_serviceable_pincodes,
+            pickup_enabled,pickup_hold_hours,pickup_reminder_hours,prepaid_hold_minutes)
+        values(:company,:enabled,:shipping,:pickup,:credentials,:prepaid_enabled,:shipping_sac,:shipping_gst_rate,:cod_enabled,:cod_limit,
+            :cod_approval_hours,:cod_overdue_days,:cod_serviceable_pincodes,:pickup_enabled,:pickup_hold_hours,:pickup_reminder_hours,:prepaid_hold_minutes)
+        on conflict(company_id) do update set
         enabled=excluded.enabled,shipping_paise=excluded.shipping_paise,pickup_location=excluded.pickup_location,
-        credentials=excluded.credentials,updated_at=now()"""),
+        credentials=excluded.credentials,prepaid_enabled=excluded.prepaid_enabled,shipping_sac=excluded.shipping_sac,
+        shipping_gst_rate=excluded.shipping_gst_rate,cod_enabled=excluded.cod_enabled,cod_limit=excluded.cod_limit,
+        cod_approval_hours=excluded.cod_approval_hours,cod_overdue_days=excluded.cod_overdue_days,
+        cod_serviceable_pincodes=excluded.cod_serviceable_pincodes,pickup_enabled=excluded.pickup_enabled,
+        pickup_hold_hours=excluded.pickup_hold_hours,pickup_reminder_hours=excluded.pickup_reminder_hours,
+        prepaid_hold_minutes=excluded.prepaid_hold_minutes,updated_at=now()"""),
         {"company": identity["company_id"], "enabled": payload.enabled, "shipping": payload.shipping_paise,
-         "pickup": payload.pickup_location, "credentials": encrypted})
+         "pickup": payload.pickup_location, "credentials": encrypted, **policy})
     TenantAuth(db).audit(str(identity["company_id"]), str(identity["user_id"]), "CHECKOUT_SETTINGS_UPDATED",
                          details={"enabled": payload.enabled})
     db.commit()
@@ -249,10 +297,68 @@ def check_provider(provider: Literal["razorpay", "shiprocket"], identity=Depends
 
 
 @admin_router.get("/orders")
-def staff_orders(offset: int = Query(0, ge=0), identity=Depends(administrator), db=Depends(get_db)):
-    return {"items": [dict(row) for row in db.execute(text(f"""select {ORDER_COLUMNS} from shop_orders
-        where company_id=:company order by created_at desc,id limit 50 offset :offset"""),
-        {"company": identity["company_id"], "offset": offset}).mappings()]}
+def staff_orders(offset: int = Query(0, ge=0), status: str | None = None, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.staff_orders(db, str(identity["company_id"]), offset, status)
+
+
+@admin_router.post("/orders/{order_id}/approve-cod")
+def approve_cod(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.approve_cod(db, str(identity["company_id"]), str(order_id))
+
+
+@admin_router.post("/orders/{order_id}/decline-cod")
+def decline_cod(order_id: UUID, payload: CodDecision, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.decline_cod(db, str(identity["company_id"]), str(order_id), payload.reason)
+
+
+@admin_router.post("/orders/{order_id}/dispatch")
+def dispatch(order_id: UUID, payload: DispatchInput, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.dispatch_order(db, str(identity["company_id"]), str(order_id), payload)
+
+
+@admin_router.post("/orders/{order_id}/ready")
+def ready_for_pickup(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.mark_ready_for_pickup(db, str(identity["company_id"]), str(order_id))
+
+
+@admin_router.post("/orders/{order_id}/collect")
+def collect(order_id: UUID, payload: CollectInput, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.collect_pickup(db, str(identity["company_id"]), str(order_id), payload)
+
+
+@admin_router.post("/orders/{order_id}/delivered")
+def delivered(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.mark_delivered(db, str(identity["company_id"]), str(order_id))
+
+
+@admin_router.post("/orders/{order_id}/cancel")
+def cancel(order_id: UUID, payload: OrderCancel, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.cancel_order(db, str(identity["company_id"]), str(order_id), payload)
+
+
+@admin_router.post("/orders/{order_id}/post-advance")
+def post_advance(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.retry_advance(db, str(identity["company_id"]), str(order_id))
+
+
+@admin_router.get("/cod")
+def cod_outstanding(identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.cod_outstanding(db, str(identity["company_id"]))
+
+
+@admin_router.post("/cod/settlements", status_code=201)
+def cod_settlement(payload: CodSettlementInput, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.record_cod_settlement(db, str(identity["company_id"]), payload)
+
+
+@admin_router.get("/enquiries")
+def enquiries(status: str | None = None, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.list_enquiries(db, str(identity["company_id"]), status)
+
+
+@admin_router.put("/enquiries/{enquiry_id}")
+def update_enquiry(enquiry_id: UUID, payload: EnquiryUpdate, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.update_enquiry(db, str(identity["company_id"]), str(enquiry_id), payload)
 
 
 @admin_router.post("/orders/{order_id}/ship")

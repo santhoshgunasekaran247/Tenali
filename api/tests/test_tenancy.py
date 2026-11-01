@@ -142,7 +142,7 @@ class TenantBoundaryTests(TenantDatabaseCase):
         self.assertEqual(self.client.get('/auth/team').status_code,403)
         with self.factory() as db:
             db.info['tenant_context']=first['user']
-            self.assertEqual(len(db.execute(text('select id from parties')).all()),1)
+            self.assertEqual(len(db.execute(text('select id from parties where system_role is null')).all()),1)
             db.commit()
             self.assertTrue(all(str(row.company_id)==first['user']['company_id'] for row in db.execute(text('select company_id from parties'))))
 

@@ -1,23 +1,27 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.schemas.billing import InvoiceLineCreate
+from app.schemas.common import SubmissionKey
 from app.schemas.documents import AttachmentCreate, MAX_ATTACHMENTS
+from app.schemas.money import Money, PositiveMoney
 
 
 class PurchaseCreate(BaseModel):
     idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
+    store_id: UUID | None = None
     vendor_party_id: UUID
     purchase_date: date | None = None
     bill_number: str | None = None
-    subtotal: float = 0
-    gst_total: float = 0
-    total: float | None = None
-    amount_paid: float = 0
+    subtotal: Money = Decimal("0")
+    gst_total: Money = Decimal("0")
+    total: Money | None = None
+    amount_paid: Money = Decimal("0")
     payment_mode: str | None = None
     account_id: UUID | None = None
     reference: str | None = None
@@ -31,6 +35,9 @@ class PurchaseCreate(BaseModel):
 class PurchaseOut(BaseModel):
     id: UUID
     company_id: UUID
+    store_id: UUID | None = None
+    store_code: str | None = None
+    voucher_number: str | None = None
     vendor_party_id: UUID
     vendor_name: str
     bill_number: str | None = None
@@ -60,10 +67,10 @@ class PurchaseListResponse(BaseModel):
 
 
 class PurchasePaymentCreate(BaseModel):
-    amount: float
+    amount: PositiveMoney
     account_id: UUID
     payment_mode: str
-    idempotency_key: str
+    idempotency_key: SubmissionKey
     payment_date: date | None = None
     reference: str | None = None
     notes: str | None = None

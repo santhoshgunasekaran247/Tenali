@@ -16,6 +16,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.parties import router as parties_router
 from app.api.routes.purchases import router as purchases_router
 from app.api.routes.settlements import router as settlements_router
+from app.api.routes.stores import router as stores_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router,prefix="/auth",tags=["authentication"])
@@ -27,6 +28,7 @@ api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(company_router, prefix="/company", tags=["company"])
 api_router.include_router(reports_router,prefix="/reports",tags=["reports"])
 api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
+api_router.include_router(stores_router, prefix="/stores", tags=["stores"])
 api_router.include_router(documents_router, prefix="/documents", tags=["documents"])
 api_router.include_router(masters_router, prefix="/masters", tags=["masters"])
 api_router.include_router(parties_router, prefix="/parties", tags=["parties"])

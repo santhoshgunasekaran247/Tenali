@@ -7,6 +7,7 @@ create index if not exists idx_account_transactions_company on account_transacti
 create index if not exists idx_account_transactions_company_date on account_transactions(company_id, transaction_date desc, created_at desc);
 create index if not exists idx_account_transactions_company_category_source on account_transactions(company_id, category, source_type);
 create unique index if not exists uq_account_transactions_reversal_once on account_transactions(company_id, reversal_of_transaction_id) where reversal_of_transaction_id is not null;
+create unique index if not exists uq_borrowings_source_transaction on borrowings(company_id, source_transaction_id) where source_transaction_id is not null;
 create unique index if not exists uq_accounts_one_company_account on accounts(company_id) where is_company_account = true;
 create index if not exists idx_period_locks_company_dates on accounting_period_locks(company_id, period_start, period_end);
 create index if not exists idx_period_locks_active on accounting_period_locks(company_id, is_active);
@@ -18,6 +19,7 @@ create index if not exists idx_receivables_party on receivables(party_id);
 create index if not exists idx_receivable_payments_receivable on receivable_payments(receivable_id);
 create index if not exists idx_purchase_payments_purchase on purchase_payments(purchase_id, payment_date desc, created_at desc);
 create unique index if not exists uq_receivable_payments_idempotency on receivable_payments(company_id, idempotency_key) where idempotency_key is not null;
+create unique index if not exists uq_receivables_company_invoice on receivables(company_id, invoice_id) where invoice_id is not null;
 create unique index if not exists uq_purchase_payments_idempotency on purchase_payments(company_id, idempotency_key) where idempotency_key is not null;
 create index if not exists idx_receivable_reminders_receivable on receivable_reminders(receivable_id, reminded_at desc);
 create index if not exists idx_invoice_reconcile_runs_company_date on invoice_reconcile_runs(company_id, created_at desc);

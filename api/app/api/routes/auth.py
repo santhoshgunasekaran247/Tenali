@@ -1,6 +1,7 @@
 import os
 import secrets
 from urllib.parse import urlparse
+from typing import Literal
 from uuid import UUID
 
 import dns.exception
@@ -182,11 +183,13 @@ def create_member(payload: MemberCreate, identity=Depends(administrator), db=Dep
 class MemberUpdate(BaseModel):
     role: str = Field(pattern=r"^(admin|staff|viewer)$")
     is_active: bool
+    store_ids: list[UUID] | None = Field(default=None, max_length=100)
+    modules: list[Literal["billing", "purchases", "inventory", "receivables", "accounts", "settlements", "reports", "parties", "masters", "orders"]] | None = Field(default=None, max_length=20)
 
 
 @router.put("/team/{user_id}")
 def update_member(user_id: UUID, payload: MemberUpdate, identity=Depends(administrator), db=Depends(identity_db)):
-    return {"items": TenantAuth(db).update_member(str(identity["company_id"]), str(user_id), payload.role, payload.is_active,str(identity['user_id']))}
+    return {"items": TenantAuth(db).update_member(str(identity["company_id"]), str(user_id), payload.role, payload.is_active, str(identity["user_id"]), payload.store_ids, payload.modules)}
 
 
 class DomainInput(BaseModel):

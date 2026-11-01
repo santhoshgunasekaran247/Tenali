@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from app.schemas.documents import AttachmentCreate, MAX_ATTACHMENTS
+from app.schemas.money import PositiveMoney, SignedMoney
+
+AccountName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+AccountType = Literal["bank", "cash", "upi", "card", "other"]
+
+
+def normalize_account_type(value: object) -> object:
+    return value.strip().lower() if isinstance(value, str) else value
 
 
 class AccountOut(BaseModel):
@@ -23,26 +33,37 @@ class AccountOut(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    nickname: str
-    account_type: str
+    nickname: AccountName
+    account_type: AccountType
     party_id: UUID | None = None
     holder_name: str | None = None
     phone: str | None = None
     email: str | None = None
-    opening_balance: float = 0
+    opening_balance: SignedMoney = Decimal("0")
     is_company_account: bool = False
+
+    _normalize_type = field_validator("account_type", mode="before")(normalize_account_type)
 
 
 class AccountUpdate(BaseModel):
-    nickname: str | None = None
-    account_type: str | None = None
+    nickname: AccountName | None = None
+    account_type: AccountType | None = None
     party_id: UUID | None = None
     holder_name: str | None = None
     phone: str | None = None
     email: str | None = None
-    opening_balance: float | None = None
+    opening_balance: SignedMoney | None = None
     is_company_account: bool | None = None
     is_active: bool | None = None
+
+    _normalize_type = field_validator("account_type", mode="before")(normalize_account_type)
+
+    @model_validator(mode="after")
+    def reject_null_required_fields(self):
+        for field in ("nickname", "account_type", "opening_balance", "is_company_account", "is_active"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class AccountListResponse(BaseModel):
@@ -73,7 +94,7 @@ class AccountTransactionOut(BaseModel):
 class AccountTransactionCreate(BaseModel):
     from_account_id: UUID | None = None
     to_account_id: UUID | None = None
-    amount: float
+    amount: PositiveMoney
     payment_mode: str | None = None
     reference: str | None = None
     category: str | None = None
@@ -148,7 +169,7 @@ class AuditJournalResponse(BaseModel):
 class BusinessPaymentCreate(BaseModel):
     idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
     from_account_id: UUID
-    amount: float
+    amount: PositiveMoney
     purpose: str
     related_party_id: UUID | None = None
     payment_mode: str | None = None

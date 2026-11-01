@@ -58,6 +58,8 @@ class HistoricalAgingTests(unittest.TestCase):
             try:
                 company,party=str(uuid4()),str(uuid4())
                 db.execute(text("insert into companies(id,company_name,address,gst_number) values(:id,'Commerce regression','Chennai','33ABCDE1234F1Z5')"),{"id":company})
+                from schema_support import ensure_default_store
+                ensure_default_store(db, company)
                 db.execute(text("insert into parties(id,company_id,party_type,legal_name,address) values(:id,:company,'customer_vendor','Commerce Party','Chennai')"),{"id":party,"company":company})
                 MastersService(db).create_hsn(HsnMasterCreate(code="8516",description="Test",gst_rate=18),company)
                 inventory=InventoryService(db,company)
@@ -134,6 +136,8 @@ class HistoricalAgingTests(unittest.TestCase):
             try:
                 company, party = str(uuid4()), str(uuid4())
                 db.execute(text("insert into companies(id,company_name) values(:id,'Aging regression')"), {"id": company})
+                from schema_support import ensure_default_store
+                ensure_default_store(db, company)
                 db.execute(text("insert into parties(id,company_id,party_type,legal_name) values(:id,:company,'customer_vendor','Aging Party')"), {"id": party, "company": company})
                 accounts = AccountsService(db)
                 account = accounts.create_account(company, AccountCreate(nickname="Aging bank", account_type="bank", is_company_account=True))

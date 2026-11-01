@@ -10,8 +10,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.schemas.inventory import BulkVendorMapping, ProductInput, ReorderReminder, StockAdjustment, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, ProductInput, ReorderReminder, StockAdjustment, StockTransferCreate, VariantInput, VendorOfferInput
+from app.services.access import allowed_stores
 from app.services.inventory_pricing import resolve_catalog_price
+from app.services.period_lock_service import assert_period_open
 from app.services.posting_service import replay_posting, finish_posting, request_hash
 
 
@@ -137,6 +139,15 @@ class InventoryService:
         stocks = {(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None): row["quantity"] for row in self.db.execute(text("""
             select product_id,variant_id,sum(quantity) as quantity from stock_balances where company_id=:company group by product_id,variant_id
         """), {"company": self.company_id}).mappings()}
+        store_stocks = defaultdict(list)
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
+        for row in self.db.execute(text("""select b.product_id,b.variant_id,b.store_id,s.code as store_code,s.name as store_name,sum(b.quantity) as quantity
+            from stock_balances b join stores s on s.id=b.store_id where b.company_id=:company
+            and (cast(:permitted as uuid[]) is null or b.store_id=any(cast(:permitted as uuid[])))
+            group by b.product_id,b.variant_id,b.store_id,s.code,s.name,s.is_default order by s.is_default desc,s.code"""), {"company": self.company_id, "permitted": permitted}).mappings():
+            store_stocks[(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None)].append(
+                {"store_id": str(row["store_id"]), "store_code": row["store_code"], "store_name": row["store_name"], "quantity": row["quantity"]})
+        self._store_stocks = store_stocks
         return products, variants, offers, stocks
 
     def _enrich(self, item: dict, offers: list[dict], quantity, inherited_vendor=None, parent: dict | None = None) -> dict:
@@ -156,7 +167,8 @@ class InventoryService:
                       vendor_available_quantity=offer.get("available_quantity", 0) if offer else None,
                       vendor_availability=offer.get("availability", "UNKNOWN") if offer else "UNKNOWN",
                       vendor_lead_time_days=offer.get("lead_time_days", 0) if offer else None,
-                      vendor_count=len(available), stock_qty=quantity or Decimal("0"), offers=offers)
+                      vendor_count=len(available), stock_qty=quantity or Decimal("0"), offers=offers,
+                      store_stocks=getattr(self, "_store_stocks", {}).get((str(item.get("product_id") or item.get("id")), str(item["id"]) if item.get("product_id") else None), []))
         return result
 
     def list_products(self) -> dict:
@@ -265,46 +277,229 @@ class InventoryService:
         self.db.commit()
         return {"mapped_count": len(product_ids)}
 
-    def adjust_stock(self, product_id: str, payload: StockAdjustment, commit: bool = True, reference_type: str = "manual_inventory", reference_id: str | None = None) -> dict:
+    def adjust_stock(self, product_id: str, payload: StockAdjustment, commit: bool = True, reference_type: str = "manual_inventory",
+                     reference_id: str | None = None, store_id: str | None = None, movement_type: str | None = None) -> dict:
+        from app.services.stores_service import stock_store
         self._product(product_id, lock=True)
+        store = stock_store(self.db, self.company_id, store_id or (str(payload.store_id) if payload.store_id else None))
+        store_id = str(store["id"])
         cached = replay_posting(self.db, self.company_id, f"stock:{product_id}", payload) if commit else None
         if cached is not None:
             return cached
+        if reference_type == "manual_inventory":
+            assert_period_open(self.db, self.company_id, date.today(), "Adjusting inventory")
         variant_id = str(payload.variant_id) if payload.variant_id else None
         if variant_id:
             self._variant(product_id, variant_id)
-        rows = self.db.execute(text("""select id,quantity from stock_balances where company_id=:company and product_id=:product
-            and variant_id is not distinct from cast(:variant as uuid) order by id for update"""),
-            {"company": self.company_id, "product": product_id, "variant": variant_id}).mappings().all()
-        total = sum((row["quantity"] for row in rows), Decimal("0"))
+        row = self.db.execute(text("""select id,quantity from stock_balances where company_id=:company and store_id=:store
+            and product_id=:product and variant_id is not distinct from cast(:variant as uuid) for update"""),
+            {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id}).mappings().first()
+        total = row["quantity"] if row else Decimal("0")
         new_total = total + (payload.quantity if payload.direction == "IN" else -payload.quantity)
         if new_total < 0:
-            raise HTTPException(422, "Stock cannot become negative")
+            raise HTTPException(422, f"Stock at {store['code']} cannot become negative (available {total})")
         if payload.direction == "OUT":
             from app.services.shop_stock import reserved_stock
-            reserved = reserved_stock(self.db, self.company_id, product_id, variant_id,
+            reserved = reserved_stock(self.db, self.company_id, product_id, variant_id, store_id,
                                       reference_id if reference_type == "shop_order" else None)
             if new_total < reserved:
-                raise HTTPException(422, "Stock is reserved by an active shopper checkout")
-        if rows:
-            for index, row in enumerate(rows):
-                self.db.execute(text("update stock_balances set quantity=:quantity where id=:id"), {"id": row["id"], "quantity": new_total if index == 0 else Decimal("0")})
+                raise HTTPException(422, f"Stock at {store['code']} is reserved by online orders ({reserved} reserved)")
+        if row:
+            self.db.execute(text("update stock_balances set quantity=:quantity where id=:id"), {"id": row["id"], "quantity": new_total})
         else:
-            self.db.execute(text("insert into stock_balances(company_id,product_id,variant_id,quantity) values(:company,:product,:variant,:quantity)"),
-                            {"company": self.company_id, "product": product_id, "variant": variant_id, "quantity": new_total})
-        self.db.execute(text("""insert into stock_movements(company_id,product_id,variant_id,movement_type,quantity,notes,reference_type,reference_id)
-            values(:company,:product,:variant,:movement,:quantity,:notes,:reference_type,:reference_id)"""),
-            {"company": self.company_id, "product": product_id, "variant": variant_id, "movement": "SALE" if reference_type in {"invoice", "shop_order"} else "PURCHASE" if reference_type=="purchase_receipt" else f"ADJUSTMENT_{payload.direction}", "quantity": payload.quantity,
-             "notes": payload.notes,"reference_type":reference_type,"reference_id":reference_id})
+            self.db.execute(text("insert into stock_balances(company_id,store_id,product_id,variant_id,quantity) values(:company,:store,:product,:variant,:quantity)"),
+                            {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id, "quantity": new_total})
+        movement = movement_type or ("SALE" if reference_type in {"invoice", "shop_order"} else "PURCHASE" if reference_type == "purchase_receipt"
+                                     else f"ADJUSTMENT_{payload.direction}")
+        self.db.execute(text("""insert into stock_movements(company_id,store_id,product_id,variant_id,movement_type,quantity,notes,reference_type,reference_id)
+            values(:company,:store,:product,:variant,:movement,:quantity,:notes,:reference_type,:reference_id)"""),
+            {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id, "movement": movement, "quantity": payload.quantity,
+             "notes": payload.notes, "reference_type": reference_type, "reference_id": reference_id})
         result = self.detail(product_id)
         if commit:
-            finish_posting(self.db,self.company_id,f"stock:{product_id}",payload,result)
+            finish_posting(self.db, self.company_id, f"stock:{product_id}", payload, result)
             self.db.commit()
         return result
+
+    def available_stock(self, store_id: str, product_id: str, variant_id: str | None, exclude_order: str | None = None) -> Decimal:
+        from app.services.shop_stock import reserved_stock
+        balance = self.db.execute(text("""select coalesce(sum(quantity),0) from stock_balances where company_id=:company
+            and store_id=:store and product_id=:product and variant_id is not distinct from cast(:variant as uuid)"""),
+            {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id}).scalar_one()
+        return Decimal(str(balance)) - reserved_stock(self.db, self.company_id, product_id, variant_id, store_id, exclude_order)
+
+    def transfer_stock(self, payload: StockTransferCreate) -> dict:
+        from app.services.stores_service import stock_store
+        cached = replay_posting(self.db, self.company_id, "stock_transfer", payload)
+        if cached is not None:
+            return cached
+        source = stock_store(self.db, self.company_id, str(payload.from_store_id))
+        target = stock_store(self.db, self.company_id, str(payload.to_store_id))
+        if source["id"] == target["id"]:
+            raise HTTPException(422, "Choose two different stores")
+        transfer_date = payload.transfer_date or date.today()
+        assert_period_open(self.db, self.company_id, transfer_date, "Transferring stock")
+        row = self.db.execute(text("""insert into stock_transfers(company_id,from_store_id,to_store_id,transfer_date,reference,notes,lines,created_by)
+            values(:company,:from_store,:to_store,:date,:reference,:notes,cast(:lines as jsonb),cast(:actor as uuid)) returning id"""),
+            {"company": self.company_id, "from_store": str(source["id"]), "to_store": str(target["id"]), "date": transfer_date,
+             "reference": payload.reference, "notes": payload.notes,
+             "lines": json.dumps([line.model_dump(mode="json") for line in payload.lines]),
+             "actor": (self.db.info.get("tenant_context") or {}).get("user_id")}).mappings().one()
+        transfer_id = str(row["id"])
+        for line in sorted(payload.lines, key=lambda item: (str(item.product_id), str(item.variant_id or ""))):
+            note = f"Transfer {source['code']} -> {target['code']}: {payload.notes}"
+            movement_out = StockAdjustment(variant_id=line.variant_id, direction="OUT", quantity=line.quantity, notes=note)
+            movement_in = StockAdjustment(variant_id=line.variant_id, direction="IN", quantity=line.quantity, notes=note)
+            self.adjust_stock(str(line.product_id), movement_out, commit=False, reference_type="stock_transfer",
+                              reference_id=transfer_id, store_id=str(source["id"]), movement_type="TRANSFER_OUT")
+            self.adjust_stock(str(line.product_id), movement_in, commit=False, reference_type="stock_transfer",
+                              reference_id=transfer_id, store_id=str(target["id"]), movement_type="TRANSFER_IN")
+        result = self.transfer_detail(transfer_id)
+        finish_posting(self.db, self.company_id, "stock_transfer", payload, result)
+        self.db.commit()
+        return result
+
+    def reverse_transfer(self, transfer_id: str, notes: str) -> dict:
+        from app.schemas.inventory import StockTransferCreate, StockTransferLine
+        original = self.transfer_detail(transfer_id)
+        if original["reversal_of_transfer_id"]:
+            raise HTTPException(422, "A reversal transfer cannot be reversed again")
+        if original["reversed_by_transfer_id"]:
+            raise HTTPException(422, "This transfer has already been reversed")
+        payload = StockTransferCreate(
+            from_store_id=original["to_store_id"], to_store_id=original["from_store_id"],
+            notes=notes, reference=original["reference"], idempotency_key=f"reverse:{transfer_id}",
+            lines=[StockTransferLine(**line) for line in original["lines"]],
+        )
+        result = self.transfer_stock(payload)
+        self.db.execute(text("update stock_transfers set reversal_of_transfer_id=:original where id=:id and company_id=:company"),
+                        {"original": transfer_id, "id": str(result["id"]), "company": self.company_id})
+        self.db.commit()
+        return self.transfer_detail(str(result["id"]))
+
+    def transfer_detail(self, transfer_id: str) -> dict:
+        row = self.db.execute(text("""select t.*, src.code as from_store_code, dst.code as to_store_code,
+                (select r.id from stock_transfers r where r.company_id=t.company_id and r.reversal_of_transfer_id=t.id) as reversed_by_transfer_id
+            from stock_transfers t join stores src on src.id=t.from_store_id join stores dst on dst.id=t.to_store_id
+            where t.id=:id and t.company_id=:company"""), {"id": transfer_id, "company": self.company_id}).mappings().first()
+        if not row:
+            raise HTTPException(404, "Transfer not found")
+        return dict(row)
+
+    def list_transfers(self, limit: int = 100) -> dict:
+        rows = self.db.execute(text("""select t.*, src.code as from_store_code, dst.code as to_store_code,
+                (select r.id from stock_transfers r where r.company_id=t.company_id and r.reversal_of_transfer_id=t.id) as reversed_by_transfer_id
+            from stock_transfers t join stores src on src.id=t.from_store_id join stores dst on dst.id=t.to_store_id
+            where t.company_id=:company order by t.transfer_date desc, t.created_at desc limit :limit"""),
+            {"company": self.company_id, "limit": max(1, min(limit, 500))}).mappings().all()
+        return {"items": [dict(row) for row in rows]}
 
     def movements(self, product_id: str) -> dict:
         self._product(product_id)
         return {"items": [dict(row) for row in self.db.execute(text("select * from stock_movements where company_id=:company and product_id=:product order by created_at desc,id desc limit 50"), {"company": self.company_id, "product": product_id}).mappings()]}
+
+    def stock_reconciliation(self) -> dict:
+        rows = self.db.execute(
+            text(
+                """
+                with balances as (
+                    select store_id, product_id, variant_id, sum(quantity) as quantity
+                    from stock_balances where company_id = :company
+                    group by store_id, product_id, variant_id
+                ),
+                movements as (
+                    select m.store_id, m.product_id, m.variant_id, count(*) as movement_count,
+                           sum(case when m.movement_type in ('PURCHASE','GIFT_IN','ADJUSTMENT_IN','TRANSFER_IN')
+                                    then m.quantity else -m.quantity end) as quantity,
+                           count(*) filter (where
+                               (m.reference_type in ('invoice', 'invoice_cancellation')
+                                and not exists (select 1 from invoices i
+                                    where i.company_id = m.company_id and i.id = m.reference_id))
+                               or
+                               (m.reference_type in ('purchase_receipt', 'purchase_cancellation')
+                                and not exists (select 1 from purchases p
+                                    where p.company_id = m.company_id and p.id = m.reference_id))
+                               or
+                               (m.reference_type = 'shop_order'
+                                and not exists (select 1 from shop_orders o
+                                    where o.company_id = m.company_id and o.id = m.reference_id))
+                               or
+                               (m.reference_type = 'stock_transfer'
+                                and not exists (select 1 from stock_transfers t
+                                    where t.company_id = m.company_id and t.id = m.reference_id))
+                           ) as missing_document_references
+                    from stock_movements m where m.company_id = :company
+                    group by m.store_id, m.product_id, m.variant_id
+                )
+                select s.id as store_id, s.code as store_code, p.id as product_id, p.name as product_name,
+                       coalesce(b.variant_id, m.variant_id) as variant_id, v.variant_name,
+                       coalesce(b.quantity, 0) as balance_quantity,
+                       coalesce(m.quantity, 0) as movement_quantity,
+                       coalesce(b.quantity, 0) - coalesce(m.quantity, 0) as difference,
+                       coalesce(m.movement_count, 0) as movement_count,
+                       coalesce(m.missing_document_references, 0) as missing_document_references
+                from balances b full outer join movements m
+                  on m.store_id = b.store_id and m.product_id = b.product_id and m.variant_id is not distinct from b.variant_id
+                join stores s on s.id = coalesce(b.store_id, m.store_id)
+                  and (cast(:permitted as uuid[]) is null or s.id = any(cast(:permitted as uuid[])))
+                join products p on p.id = coalesce(b.product_id, m.product_id) and p.company_id = :company
+                left join product_variants v on v.id = coalesce(b.variant_id, m.variant_id)
+                order by s.is_default desc, s.code, p.name, v.variant_name nulls first, p.id
+                """
+            ),
+            {"company": self.company_id, "permitted": allowed_stores(self.db.info.get("tenant_context"))},
+        ).mappings().all()
+        return {"items": [dict(row) for row in rows]}
+
+    def missing_movement_sources(self) -> dict:
+        rows = self.db.execute(
+            text(
+                """
+                select m.id, m.product_id, p.name as product_name, m.variant_id, v.variant_name,
+                       m.movement_type, m.quantity, m.reference_type, m.reference_id, m.notes, m.created_at
+                from stock_movements m
+                join products p on p.id = m.product_id and p.company_id = m.company_id
+                left join product_variants v on v.id = m.variant_id
+                where m.company_id = :company
+                  and ((m.reference_type in ('invoice', 'invoice_cancellation')
+                        and not exists (select 1 from invoices i
+                            where i.company_id = m.company_id and i.id = m.reference_id))
+                       or (m.reference_type in ('purchase_receipt', 'purchase_cancellation')
+                        and not exists (select 1 from purchases pu
+                            where pu.company_id = m.company_id and pu.id = m.reference_id)))
+                order by m.created_at, m.id
+                """
+            ),
+            {"company": self.company_id},
+        ).mappings().all()
+        return {"items": [dict(row) for row in rows]}
+
+    def attribute_external_source(self, movement_id: str, payload: ExternalMovementSource) -> dict:
+        """Re-attribute a movement whose in-system source document no longer exists to an external document.
+
+        Quantities and balances are never changed; only the source attribution and notes are updated,
+        and only when the referenced invoice/purchase is actually missing.
+        """
+        missing = {str(row["id"]) for row in self.missing_movement_sources()["items"]}
+        if movement_id not in missing:
+            raise HTTPException(422, "Only movements whose source document is missing can be re-attributed")
+        row = self.db.execute(
+            text(
+                """
+                update stock_movements
+                set reference_type = 'external_document', reference_id = null,
+                    notes = :notes
+                where id = :id and company_id = :company
+                returning id, product_id, variant_id, movement_type, quantity, reference_type, reference_id, notes
+                """
+            ),
+            {
+                "id": movement_id, "company": self.company_id,
+                "notes": f"External document {payload.external_reference}: {payload.notes}",
+            },
+        ).mappings().one()
+        self.db.commit()
+        return dict(row)
 
     def alerts(self) -> dict:
         result = []

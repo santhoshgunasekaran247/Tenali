@@ -28,6 +28,7 @@ def list_purchases(
     company_id: str | None = None,
     vendor_party_id: str | None = None,
     payment_status: str | None = None,
+    store_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     service = PurchasesService(db)
@@ -35,6 +36,7 @@ def list_purchases(
         company_id=company_id,
         vendor_party_id=vendor_party_id,
         payment_status=payment_status,
+        store_id=store_id,
     )
 
 

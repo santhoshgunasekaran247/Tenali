@@ -38,7 +38,7 @@ class TenantAuth:
     def identity(self, token: str | None):
         if not token:
             raise HTTPException(401, "Sign in to your workspace")
-        row = self.db.execute(text("""select account.id as user_id,account.email,account.display_name,member.company_id,member.role,
+        row = self.db.execute(text("""select account.id as user_id,account.email,account.display_name,member.company_id,member.role,member.store_ids,member.modules,
             company.company_name,company.nickname,company.logo_url,company.tenant_slug
             from tenant_sessions session join tenant_users account on account.id=session.user_id and account.is_active=true
             join tenant_memberships member on member.user_id=account.id and member.company_id=session.company_id and member.is_active=true
@@ -61,6 +61,7 @@ class TenantAuth:
                 raise HTTPException(409,"Email or workspace address is already registered. Sign in if you already have an account.")
             company = self.db.execute(text("insert into companies(company_name,tenant_slug) values(:name,:slug) returning id"),
                                       {"name": payload.company_name, "slug": payload.slug}).scalar_one()
+            self.seed_company_defaults(str(company))
             user = self.db.execute(text("insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:hash) returning id"),
                                    {"company": company, "email": payload.email, "name": payload.display_name, "hash": password_hash(payload.password)}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"), {"company": company, "user": user})
@@ -95,6 +96,7 @@ class TenantAuth:
                 raise HTTPException(409,"This workspace address is already registered")
             account=self.db.execute(text('select email,display_name from tenant_users where id=:id and is_active=true'),{'id':user_id}).mappings().one()
             company=self.db.execute(text('insert into companies(company_name,tenant_slug) values(:name,:slug) returning id'),{'name':name,'slug':slug}).scalar_one()
+            self.seed_company_defaults(str(company))
             new_user=self.db.execute(text('insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:hash) returning id'),
                 {'company':company,'email':account['email'],'name':account['display_name'],'hash':password_hash(password)}).scalar_one()
             self.db.execute(text("insert into tenant_memberships(company_id,user_id,role) values(:company,:user,'owner')"),{'company':company,'user':new_user})
@@ -104,8 +106,17 @@ class TenantAuth:
             raise HTTPException(409,'This workspace address is already registered') from error
         return self.session(str(new_user),str(company))
 
+    def seed_company_defaults(self, company_id: str) -> None:
+        """Every workspace starts with a default stock-holding store and the online-shopper customer party."""
+        self.db.execute(text("""insert into stores(company_id,code,name,kind,holds_stock,is_default)
+            select :company,'MAIN','Main store','offline',true,true
+            where not exists (select 1 from stores where company_id=:company and is_default)"""), {"company": company_id})
+        self.db.execute(text("""insert into parties(company_id,party_type,legal_name,system_role)
+            select :company,'customer','Online shopper','online_shopper'
+            where not exists (select 1 from parties where company_id=:company and system_role='online_shopper')"""), {"company": company_id})
+
     def team(self, company_id: str):
-        return [dict(row) for row in self.db.execute(text("""select account.id,account.email,account.display_name,member.role,member.is_active
+        return [dict(row) for row in self.db.execute(text("""select account.id,account.email,account.display_name,member.role,member.is_active,member.store_ids,member.modules
             from tenant_memberships member join tenant_users account on account.id=member.user_id
             where member.company_id=:company order by member.created_at"""), {"company": company_id}).mappings()]
 
@@ -121,14 +132,20 @@ class TenantAuth:
             raise HTTPException(409, "This email is already registered in this workspace.") from error
         return self.team(company_id)
 
-    def update_member(self, company_id: str, user_id: str, role: str, active: bool, actor_id:str|None=None):
+    def update_member(self, company_id: str, user_id: str, role: str, active: bool, actor_id:str|None=None, store_ids=None, modules=None):
         existing = self.db.execute(text("select role from tenant_memberships where company_id=:company and user_id=:user for update"), {"company": company_id, "user": user_id}).scalar_one_or_none()
         if not existing:
             raise HTTPException(404, "Team member not found")
         if existing == "owner":
             raise HTTPException(422, "The workspace owner cannot be changed through team administration")
-        self.db.execute(text("update tenant_memberships set role=:role,is_active=:active where company_id=:company and user_id=:user"),
-                        {"role": role, "active": active, "company": company_id, "user": user_id})
+        if store_ids:
+            known = self.db.execute(text("select count(*) from stores where company_id=:company and id=any(:ids)"), {"company": company_id, "ids": [str(s) for s in store_ids]}).scalar_one()
+            if known != len(set(store_ids)):
+                raise HTTPException(422, "Choose stores that belong to this workspace")
+        self.db.execute(text("update tenant_memberships set role=:role,is_active=:active,store_ids=cast(:stores as uuid[]),modules=cast(:modules as text[]) where company_id=:company and user_id=:user"),
+                        {"role": role, "active": active, "company": company_id, "user": user_id,
+                         "stores": [str(s) for s in store_ids] if store_ids and role not in {"owner", "admin"} else None,
+                         "modules": list(modules) if modules and role not in {"owner", "admin"} else None})
         self.db.execute(text("delete from tenant_sessions where company_id=:company and user_id=:user"), {"company": company_id, "user": user_id})
         if actor_id:self.audit(company_id,actor_id,'TEAM_ACCESS_CHANGED',user_id,{'previous_role':existing,'role':role,'is_active':active})
         self.db.commit()

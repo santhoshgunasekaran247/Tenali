@@ -1,12 +1,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
-import { TaxLinesEditor, calculateLineTotals, newTaxLine as newLine } from "../components/TaxLinesEditor";
+import { TaxLinesEditor, newTaxLine as newLine } from "../components/TaxLinesEditor";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
+import { calculateLineTotals } from "../features/taxTotals";
+import { StoreSelect, useStores } from "../features/stores";
 import type { InventoryProduct } from "../types";
-import type { Account, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
+import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
 
 type InvoiceForm = {
   customer_party_id: string;
@@ -57,6 +59,7 @@ export function BillingPage() {
   const reconcilePageSize = 10;
   const [parties, setParties] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [company, setCompany] = useState<CompanySetup | null>(null);
   const [inventory,setInventory]=useState<InventoryProduct[]>([]);
   const [requestKey,setRequestKey]=useState(postingKey);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
@@ -74,7 +77,9 @@ export function BillingPage() {
   const [reconciling, setReconciling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { subtotal, gstTotal, total } = calculateLineTotals(lines);
+  const storeContext = useStores();
+  const [storeFilter, setStoreFilter] = useState("");
+  const { subtotal, gstTotal, total } = calculateLineTotals(company?.gst_registered === false ? lines.map(line => ({ ...line, gst_rate: 0 })) : lines, true);
 
   const exportInvoice = async (invoice: Invoice) => {
     setPdfBusy(invoice.id);
@@ -93,16 +98,18 @@ export function BillingPage() {
     setLoading(true);
     setError(null);
     try {
-      const [partyRes, accountRes, invoiceRes, hsnRes, inventoryRes] = await Promise.all([
+      const [partyRes, accountRes, invoiceRes, hsnRes, inventoryRes, companyRes] = await Promise.all([
         api.parties({ active_only: true }),
         api.accounts({ active_only: true }),
-        api.invoices({ collection_status: collectionStatus || undefined }),
+        api.invoices({ collection_status: collectionStatus || undefined, store_id: storeFilter || undefined }),
         api.hsnMasters(),
         api.inventoryProducts(),
+        api.company(),
       ]);
       const runsRes = await api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset);
       setParties(partyRes.items.filter((party) => party.party_type !== "vendor"));
       setAccounts(accountRes.items);
+      setCompany(companyRes);
       setInventory(inventoryRes.items);
       setHsnMasters(hsnRes.items);
       setInvoices(invoiceRes.items);
@@ -117,7 +124,7 @@ export function BillingPage() {
 
   useEffect(() => {
     void load();
-  }, [collectionStatus, reconcileOffset]);
+  }, [collectionStatus, reconcileOffset, storeFilter]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,9 +139,13 @@ export function BillingPage() {
       if (lines.some((line) => !hsnMasters.some((master) => master.code === line.hsn))) {
         throw new Error("Select an active HSN / SAC code for every item.");
       }
+      if (![subtotal, gstTotal, total].every(Number.isFinite)) {
+        throw new Error("Line amounts are invalid or exceed the supported monetary limit.");
+      }
       if (!subtotal || subtotal < 0) throw new Error("Subtotal must be greater than or equal to zero.");
       if (total <= 0) throw new Error("Total must be greater than zero.");
       if (amountReceived < 0) throw new Error("Amount received cannot be negative.");
+      if (amountReceived > total) throw new Error("Amount received cannot exceed total.");
       if (amountReceived > 0 && !form.payment_mode) {
         throw new Error("Payment mode is required when amount received is entered.");
       }
@@ -144,6 +155,7 @@ export function BillingPage() {
 
       await api.createInvoice({
         idempotency_key:requestKey,
+        store_id: storeContext.selectedId || undefined,
         customer_party_id: form.customer_party_id,
         invoice_date: form.invoice_date || undefined,
         subtotal,
@@ -262,8 +274,18 @@ export function BillingPage() {
 
           {error ? <p className="ops-error">{error}</p> : null}
           {message ? <p className="ops-success-banner">{message}</p> : null}
+          {company && company.gst_registered !== false && (!company.address?.trim() || !/^\d{2}[A-Z0-9]{13}$/.test((company.gst_number || "").trim())) ? (
+            <p className="ops-error" role="status">
+              Itemized invoices require a company address and a valid 15-character GSTIN.
+              Update your real details in <Link to="/portal/company#company-profile">Company Setup</Link>, or mark the business as not GST-registered there.
+            </p>
+          ) : null}
+          {company && company.gst_registered === false ? (
+            <p className="ops-copy-note" role="status">This business is not GST-registered: invoices are issued as Bills of Supply with no GST.</p>
+          ) : null}
 
           <form className="ops-form" onSubmit={submit}>
+            <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Billing store" />
             <label>
               Customer
               <select
@@ -328,7 +350,7 @@ export function BillingPage() {
                   onChange={(event) => setForm((prev) => ({ ...prev, shipping_address: event.target.value }))} />
               </label>
             </>}
-            <TaxLinesEditor lines={lines} masters={hsnMasters} products={inventory} onChange={setLines} disabled={saving} />
+            <TaxLinesEditor lines={lines} masters={hsnMasters} products={inventory} onChange={setLines} disabled={saving} pricesIncludeGst gstRegistered={company?.gst_registered !== false} />
 
             <label>
               Amount Received Now
@@ -452,6 +474,7 @@ export function BillingPage() {
               <thead>
                 <tr>
                   <th>Invoice #</th>
+                  <th>Store</th>
                   <th>Date</th>
                   <th>Customer</th>
                   <th>Total</th>
@@ -464,12 +487,13 @@ export function BillingPage() {
               <tbody>
                 {invoices.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>No invoices found.</td>
+                    <td colSpan={9}>No invoices found.</td>
                   </tr>
                 ) : (
                   invoices.map((item) => (
                     <tr key={item.id}>
                       <td>{item.invoice_number}</td>
+                      <td>{item.store_code || ""}</td>
                       <td>{item.invoice_date}</td>
                       <td>{item.customer_name}</td>
                       <td>{item.total.toFixed(2)}</td>

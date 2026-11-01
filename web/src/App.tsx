@@ -29,6 +29,7 @@ import { PurchasesPage } from "./pages/PurchasesPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettlementsPage } from "./pages/SettlementsPage";
+import { StoresPage } from "./pages/StoresPage";
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/portal/purchases" element={<PurchasesPage />} />
         <Route path="/portal/billing" element={<BillingPage />} />
         <Route path="/portal/company" element={<CompanySetupPage />} />
+        <Route path="/portal/stores" element={<StoresPage />} />
         <Route path="/portal/checkout" element={<CheckoutAdminPage />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />

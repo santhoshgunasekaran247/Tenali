@@ -7,6 +7,8 @@ export type Company = {
   site_theme?: SiteTheme;
   storefront_content?: StorefrontContent;
   gst_number?: string;
+  gst_registered?: boolean;
+  whatsapp_number?: string | null;
   udyam_number?: string;
   phone?: string;
   email?: string;
@@ -109,6 +111,7 @@ export type InventoryItem = InventoryItemInput & {
   id: string; effective_mrp: number | null; effective_buying_price: number | null;
   catalog_price: number | null; effective_discount: number | null; preferred_vendor_name: string | null;
   stock_qty: number; vendor_count: number; offers: InventoryOffer[]; pricing_error: string | null;
+  store_stocks: Array<{ store_id: string; store_code: string; store_name: string; quantity: number }>;
   vendor_available_quantity: number | null; vendor_availability: string; vendor_lead_time_days: number | null;
 };
 export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string };
@@ -126,7 +129,33 @@ export type InventoryAlert = {
   stock_qty: number; reorder_level: number; reorder_quantity: number;
   reminder_date: string | null; reminder_due: boolean; low_stock: boolean;
 };
-export type InventoryMovement = { id: string; variant_id: string | null; movement_type: string; quantity: number; notes: string; created_at: string };
+export type InventoryMovement = { id: string; store_id?: string | null; variant_id: string | null; movement_type: string; quantity: number; notes: string; created_at: string };
+export type InventoryReconciliation = {
+  store_id: string; store_code: string;
+  product_id: string; product_name: string; variant_id: string | null; variant_name: string | null;
+  balance_quantity: number; movement_quantity: number; difference: number;
+  movement_count: number; missing_document_references: number;
+};
+export type Store = {
+  id: string; company_id: string; code: string; name: string; kind: 'offline' | 'warehouse' | 'online'; holds_stock: boolean;
+  fulfilment_store_id: string | null; allows_pickup: boolean; address: string | null; state_code: string | null; pincode: string | null;
+  latitude: number | null; longitude: number | null; gst_number: string | null; whatsapp_number: string | null;
+  settlement_account_id: string | null; is_default: boolean; is_active: boolean;
+};
+export type StoreInput = Omit<Store, 'id' | 'company_id' | 'holds_stock' | 'is_default'>;
+export type StockTransfer = {
+  id: string; from_store_id: string; to_store_id: string; from_store_code: string; to_store_code: string; transfer_date: string;
+  reference: string | null; notes: string; lines: Array<{ product_id: string; variant_id: string | null; quantity: number }>;
+  reversal_of_transfer_id: string | null; reversed_by_transfer_id: string | null; created_at: string;
+};
+export type StockTransferInput = {
+  idempotency_key?: string; from_store_id: string; to_store_id: string; transfer_date?: string; reference?: string | null; notes: string;
+  lines: Array<{ product_id: string; variant_id: string | null; quantity: number }>;
+};
+export type InventoryMissingSource = {
+  id: string; product_id: string; product_name: string; variant_id: string | null; variant_name: string | null;
+  movement_type: string; quantity: number; reference_type: string; reference_id: string | null; notes: string | null; created_at: string;
+};
 
 export type Brand = {
   code: string;
@@ -418,6 +447,7 @@ export type BorrowingEntry = {
   account_id?: string;
   reference?: string;
   notes?: string;
+  is_reversed?: boolean;
   created_at: string;
 };
 
@@ -557,6 +587,7 @@ export type InvoiceLineInput = {
   quantity: number;
   rate: number;
   gst_rate: number;
+  price_includes_gst?: boolean | null;
 };
 
 export type InvoiceDocument = {
@@ -565,6 +596,9 @@ export type InvoiceDocument = {
   ship_to: { name: string; address: string };
   place_of_supply: string;
   interstate: boolean;
+  pricing?: "inclusive" | "exclusive";
+  document_title?: string;
+  gst_registered?: boolean;
   lines: Array<Omit<InvoiceLineInput, "quantity" | "rate" | "gst_rate"> & {
     quantity: string; rate: string; gst_rate: string;
     taxable: string; cgst: string; sgst: string; igst: string; total: string;
@@ -577,6 +611,8 @@ export type InvoiceDocument = {
 export type Invoice = {
   id: string;
   company_id: string;
+  store_id?: string | null;
+  store_code?: string | null;
   invoice_number: string;
   customer_party_id: string;
   customer_name: string;
@@ -623,6 +659,7 @@ export type InvoiceReconcileRunListResponse = {
 
 export type InvoiceCreateInput = {
   idempotency_key?: string;
+  store_id?: string | null;
   customer_party_id: string;
   invoice_date?: string;
   subtotal: number;
@@ -646,6 +683,9 @@ export type InvoiceCreateInput = {
 export type Purchase = {
   id: string;
   company_id: string;
+  store_id?: string | null;
+  store_code?: string | null;
+  voucher_number?: string | null;
   vendor_party_id: string;
   vendor_name: string;
   bill_number?: string;
@@ -675,6 +715,7 @@ export type PurchaseListResponse = {
 
 export type PurchaseCreateInput = {
   idempotency_key?: string;
+  store_id?: string | null;
   attachments?: AttachmentInput[];
   lines?: InvoiceLineInput[];
   vendor_party_id: string;

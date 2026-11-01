@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.money import Money
+
 
 class InvoiceLineCreate(BaseModel):
     product_id: UUID | None = None
@@ -15,21 +17,26 @@ class InvoiceLineCreate(BaseModel):
     quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
     rate: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     gst_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    # None = the document default: sales lines are GST-inclusive, purchase lines exclusive.
+    price_includes_gst: bool | None = None
 
 
 class InvoiceCreate(BaseModel):
     idempotency_key: str | None = Field(default=None,min_length=8,max_length=120)
+    store_id: UUID | None = None
+    # Online orders: the store whose stock is booked when it differs from the invoicing store's fulfilment store.
+    stock_store_id: UUID | None = None
     customer_party_id: UUID
     invoice_date: date | None = None
-    subtotal: float = 0
-    gst_total: float = 0
-    total: float | None = None
+    subtotal: Money = Decimal("0")
+    gst_total: Money = Decimal("0")
+    total: Money | None = None
     payment_mode: str | None = None
     account_id: UUID | None = None
     reference: str | None = None
     due_date: date | None = None
     reminder_date: date | None = None
-    amount_received: float = 0
+    amount_received: Money = Decimal("0")
     notes: str | None = None
     auto_create_receivable: bool = True
     lines: list[InvoiceLineCreate] = Field(default_factory=list, max_length=200)
@@ -42,6 +49,8 @@ class InvoiceCreate(BaseModel):
 class InvoiceOut(BaseModel):
     id: UUID
     company_id: UUID
+    store_id: UUID | None = None
+    store_code: str | None = None
     invoice_number: str
     customer_party_id: UUID
     customer_name: str

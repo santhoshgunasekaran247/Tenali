@@ -11,12 +11,17 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.billing import InvoiceCreate
+from app.services.collection_ledger import lock_invoice_receivables, sync_receivable
+from app.services.document_numbers import next_document_number
+from app.services.financial_amounts import document_total
 from app.services.period_lock_service import assert_period_open
 from app.services.invoice_document import build_invoice_document
 from app.services.masters_service import MastersService
 from app.services.commerce_stock import resolve_product_lines, book_stock
 from app.services.posting_service import replay_posting, finish_posting, request_hash
 from app.services.runtime_schema import managed_schema
+from app.services.access import allowed_stores
+from app.services.stores_service import get_store, stock_store
 
 
 class BillingService:
@@ -134,70 +139,29 @@ class BillingService:
             )
         )
 
-    def _new_invoice_number(self, company_id: str, invoice_date: date) -> str:
-        year = invoice_date.year
-        month = invoice_date.month
-        next_number = self.db.execute(
-            text(
-                """
-                insert into invoice_sequences (company_id, year, month, last_number)
-                values (:company_id, :year, :month, 1)
-                on conflict (company_id, year, month)
-                do update set last_number = invoice_sequences.last_number + 1
-                returning last_number
-                """
-            ),
-            {
-                "company_id": company_id,
-                "year": year,
-                "month": month,
-            },
-        ).scalar_one()
-        return f"INV-{year}{month:02d}-{int(next_number):05d}"
+    def _new_invoice_number(self, company_id: str, store: dict, invoice_date: date) -> str:
+        return next_document_number(self.db, company_id, store, "invoice", invoice_date)
 
     def _reconcile_invoice_collection_fields(self, company_id: str) -> int:
-        # Guardrail: receivable is the source of truth for collection progression.
-        result = self.db.execute(
+        invoice_ids = self.db.execute(
             text(
                 """
-                with latest_receivable as (
-                    select distinct on (r.invoice_id)
-                        r.invoice_id,
-                        r.status,
-                        r.amount_received,
-                        r.reminder_date,
-                        r.bad_debt_reason
-                    from receivables r
-                    where r.company_id = :company_id
-                      and r.invoice_id is not null
-                    order by r.invoice_id, r.updated_at desc, r.created_at desc
-                )
-                update invoices i
-                set
-                    collection_status = lr.status,
-                    amount_received = lr.amount_received,
-                    reminder_date = lr.reminder_date,
-                    bad_debt_reason = case
-                        when lr.status = 'BAD_DEBT' then lr.bad_debt_reason
-                        else null
-                    end
-                from latest_receivable lr
-                where i.id = lr.invoice_id
-                  and i.company_id = :company_id
-                  and (
-                    i.collection_status is distinct from lr.status
-                    or i.amount_received is distinct from lr.amount_received
-                    or i.reminder_date is distinct from lr.reminder_date
-                    or i.bad_debt_reason is distinct from case
-                        when lr.status = 'BAD_DEBT' then lr.bad_debt_reason
-                        else null
-                    end
-                  )
+                select distinct r.invoice_id
+                from receivables r
+                join invoices i on i.id = r.invoice_id and i.company_id = r.company_id
+                where r.company_id = :company_id and i.status <> 'CANCELLED'
+                order by r.invoice_id
                 """
             ),
             {"company_id": company_id},
-        )
-        return int(result.rowcount or 0)
+        ).scalars().all()
+        healed_count = 0
+        for invoice_id in invoice_ids:
+            invoice, receivable = lock_invoice_receivables(self.db, company_id, str(invoice_id))
+            if receivable and invoice["status"] != "CANCELLED":
+                _, _, changed = sync_receivable(self.db, company_id, receivable, invoice)
+                healed_count += int(changed)
+        return healed_count
 
     def reconcile_invoices(self, company_id: str | None, triggered_by: str | None = None) -> dict:
         self._ensure_tables()
@@ -283,34 +247,36 @@ class BillingService:
         ).mappings().first()
         if not customer:
             raise HTTPException(status_code=404, detail="Customer party not found")
+        store = get_store(self.db, resolved_company_id, str(payload.store_id) if payload.store_id else None)
+        stock_store_id = str(payload.stock_store_id) if payload.stock_store_id else str(store["fulfilment_store_id"] or store["id"])
+        if not stock_store(self.db, resolved_company_id, stock_store_id):
+            raise HTTPException(422, "Stock store not found")
 
         document_data = None
         if payload.lines:
             resolve_product_lines(self.db,resolved_company_id,payload.lines)
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             company = self.db.execute(
-                text("select company_name, address, gst_number, udyam_number, logo_url, phone, email, website, invoice_settings from companies where id = :company_id"),
+                text("select company_name, address, gst_number, gst_registered, udyam_number, logo_url, phone, email, website, invoice_settings, prices_include_gst from companies where id = :company_id"),
                 {"company_id": resolved_company_id},
             ).mappings().one()
-            document_data = build_invoice_document(payload, dict(company), dict(customer))
-            payload.subtotal = float(document_data["subtotal"])
-            payload.gst_total = float(document_data["gst_total"])
-            payload.total = float(document_data["total"])
+            document_data = build_invoice_document(payload, dict(company), dict(customer), store, bool(company["prices_include_gst"]))
+            payload.subtotal = Decimal(document_data["subtotal"])
+            payload.gst_total = Decimal(document_data["gst_total"])
+            payload.total = Decimal(document_data["total"])
 
         if payload.subtotal < 0 or payload.gst_total < 0:
             raise HTTPException(status_code=422, detail="subtotal and gst_total must be non-negative")
 
-        total = payload.total if payload.total is not None else payload.subtotal + payload.gst_total
-        total_amount = Decimal(str(total))
-        amount_received = Decimal(str(payload.amount_received))
-        if total_amount <= Decimal("0"):
-            raise HTTPException(status_code=422, detail="total must be greater than zero")
+        total_amount = document_total(payload.subtotal, payload.gst_total, payload.total)
+        total = total_amount
+        amount_received = payload.amount_received
         if amount_received < Decimal("0"):
             raise HTTPException(status_code=422, detail="amount_received cannot be negative")
-        if amount_received - total_amount > Decimal("0.0001"):
+        if amount_received > total_amount:
             raise HTTPException(status_code=422, detail="amount_received cannot exceed total")
 
-        if payload.amount_received > 0 and not payload.payment_mode:
+        if payload.amount_received > 0 and not (payload.payment_mode or "").strip():
             raise HTTPException(status_code=422, detail="payment_mode required when amount_received > 0")
         if payload.amount_received > 0 and not payload.account_id:
             raise HTTPException(status_code=422, detail="account_id required when amount_received > 0")
@@ -350,6 +316,7 @@ class BillingService:
                 """
                 insert into invoices (
                     company_id,
+                    store_id,
                     invoice_number,
                     customer_party_id,
                     customer_gst,
@@ -368,6 +335,7 @@ class BillingService:
                     document_data
                 ) values (
                     :company_id,
+                    :store_id,
                     :invoice_number,
                     :customer_party_id,
                     :customer_gst,
@@ -388,6 +356,7 @@ class BillingService:
                 returning
                     id,
                     company_id,
+                    store_id,
                     invoice_number,
                     customer_party_id,
                     customer_gst,
@@ -409,17 +378,15 @@ class BillingService:
             ),
             {
                 "company_id": resolved_company_id,
-                "invoice_number": self._new_invoice_number(
-                    company_id=resolved_company_id,
-                    invoice_date=invoice_date_value,
-                ),
+                "store_id": str(store["id"]),
+                "invoice_number": self._new_invoice_number(resolved_company_id, store, invoice_date_value),
                 "customer_party_id": str(payload.customer_party_id),
                 "customer_gst": customer["gst_number"],
                 "invoice_date": invoice_date_value,
                 "subtotal": payload.subtotal,
                 "gst_total": payload.gst_total,
                 "total": total,
-                "payment_mode": payload.payment_mode,
+                "payment_mode": payload.payment_mode.strip() if payload.payment_mode else None,
                 "account_id": str(payload.account_id) if payload.account_id else None,
                 "reference": payload.reference,
                 "collection_status": collection_status,
@@ -435,7 +402,7 @@ class BillingService:
 
         invoice_id = str(invoice_row["id"])
 
-        if payload.auto_create_receivable and balance > Decimal("0.0001"):
+        if payload.auto_create_receivable:
             self.db.execute(
                 text(
                     """
@@ -515,7 +482,7 @@ class BillingService:
                     "company_id": resolved_company_id,
                     "to_account_id": str(payload.account_id),
                     "amount": amount_received,
-                    "payment_mode": payload.payment_mode,
+                    "payment_mode": payload.payment_mode.strip() if payload.payment_mode else None,
                     "reference": payload.reference,
                     "description": f"Collection for {invoice_row['invoice_number']}",
                     "transaction_date": invoice_date_value,
@@ -524,7 +491,7 @@ class BillingService:
             )
 
         if document_data:
-            book_stock(self.db,resolved_company_id,document_data["lines"],"OUT","invoice",invoice_id)
+            book_stock(self.db,resolved_company_id,document_data["lines"],"OUT","invoice",invoice_id,stock_store_id)
         result = {
             **dict(invoice_row),
             "customer_name": customer["legal_name"],
@@ -534,7 +501,7 @@ class BillingService:
         self.db.commit()
         return result
 
-    def list_invoices(self, company_id: str | None, collection_status: str | None = None) -> dict:
+    def list_invoices(self, company_id: str | None, collection_status: str | None = None, store_id: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -542,6 +509,8 @@ class BillingService:
             select
                 i.id,
                 i.company_id,
+                i.store_id,
+                s.code as store_code,
                 i.invoice_number,
                 i.customer_party_id,
                 p.legal_name as customer_name,
@@ -563,9 +532,17 @@ class BillingService:
                 i.created_at
             from invoices i
             join parties p on p.id = i.customer_party_id
+            left join stores s on s.id = i.store_id
             where i.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
+        if store_id:
+            query += " and i.store_id = :store_id"
+            params["store_id"] = store_id
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
+        if permitted is not None:
+            query += " and i.store_id = any(cast(:permitted as uuid[]))"
+            params["permitted"] = permitted
 
         if collection_status:
             normalized = collection_status.strip().upper()

@@ -1,32 +1,28 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { calculateLineTotals } from "../features/taxTotals";
 import type { HsnMaster, InvoiceLineInput, InventoryProduct } from "../types";
 
 export const newTaxLine = (): InvoiceLineInput => ({ description: "", hsn: "", quantity: 1, rate: 0, gst_rate: 0 });
 
-export function calculateLineTotals(lines: InvoiceLineInput[]) {
-  let subtotalCents = 0;
-  let gstCents = 0;
-  for (const line of lines) {
-    const taxableCents = Math.round((line.quantity * line.rate + Number.EPSILON) * 100);
-    subtotalCents += taxableCents;
-    gstCents += Math.round((taxableCents * line.gst_rate / 100) + Number.EPSILON);
-  }
-  return { subtotal: subtotalCents / 100, gstTotal: gstCents / 100, total: (subtotalCents + gstCents) / 100 };
-}
-
-export function TaxLinesEditor({ lines, masters, onChange, disabled = false, products = [], vendorId }: {
+export function TaxLinesEditor({ lines, masters, onChange, disabled = false, products = [], vendorId, pricesIncludeGst = false, gstRegistered = true }: {
   lines: InvoiceLineInput[];
   masters: HsnMaster[];
   onChange: (lines: InvoiceLineInput[]) => void;
   disabled?: boolean;
   products?: InventoryProduct[];
   vendorId?: string;
+  /** Sales lines: rates are shelf prices including GST; purchases keep vendor-exclusive rates. */
+  pricesIncludeGst?: boolean;
+  /** False for businesses below the GST threshold: every line is shown and posted with 0% GST. */
+  gstRegistered?: boolean;
 }) {
   const updateLine = (index: number, patch: Partial<InvoiceLineInput>) => {
     onChange(lines.map((line, position) => position === index ? { ...line, ...patch } : line));
   };
-  const { subtotal, gstTotal, total } = calculateLineTotals(lines);
+  const effectiveLines = gstRegistered ? lines : lines.map(line => ({ ...line, gst_rate: 0 }));
+  const { subtotal, gstTotal, total } = calculateLineTotals(effectiveLines, pricesIncludeGst);
+  const formatTotal = (value: number) => Number.isFinite(value) ? `INR ${value.toFixed(2)}` : "Invalid amount";
   return <>
     <fieldset className="invoice-lines" disabled={disabled}>
       <legend>Items</legend>
@@ -68,8 +64,9 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
         </label>
         <div className="invoice-line-values">
           <label>Quantity<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></label>
-          <label>Rate (INR)<input required type="number" min="0" step="0.01" value={line.rate} onChange={(event) => updateLine(index, { rate: Number(event.target.value) })} /></label>
-          <label>GST %<input type="number" readOnly value={line.gst_rate} /></label>
+          <label>{(line.price_includes_gst ?? pricesIncludeGst) ? "Price incl. GST (INR)" : "Rate excl. GST (INR)"}<input required type="number" min="0" step="0.01" value={line.rate} onChange={(event) => updateLine(index, { rate: Number(event.target.value) })} /></label>
+          <label>GST %<input type="number" readOnly value={gstRegistered ? line.gst_rate : 0} /></label>
+          {!line.product_id ? <label className="ops-toggle"><input type="checkbox" checked={line.price_includes_gst ?? pricesIncludeGst} onChange={(event) => updateLine(index, { price_includes_gst: event.target.checked })} />Incl. GST</label> : null}
         </div>
       </div>)}
       <button className="ops-link-btn" type="button" disabled={lines.length >= 200} onClick={() => onChange([...lines, newTaxLine()])}>
@@ -77,9 +74,9 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
       </button>
     </fieldset>
     <dl className="invoice-totals">
-      <div><dt>Taxable Value</dt><dd>INR {subtotal.toFixed(2)}</dd></div>
-      <div><dt>Total GST</dt><dd>INR {gstTotal.toFixed(2)}</dd></div>
-      <div><dt>Total</dt><dd>INR {total.toFixed(2)}</dd></div>
+      <div><dt>Taxable Value</dt><dd>{formatTotal(subtotal)}</dd></div>
+      <div><dt>Total GST</dt><dd>{formatTotal(gstTotal)}</dd></div>
+      <div><dt>Total</dt><dd>{formatTotal(total)}</dd></div>
     </dl>
   </>;
 }

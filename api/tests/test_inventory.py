@@ -87,6 +87,8 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.company, self.other, self.vendor_a, self.vendor_b = [str(uuid4()) for _ in range(4)]
         for company in [self.company, self.other]:
             self.db.execute(text("insert into companies(id,company_name) values(:id,'Inventory regression fixture')"), {"id": company})
+            from schema_support import ensure_default_store
+            ensure_default_store(self.db, company)
         for vendor in [self.vendor_a, self.vendor_b]:
             self.db.execute(text("""insert into parties(id,company_id,party_type,legal_name,phone,email)
                 values(:id,:company,'vendor','PRIVATE SUPPLIER','PRIVATE PHONE','private@example.com')"""), {"id": vendor, "company": self.company})

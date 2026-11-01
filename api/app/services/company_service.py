@@ -53,7 +53,7 @@ class CompanyService:
                 text("""
                 update companies set company_name = :company_name, tenant_slug = :tenant_slug,
                     nickname = :nickname,
-                    address = :address, gst_number = :gst_number, udyam_number = :udyam_number,
+                    address = :address, gst_number = :gst_number, gst_registered = :gst_registered, whatsapp_number = :whatsapp_number, udyam_number = :udyam_number,
                     phone = :phone, email = :email, website = :website, logo_url = :logo_url,
                     social_links = cast(:social_links as jsonb),
                     invoice_settings = cast(:invoice_settings as jsonb),
