@@ -9,6 +9,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.services.tenant_context import TenantBoundary
 from app.services.tenant_context import company_by_slug
+from app.services.public_origin import PublicOriginMiddleware
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import JSONResponse
 from fastapi import Query,HTTPException
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(TenantBoundary)
+    app.add_middleware(PublicOriginMiddleware)
 
     @app.get('/domain-authorization',include_in_schema=False)
     def authorize_tls_domain(domain:str=Query(max_length=253)):
