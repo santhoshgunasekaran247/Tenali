@@ -96,7 +96,7 @@ export function AttachmentManager({ entity, recordId, title, onClose }: {
       const result = await api.uploadAttachments(entity, recordId, pending);
       setItems((previous) => [...previous, ...result.items]);
       setPending([]);
-      setMessage("Attachments saved securely in Supabase.");
+      setMessage("Attachments uploaded.");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to upload attachments."); }
     finally { setSaving(false); }
   };
@@ -134,7 +134,6 @@ export function AttachmentManager({ entity, recordId, title, onClose }: {
     </li>)}</ul>
     <AttachmentPicker value={pending} onChange={setPending} disabled={loading || saving} onBusyChange={setReading}
       existingCount={items.length} existingBytes={items.reduce((sum, item) => sum + item.file_size, 0)} />
-    <p className="social-caption">Files are stored privately in Supabase. Downloads require access to this record and store.</p>
     <button className="btn attachment-save" type="button" disabled={!pending.length || loading || saving || reading} onClick={() => void upload()}>
       <Upload size={16} aria-hidden="true" />{saving ? "Uploading..." : "Upload Attachments"}
     </button>

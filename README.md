@@ -43,3 +43,24 @@ redeploying. Health alone does not establish database or login readiness.
 
 Keep database, encryption and Supabase storage secrets in the API service's
 Render Environment settings, never in the static UI or the repository.
+
+## Inventory and customers
+
+- Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
+  check shows problems first, with optional matching entries and store filtering.
+  It compares on-hand balances with recorded activity, not a physical count.
+  Missing document evidence does not change stock quantities.
+- Product search matches words across names, product IDs, SKUs, brands,
+  categories and variant details. Vendor selection and inactive products remain
+  separate filters.
+- Owners and administrators can delete unused products after typing the product
+  code. Stock, movements, enquiries, invoices, purchases, orders and transfer
+  history block deletion; make those products inactive instead. Deletion removes
+  variants and vendor mappings, but does not delete shared storage objects.
+  Apply Alembic migration `033_inventory_product_deletion` before enabling this
+  endpoint: it adds DELETE privileges on just products, zero balances and vendor
+  mappings to the existing row-level-security-constrained runtime role. The API
+  additionally requires an owner/admin identity and blocks business history.
+- Online customer accounts are under `/portal/online-customers`, separate from
+  Parties. Owner/admin access and explicit identity-confirmed counter-customer
+  linking remain required; matching phone numbers never automatically merge users.

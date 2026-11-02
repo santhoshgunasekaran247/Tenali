@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Users } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Trash2, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -10,6 +10,9 @@ import type { HsnMaster, InventoryAlert, InventoryLookups, InventoryMissingSourc
 import { StoreSelect, useStores } from "../features/stores";
 import { StockTransferDialog } from "../components/StockTransferDialog";
 import { PartySelect } from "../components/PartySelect";
+import { StockCheckPanel } from "../components/StockCheckPanel";
+import { matchesInventorySearch } from "../features/inventorySearch";
+import { useAuth } from "../features/auth";
 
 export function InventoryPage() {
   const [products,setProducts]=useState<InventoryProduct[]>([]);
@@ -17,11 +20,10 @@ export function InventoryPage() {
   const [hsn,setHsn]=useState<HsnMaster[]>([]);const[alerts,setAlerts]=useState<InventoryAlert[]>([]);
   const [reconciliation,setReconciliation]=useState<InventoryReconciliation[]>([]);
   const [missingSources,setMissingSources]=useState<InventoryMissingSource[]>([]);
-  const [sourceForm,setSourceForm]=useState<Record<string,{external_reference:string;notes:string}>>({});
   const [search,setSearch]=useState("");const[vendorFilter,setVendorFilter]=useState("");const[includeInactive,setIncludeInactive]=useState(false);
   const [selectedIds,setSelectedIds]=useState<string[]>([]);const[bulkVendor,setBulkVendor]=useState("");
   const [selectedId,setSelectedId]=useState<string|null>(null);const[tab,setTab]=useState<'details'|'variants'|'vendors'|'stock'>('details');
-  const [view,setView]=useState<'products'|'alerts'>(()=>new URLSearchParams(location.search).get('view')==='alerts'?'alerts':'products');const[editor,setEditor]=useState<'product'|'variant'|null>(null);
+  const [view,setView]=useState<'products'|'alerts'|'check'>(()=>new URLSearchParams(location.search).get('view')==='alerts'?'alerts':'products');const[editor,setEditor]=useState<'product'|'variant'|null>(null);
   const [newProduct,setNewProduct]=useState(false);const[variantTarget,setVariantTarget]=useState<InventoryVariant|undefined>();
   const [offerEditor,setOfferEditor]=useState<{offer?:InventoryOffer;variantId:string|null}|null>(null);
   const [loading,setLoading]=useState(true);const[busy,setBusy]=useState(false);const[error,setError]=useState("");const[message,setMessage]=useState("");
@@ -34,21 +36,25 @@ export function InventoryPage() {
   const [stockKey,setStockKey]=useState(postingKey);
   const storeContext=useStores();
   const [transferOpen,setTransferOpen]=useState(false);
-  const load=async()=>{setLoading(true);try{const[data,options,codes,notifications,stockCheck,missing]=await Promise.all([api.inventoryProducts(),api.inventoryLookups(),api.hsnMasters(),api.inventoryAlerts(),api.inventoryReconciliation(),api.inventoryMissingSources()]);setProducts(data.items);setLookups(options);setHsn(codes.items);setAlerts(notifications.items);setReconciliation(stockCheck.items);setMissingSources(missing.items);}catch(failure){setError(failure instanceof Error?failure.message:"Unable to load inventory.");}finally{setLoading(false);}};
+  const {user}=useAuth();
+  const canDelete=!!user&&['owner','admin'].includes(user.role);
+  const [deleteConfirm,setDeleteConfirm]=useState(false);
+  const [deleteName,setDeleteName]=useState("");
+  const load=async()=>{setLoading(true);setError("");try{const[data,options,codes,notifications,stockCheck,missing]=await Promise.all([api.inventoryProducts(),api.inventoryLookups(),api.hsnMasters(),api.inventoryAlerts(),api.inventoryReconciliation(),api.inventoryMissingSources()]);setProducts(data.items);setLookups(options);setHsn(codes.items);setAlerts(notifications.items);setReconciliation(stockCheck.items);setMissingSources(missing.items);setSelectedIds(previous=>previous.filter(id=>data.items.some(item=>item.id===id)));return true;}catch(failure){setError(failure instanceof Error?failure.message:"Unable to load inventory.");return false;}finally{setLoading(false);}};
   useEffect(()=>{void load();},[]);
   useEffect(()=>{if(selected&&detailDialog.current&&!detailDialog.current.open)detailDialog.current.showModal();},[selected]);
   useEffect(()=>{if(newProduct&&createDialog.current&&!createDialog.current.open)createDialog.current.showModal();},[newProduct]);
   useEffect(()=>{if(!selected&&!newProduct)return;const previous=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.body.style.overflow=previous;};},[!!selected,newProduct]);
   useEffect(()=>{if(editor||offerEditor)(detailDialog.current||createDialog.current)?.querySelector('.inventory-editor')?.scrollIntoView({behavior:'smooth',block:'start'});},[editor,offerEditor]);
-  const closeProduct=()=>{detailDialog.current?.close();setSelectedId(null);setEditor(null);setOfferEditor(null);};
+  const closeProduct=()=>{detailDialog.current?.close();setSelectedId(null);setEditor(null);setOfferEditor(null);setDeleteConfirm(false);setDeleteName("");};
   const closeCreate=()=>{createDialog.current?.close();setNewProduct(false);setEditor(null);};
-  const perform=async(action:()=>Promise<unknown>,success:string)=>{setBusy(true);setError("");setMessage("");try{await action();await load();setMessage(success);}catch(failure){setError(failure instanceof Error?failure.message:"Inventory operation failed.");}finally{setBusy(false);}};
-  const open=(product:InventoryProduct,target:'details'|'variants'|'vendors'|'stock'='details')=>{setSelectedId(product.id);setTab(target);setEditor(null);setNewProduct(false);setOfferEditor(null);setVariantTarget(undefined);setStock({variant_id:'',direction:'IN',quantity:'',notes:''});setMovements([]);setError('');setMessage('');};
-  const saved=(product:InventoryProduct)=>{setSelectedId(product.id);setProducts(previous=>previous.some(item=>item.id===product.id)?previous.map(item=>item.id===product.id?product:item):[product,...previous]);setEditor(null);setNewProduct(false);setOfferEditor(null);setMessage("Product inventory saved.");void load();};
+  const perform=async(action:()=>Promise<unknown>,success:string)=>{setBusy(true);setError("");setMessage("");try{await action();if(await load())setMessage(success);}catch(failure){setError(failure instanceof Error?failure.message:"Inventory operation failed.");}finally{setBusy(false);}};
+  const open=(product:InventoryProduct,target:'details'|'variants'|'vendors'|'stock'='details')=>{setSelectedId(product.id);setTab(target);setEditor(null);setNewProduct(false);setOfferEditor(null);setVariantTarget(undefined);setDeleteConfirm(false);setDeleteName("");setStock({variant_id:'',direction:'IN',quantity:'',notes:''});setMovements([]);setError('');setMessage('');};
+  const saved=(product:InventoryProduct)=>{setSelectedId(product.id);setProducts(previous=>previous.some(item=>item.id===product.id)?previous.map(item=>item.id===product.id?product:item):[product,...previous]);setEditor(null);setNewProduct(false);setOfferEditor(null);setMessage("");void load().then(loaded=>{if(loaded)setMessage("Product inventory saved.");});};
   const prefer=async(offer:InventoryOffer)=>{if(!selected)return;await perform(async()=>{if(offer.variant_id){const variant=selected.variants.find(item=>item.id===offer.variant_id)!;await api.inventorySaveVariant(selected.id,{...itemPayload(variant),variant_name:variant.variant_name,preferred_vendor_id:offer.vendor_id},variant.id);}else await api.inventorySaveProduct({...productPayload(selected),preferred_vendor_id:offer.vendor_id},selected.id);},"Preferred vendor updated.");};
   useEffect(()=>{let active=true;if(selectedId&&tab==='stock'){api.inventoryMovements(selectedId).then(result=>{if(active)setMovements(result.items);}).catch(failure=>{if(active)setError(failure instanceof Error?failure.message:"Unable to load stock history.");});}return()=>{active=false;};},[selectedId,tab,products]);
   const adjust=async(event:FormEvent)=>{event.preventDefault();if(!selected)return;await perform(async()=>{await api.inventoryAdjustStock(selected.id,{store_id:storeContext.selectedId||null,variant_id:stock.variant_id||null,direction:stock.direction,quantity:Number(stock.quantity),notes:stock.notes,idempotency_key:stockKey});setStockKey(postingKey());setStock(previous=>({...previous,quantity:"",notes:""}));},"Owned stock updated.");};
-  const filtered=products.filter(product=>(includeInactive||product.is_active)&&`${product.name} ${product.item_name||''} ${product.sku||''} ${product.portal_product_id} ${product.brand_name||''}`.toLowerCase().includes(search.toLowerCase())&&(!vendorFilter||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorFilter)));
+  const filtered=products.filter(product=>(includeInactive||product.is_active)&&matchesInventorySearch(product,search)&&(!vendorFilter||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorFilter)));
   const allOffers=selected?[...selected.offers,...selected.variants.flatMap(variant=>variant.offers)]:[];
   return <main className="ops-page inventory-page">
     <header className="inventory-heading"><PortalHomeLink/><div className="inventory-section-head"><h1>Product Inventory</h1><div className="inventory-actions">
@@ -57,40 +63,33 @@ export function InventoryPage() {
     </div></div><div className="inventory-tabs" role="tablist" aria-label="Inventory views">
       <button role="tab" type="button" aria-selected={view==='products'} onClick={()=>setView('products')}>Products</button>
       <button role="tab" type="button" aria-selected={view==='alerts'} onClick={()=>setView('alerts')}><Bell size={16}/>Reorder Alerts ({alerts.length})</button>
+      <button role="tab" type="button" aria-selected={view==='check'} onClick={()=>setView('check')}>Stock check ({reconciliation.filter(row=>Number(row.difference)!==0||Number(row.missing_document_references)>0).length})</button>
     </div></header>
     {!selected&&!newProduct&&error?<p role="alert" className="inventory-feedback ops-error">{error}</p>:null}{!selected&&!newProduct&&message?<p role="status" className="inventory-feedback">{message}</p>:null}{loading?<p className="inventory-feedback" role="status">Loading inventory...</p>:null}
-    {!selected&&!newProduct&&!loading?<details className="ops-card">
-      <summary>Stock reconciliation: {reconciliation.filter(row=>Number(row.difference)!==0).length} differences, {reconciliation.reduce((total,row)=>total+Number(row.missing_document_references),0)} missing document references</summary>
-      <p>Compares recorded balances with movements per store, not a physical stock count. Missing source documents require investigation.</p>
-      <div className="reports-actions-row"><button className="btn light" type="button" onClick={()=>setTransferOpen(true)} disabled={storeContext.stockStores.length<2}>Transfer stock between stores</button>{storeContext.stockStores.length<2?<small>Add a second shop or warehouse under Stores &amp; Warehouses to transfer stock.</small>:null}</div>
-      <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Store</th><th>Product / variant</th><th>Balance</th><th>Movement net</th><th>Difference</th><th>Missing sources</th></tr></thead>
-        <tbody>{reconciliation.map(row=><tr key={`${row.store_id}:${row.product_id}:${row.variant_id||'base'}`}><td>{row.store_code}</td><td>{row.product_name}{row.variant_name?` - ${row.variant_name}`:''}</td><td>{Number(row.balance_quantity)}</td><td>{Number(row.movement_quantity)}</td><td>{Number(row.difference)}</td><td>{row.missing_document_references}</td></tr>)}</tbody>
-      </table></div>
-      {missingSources.length?<div className="ops-table-wrap"><table className="ops-table" aria-label="Movements with missing source documents"><thead><tr><th>Movement</th><th>Type</th><th>Qty</th><th>Missing source</th><th>External document</th><th>Notes</th><th></th></tr></thead>
-        <tbody>{missingSources.map(item=>{const form=sourceForm[item.id]||{external_reference:'',notes:''};return <tr key={item.id}><td>{item.product_name}{item.variant_name?` - ${item.variant_name}`:''}<small>{item.created_at.slice(0,10)}</small></td><td>{item.movement_type}</td><td>{Number(item.quantity)}</td><td>{item.reference_type}</td>
-          <td><input aria-label={`External document ${item.id}`} maxLength={200} placeholder="Vendor bill no." value={form.external_reference} onChange={event=>setSourceForm(previous=>({...previous,[item.id]:{...form,external_reference:event.target.value}}))}/></td>
-          <td><input aria-label={`Source notes ${item.id}`} maxLength={1000} placeholder="Where the paper document is filed" value={form.notes} onChange={event=>setSourceForm(previous=>({...previous,[item.id]:{...form,notes:event.target.value}}))}/></td>
-          <td><button className="btn light" type="button" disabled={busy||!form.external_reference.trim()||!form.notes.trim()} onClick={()=>void perform(()=>api.inventoryAttributeExternalSource(item.id,form.external_reference.trim(),form.notes.trim()),"Movement attributed to the external document; quantities were not changed.")}>Attribute</button></td></tr>;})}</tbody>
-      </table></div>:null}
-    </details>:null}
-    {transferOpen?<StockTransferDialog products={products} stores={storeContext.stockStores} onClose={()=>setTransferOpen(false)} onDone={async()=>{setTransferOpen(false);await load();setMessage("Stock transferred.");}}/>:null}
+    {view==='check'&&!selected&&!newProduct&&!loading&&!error?<StockCheckPanel rows={reconciliation} missingSources={missingSources} busy={busy}
+      onOpen={id=>{const product=products.find(item=>item.id===id);if(product)open(product,'stock');}}
+      onAttribute={(id,reference,notes)=>perform(()=>api.inventoryAttributeExternalSource(id,reference,notes),"Document reference saved. Stock quantities were not changed.")}/>:null}
+    {transferOpen?<StockTransferDialog products={products} stores={storeContext.stockStores} onClose={()=>setTransferOpen(false)} onDone={async()=>{setTransferOpen(false);setMessage("");if(await load())setMessage("Stock transferred.");}}/>:null}
     {newProduct&&editor==='product'?<dialog ref={createDialog} className="inventory-dialog inventory-create-dialog" aria-label="Add inventory product" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();closeCreate();}}} onCancel={event=>{event.preventDefault();closeCreate();}}><ProductEditor lookups={lookups} hsn={hsn} onSaved={saved} onClose={closeCreate}/></dialog>:null}
-    {view==='products'?<section className="inventory-body">
-      <div className="inventory-toolbar inventory-filter-toolbar"><label>Search Products<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name, SKU, ID or brand"/></label>
-        <PartySelect parties={lookups.vendors} value={vendorFilter} onChange={setVendorFilter} label="Mapped vendor" placeholder="All products" />
+    <section className="inventory-body" hidden={view!=='products'&&!selected}>
+      <div className="inventory-toolbar inventory-filter-toolbar"><label>Find a product<input type="search" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Product, SKU, brand, category or variant"/></label>
+        <label>Vendor<select value={vendorFilter} onChange={event=>setVendorFilter(event.target.value)}><option value="">All vendors</option>{lookups.vendors.map(vendor=><option key={vendor.id} value={vendor.id}>{vendor.legal_name}</option>)}</select></label>
         <label className="inventory-check"><input type="checkbox" checked={includeInactive} onChange={event=>setIncludeInactive(event.target.checked)}/>Include inactive</label>
         <div className="inventory-toolbar-actions">
           <button className="inventory-secondary-action" type="button" aria-expanded={showLookup} onClick={()=>setShowLookup(previous=>!previous)}><Tags size={16} aria-hidden="true"/>Brands & Categories</button>
           <Link className="inventory-secondary-action" to="/portal/parties"><Users size={16} aria-hidden="true"/>Vendor Master</Link>
         </div>
+        <div className="inventory-results-bar"><p role="status">{filtered.length} of {products.length} products{search.trim()?` matching "${search.trim()}"`:''}</p>
+          <button className="ops-link-btn" type="button" disabled={!search&&!vendorFilter&&!includeInactive} onClick={()=>{setSearch("");setVendorFilter("");setIncludeInactive(false);setSelectedIds([]);}}>Clear filters</button>
+          <button className="inventory-secondary-action" type="button" onClick={()=>setTransferOpen(true)} disabled={storeContext.stockStores.length<2} title={storeContext.stockStores.length<2?"Add a second stock-holding store to transfer stock":"Move owned stock between stores"}>Transfer stock</button></div>
       </div>
       {showLookup?<form className="inventory-toolbar" onSubmit={event=>{event.preventDefault();void perform(async()=>{await api.inventoryCreateLookup(lookupKind,lookupName);setLookupName('');},"Master entry added.");}}>
         <label>Master Type<select value={lookupKind} onChange={event=>setLookupKind(event.target.value as 'brands'|'categories')}><option value="brands">Brand</option><option value="categories">Category</option></select></label>
         <label>Name<input required maxLength={150} value={lookupName} onChange={event=>setLookupName(event.target.value)}/></label><button className="btn" disabled={busy}><Plus size={16}/>Add</button>
       </form>:null}
-      <div className="inventory-bulk"><strong>{selectedIds.length} selected</strong><PartySelect parties={lookups.vendors} value={bulkVendor} onChange={setBulkVendor} label="Vendor for selected products" placeholder="Select vendor to map" />
+      {selectedIds.length?<div className="inventory-bulk"><strong>{selectedIds.length} selected</strong><PartySelect parties={lookups.vendors} value={bulkVendor} onChange={setBulkVendor} label="Vendor for selected products" placeholder="Select vendor to map" />
         <button className="btn" type="button" disabled={!selectedIds.length||!bulkVendor||busy} onClick={()=>void perform(async()=>{await api.inventoryBulkMap(bulkVendor,selectedIds);setVendorFilter(bulkVendor);setSelectedIds([]);},"Vendor mapped to selected products.")}>Map Selected Products</button>
-      </div>
+      </div>:null}
       <div className="ops-table-wrap"><table className="ops-table inventory-register"><thead><tr><th><input type="checkbox" aria-label="Select visible products" checked={filtered.length>0&&filtered.every(product=>selectedIds.includes(product.id))} onChange={event=>setSelectedIds(event.target.checked?[...new Set([...selectedIds,...filtered.map(product=>product.id)])]:selectedIds.filter(id=>!filtered.some(product=>product.id===id)))}/></th><th>Product</th><th>Brand / Category</th><th>Owned Stock</th><th>Vendors</th><th>Preferred MRP</th><th>Buying Price</th><th>Catalog Price</th><th>Catalog</th><th></th></tr></thead>
         <tbody>{filtered.length?filtered.map(product=><tr key={product.id} className={selectedId===product.id?'inventory-selected':''}>
           <td><input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event=>setSelectedIds(previous=>event.target.checked?[...previous,product.id]:previous.filter(id=>id!==product.id))}/></td>
@@ -110,7 +109,13 @@ export function InventoryPage() {
           <div className="inventory-summary"><div><span>Catalog Price</span><strong>{inventoryMoney(selected.catalog_price)}</strong></div><div><span>Discount</span><strong>{selected.effective_discount==null?'-':`${Number(selected.effective_discount)}%`}</strong></div><div><span>Preferred Vendor</span><strong>{selected.preferred_vendor_name||'Not selected'}</strong></div><div><span>Owned Stock</span><strong>{Number(selected.stock_qty)}</strong></div></div>
           <p>{selected.description||'No description.'}</p><dl className="inventory-specs">{[['Item name',selected.item_name],['Size',selected.size],['Colour',selected.colour],['Weight (kg)',selected.weight],['Height (cm)',selected.height],['Width (cm)',selected.width],['Length (cm)',selected.length],...Object.entries(selected.attributes)].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           <dl className="inventory-specs"><div><dt>Preferred Vendor Availability</dt><dd>{selected.vendor_availability.split('_').join(' ')}</dd></div><div><dt>Vendor Available Quantity</dt><dd>{selected.vendor_available_quantity??'-'}</dd></div><div><dt>Vendor Lead Time (days)</dt><dd>{selected.vendor_lead_time_days??'-'}</dd></div></dl>
-          <div className="inventory-actions"><button className="btn" type="button" onClick={()=>setEditor('product')}><Pencil size={16}/>Edit Product</button>{selected.catalog_visible&&selected.is_active?<Link className="ops-inline-link" to={`/products/${selected.id}`}>Customer View</Link>:null}</div>
+          <div className="inventory-actions"><button className="btn" type="button" onClick={()=>setEditor('product')}><Pencil size={16}/>Edit Product</button>{selected.catalog_visible&&selected.is_active?<Link className="ops-inline-link" to={`/products/${selected.id}`}>Customer View</Link>:null}
+            {canDelete?<button className="inventory-secondary-action" type="button" disabled={busy} onClick={()=>{setDeleteConfirm(true);setDeleteName("");}}><Trash2 size={16}/>Delete product</button>:null}</div>
+          {deleteConfirm?<fieldset className="inventory-delete-confirm" disabled={busy}><legend>Delete {selected.name}?</legend>
+            <p>This permanently removes an unused product, its variants and vendor mappings. Products with stock, enquiries or business history cannot be deleted. Make those products inactive using Edit Product instead.</p>
+            <label>Type {selected.portal_product_id} to confirm<input value={deleteName} autoComplete="off" onChange={event=>setDeleteName(event.target.value)}/></label>
+            <div className="inventory-actions"><button className="btn" type="button" disabled={busy||deleteName!==selected.portal_product_id} onClick={()=>void perform(async()=>{await api.inventoryDeleteProduct(selected.id);closeProduct();},"Product deleted.")}>Permanently delete</button>
+            <button className="ops-link-btn" type="button" onClick={()=>setDeleteConfirm(false)}>Cancel</button></div></fieldset>:null}
         </>:null}
         {tab==='variants'?<>
           <div className="inventory-section-head"><h3>Child Variants</h3><button className="btn" type="button" onClick={()=>{setVariantTarget(undefined);setEditor('variant');}}><Plus size={16}/>Add Variant</button></div>
@@ -129,6 +134,7 @@ export function InventoryPage() {
           <h3>Stock History</h3><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Date</th><th>Store</th><th>Item</th><th>Movement</th><th>Quantity</th><th>Reason</th></tr></thead><tbody>{movements.length?movements.map(movement=><tr key={movement.id}><td>{new Date(movement.created_at).toLocaleString()}</td><td>{storeContext.stores.find(store=>store.id===movement.store_id)?.code||''}</td><td>{movement.variant_id?selected.variants.find(variant=>variant.id===movement.variant_id)?.variant_name:'Base product'}</td><td>{movement.movement_type}</td><td>{Number(movement.quantity)}</td><td>{movement.notes}</td></tr>):<tr><td colSpan={6}>No stock movements.</td></tr>}</tbody></table></div>
         </>:null}
       </section></dialog>:null}
-    </section>:<section className="inventory-body"><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Product / Variant</th><th>Owned Stock</th><th>Threshold</th><th>Reorder Qty</th><th>Reminder</th><th>Next Reminder</th><th></th></tr></thead><tbody>{alerts.length?alerts.map(alert=>{const key=`${alert.product_id}:${alert.variant_id||''}`;return <tr key={key}><td><button className="ops-link-btn" type="button" onClick={()=>{const product=products.find(item=>item.id===alert.product_id);if(product){open(product,'stock');setView('products');}}}>{alert.product_name}</button><small>{alert.variant_name}</small></td><td>{Number(alert.stock_qty)}</td><td>{Number(alert.reorder_level)}</td><td>{Number(alert.reorder_quantity)}</td><td>{alert.reminder_due?'Due':alert.low_stock?'Low stock':''}{alert.reminder_date?` · ${alert.reminder_date}`:''}</td><td><input aria-label={`Reminder date ${key}`} type="date" value={reminders[key]??alert.reminder_date??''} onChange={event=>setReminders(previous=>({...previous,[key]:event.target.value}))}/></td><td><button className="ops-link-btn" type="button" title="Save reminder" aria-label={`Save reminder ${key}`} disabled={busy||!(reminders[key]||alert.reminder_date)} onClick={()=>void perform(()=>api.inventoryRemind(alert.product_id,alert.variant_id,reminders[key]||alert.reminder_date!),"Reorder reminder saved.")}><Save size={16}/></button></td></tr>;}):<tr><td colSpan={7}>No reorder alerts or reminders due.</td></tr>}</tbody></table></div></section>}
+    </section>
+    {view==='alerts'?<section className="inventory-body"><div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Product / Variant</th><th>Owned Stock</th><th>Threshold</th><th>Reorder Qty</th><th>Reminder</th><th>Next Reminder</th><th></th></tr></thead><tbody>{alerts.length?alerts.map(alert=>{const key=`${alert.product_id}:${alert.variant_id||''}`;return <tr key={key}><td><button className="ops-link-btn" type="button" onClick={()=>{const product=products.find(item=>item.id===alert.product_id);if(product){open(product,'stock');setView('products');}}}>{alert.product_name}</button><small>{alert.variant_name}</small></td><td>{Number(alert.stock_qty)}</td><td>{Number(alert.reorder_level)}</td><td>{Number(alert.reorder_quantity)}</td><td>{alert.reminder_due?'Due':alert.low_stock?'Low stock':''}{alert.reminder_date?` · ${alert.reminder_date}`:''}</td><td><input aria-label={`Reminder date ${key}`} type="date" value={reminders[key]??alert.reminder_date??''} onChange={event=>setReminders(previous=>({...previous,[key]:event.target.value}))}/></td><td><button className="ops-link-btn" type="button" title="Save reminder" aria-label={`Save reminder ${key}`} disabled={busy||!(reminders[key]||alert.reminder_date)} onClick={()=>void perform(()=>api.inventoryRemind(alert.product_id,alert.variant_id,reminders[key]||alert.reminder_date!),"Reorder reminder saved.")}><Save size={16}/></button></td></tr>;}):<tr><td colSpan={7}>No reorder alerts or reminders due.</td></tr>}</tbody></table></div></section>:null}
   </main>;
 }

@@ -5,15 +5,12 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.schemas.common import SubmissionKey
-from app.schemas.money import PositiveMoney
-
 
 class ReceivableCreate(BaseModel):
     party_id: UUID
     invoice_id: UUID | None = None
     reference: str | None = None
-    amount_due: PositiveMoney
+    amount_due: float
     due_date: date | None = None
     reminder_date: date | None = None
     notes: str | None = None
@@ -42,10 +39,10 @@ class ReceivableListResponse(BaseModel):
 
 
 class ReceivablePaymentCreate(BaseModel):
-    amount: PositiveMoney
+    amount: float
     account_id: UUID
     payment_mode: str
-    idempotency_key: SubmissionKey
+    idempotency_key: str
     reference: str | None = None
     payment_date: date | None = None
     notes: str | None = None

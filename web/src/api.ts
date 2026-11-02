@@ -108,6 +108,7 @@ export const api = {
   cancelInvoice:(id:string,reason:string)=>request(`/billing/invoices/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason})}),
   cancelPurchase:(id:string,reason:string)=>request(`/purchases/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason})}),
   inventoryProducts: () => request<{ items: InventoryProduct[] }>("/inventory/products"),
+  inventoryDeleteProduct: (id: string) => request<{deleted: boolean; id: string}>(`/inventory/products/${encodeURIComponent(id)}`, {method: "DELETE"}),
   inventoryLookups: () => request<InventoryLookups>("/inventory/lookups"),
   inventoryCreateLookup: (kind: "brands" | "categories", name: string, extra?:{description:string;is_active:boolean}) => request<{id: string; name: string; code: string}>(`/inventory/lookups/${kind}`, {method:"POST",body:JSON.stringify({name,...extra})}),
   inventorySaveProduct: (payload: InventoryProductInput, id?: string) => request<InventoryProduct>(`/inventory/products${id ? `/${encodeURIComponent(id)}` : ""}`, {method:id ? "PUT" : "POST",body:JSON.stringify(payload)}),

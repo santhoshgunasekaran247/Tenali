@@ -55,7 +55,6 @@ class AttachmentOut(BaseModel):
     mime_type: str
     file_size: int
     created_at: datetime
-    download_url: str | None = None
 
 
 class AttachmentListResponse(BaseModel):

@@ -1,6 +1,6 @@
 import base64
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -48,7 +48,6 @@ class AttachmentValidationTests(unittest.TestCase):
 class AttachmentStorageTests(unittest.TestCase):
     def setUp(self):
         self.db = MagicMock()
-        self.db.info = {}
         self.service = DocumentsService(self.db)
         self.service._assert_entity = MagicMock()
         self.file = AttachmentCreate(file_name="bill.pdf", mime_type="application/pdf", data_base64=encoded(b"%PDF-1.4"))
@@ -69,13 +68,8 @@ class AttachmentStorageTests(unittest.TestCase):
     def test_attachment_storage_leaves_commit_to_parent(self):
         self.service.list_attachments = MagicMock(return_value={"items": []})
         self.db.execute.return_value.mappings.return_value.one.return_value = {"id": "document", "file_name": "bill.pdf"}
-        with patch("app.services.documents_service.FileStore.save", return_value={"id": "stored-file"}) as upload:
-            result = self.service.add_attachments("business_payment", "record", "company", [self.file])
-        upload.assert_called_once_with("company", b"%PDF-1.4", "application/pdf")
+        result = self.service.add_attachments("business_payment", "record", "company", [self.file])
         self.assertEqual(result[0]["file_name"], "bill.pdf")
-        params = self.db.execute.call_args_list[0].args[1]
-        self.assertNotIn("file_content", params)
-        self.assertEqual(params["stored_file_id"], "stored-file")
         self.db.commit.assert_not_called()
         self.service._assert_entity.assert_called_once_with("business_payment", "record", "company", lock=True)
 

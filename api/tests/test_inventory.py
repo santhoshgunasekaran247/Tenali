@@ -80,9 +80,10 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.text = text
         self.connection = engine.connect()
         self.outer = self.connection.begin()
-        from schema_support import apply_customer_migration, apply_product_minimum_migration
+        from schema_support import apply_customer_migration, apply_product_minimum_migration, apply_inventory_deletion_migration
         apply_customer_migration(self.connection)
         apply_product_minimum_migration(self.connection)
+        apply_inventory_deletion_migration(self.connection)
         self.db = Session(bind=self.connection, join_transaction_mode="create_savepoint")
         self.company, self.other, self.vendor_a, self.vendor_b = [str(uuid4()) for _ in range(4)]
         for company in [self.company, self.other]:
@@ -158,6 +159,124 @@ class InventoryDatabaseTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             self.service.bulk_map(BulkVendorMapping(vendor_id=self.vendor_a, product_ids=[self.product_id, str(uuid4())]))
         self.assertEqual(self.service.detail(self.product_id)["offers"], [])
+
+    def test_delete_unused_product_removes_variants_offers_and_zero_balances(self):
+        self.service.save_variant(self.product_id, VariantInput(variant_name="Unused blue"))
+        self.service.save_offer(self.product_id, VendorOfferInput(vendor_id=self.vendor_a))
+        store = self.db.execute(self.text("select id from stores where company_id=:company and is_default"),
+                                {"company": self.company}).scalar_one()
+        self.db.execute(self.text("""insert into stock_balances(company_id,store_id,product_id,quantity)
+            values(:company,:store,:product,0)"""), {"company": self.company, "store": store, "product": self.product_id})
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "owner"}
+        self.db.commit()
+        self.assertEqual(self.service.delete_product(self.product_id), {"deleted": True, "id": self.product_id})
+        for table in ["products", "product_variants", "vendor_contributions", "stock_balances"]:
+            key = "id" if table == "products" else "product_id"
+            self.assertEqual(self.db.execute(self.text(f"select count(*) from {table} where {key}=:id"),
+                                             {"id": self.product_id}).scalar_one(), 0)
+        with self.assertRaises(HTTPException) as missing:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(missing.exception.status_code, 404)
+
+    def test_delete_requires_owner_or_admin_and_rejects_other_company(self):
+        other_product = self.db.execute(self.text("""insert into products(company_id,portal_product_id,name)
+            values(:company,'DELETE-OTHER','Other company product') returning id"""),
+            {"company": self.other}).scalar_one()
+        for role in ["viewer", "staff", None]:
+            self.db.info["tenant_context"] = {"company_id": self.company, "role": role}
+            with self.assertRaises(HTTPException) as denied:
+                self.service.delete_product(self.product_id)
+            self.assertEqual(denied.exception.status_code, 403)
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "admin"}
+        self.db.commit()
+        self.assertEqual(self.db.execute(self.text("delete from products where id=:id"), {"id": other_product}).rowcount, 0)
+        other_service = object.__new__(InventoryService)
+        other_service.db, other_service.company_id = self.db, self.other
+        with self.assertRaises(HTTPException) as missing:
+            other_service.delete_product(self.product_id)
+        self.assertEqual(missing.exception.status_code, 404)
+        self.assertTrue(self.service.delete_product(self.product_id)["deleted"])
+
+    def test_delete_blocks_balance_and_zero_net_movement_history(self):
+        from app.schemas.inventory import StockAdjustment
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=2, notes="Deletion test"))
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "owner"}
+        with self.assertRaises(HTTPException) as used:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(used.exception.status_code, 409)
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="OUT", quantity=2, notes="Deletion test zero"))
+        with self.assertRaises(HTTPException) as history:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(history.exception.status_code, 409)
+
+    def test_delete_blocks_json_invoice_and_purchase_history(self):
+        import json
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "owner"}
+        params = {"company": self.company, "party": self.vendor_a, "product": self.product_id,
+                  "data": json.dumps({"lines": [{"product_id": self.product_id}]})}
+        invoice = self.db.execute(self.text("""insert into invoices(company_id,customer_party_id,invoice_number,
+            invoice_date,subtotal,gst_total,total,document_data) values(:company,:party,'DELETE-TEST',current_date,0,0,0,cast(:data as jsonb)) returning id"""), params).scalar_one()
+        with self.assertRaises(HTTPException) as used:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(used.exception.status_code, 409)
+        self.db.execute(self.text("delete from invoices where id=:id"), {"id": invoice})
+        params["data"] = json.dumps([{"product_id": self.product_id}])
+        self.db.execute(self.text("""insert into purchases(company_id,vendor_party_id,purchase_date,subtotal,gst_total,total,line_items)
+            values(:company,:party,current_date,0,0,0,cast(:data as jsonb))"""), params)
+        with self.assertRaises(HTTPException) as used:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(used.exception.status_code, 409)
+
+    def test_missing_sources_respect_store_scope(self):
+        from app.schemas.inventory import ExternalMovementSource, StockAdjustment
+        second = self.db.execute(self.text("""insert into stores(company_id,code,name,kind,holds_stock,state_code)
+            values(:company,'SECOND','Other stock room','warehouse',true,'33') returning id"""),
+            {"company": self.company}).scalar_one()
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=1, notes="Missing fixture"),
+                                  reference_type="invoice", reference_id=str(uuid4()))
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=1, notes="Missing fixture"),
+                                  reference_type="invoice", reference_id=str(uuid4()), store_id=str(second))
+        rows = self.service.missing_movement_sources()["items"]
+        self.assertEqual(len(rows), 2)
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": [str(second)]}
+        scoped = self.service.missing_movement_sources()["items"]
+        self.assertEqual(len(scoped), 1)
+        self.assertEqual(str(scoped[0]["store_id"]), str(second))
+        self.assertEqual(scoped[0]["store_code"], "SECOND")
+        denied_id = next(str(row["id"]) for row in rows if str(row["store_id"]) != str(second))
+        with self.assertRaises(HTTPException):
+            self.service.attribute_external_source(denied_id, ExternalMovementSource(external_reference="Paper", notes="Filed"))
+        self.db.info["tenant_context"]["store_ids"] = []
+        self.assertEqual(self.service.missing_movement_sources()["items"], [])
+
+    def test_delete_blocks_order_and_transfer_json_without_movements(self):
+        import json
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "owner"}
+        shopper = self.db.execute(self.text("""insert into shopper_accounts(company_id,email,display_name,supabase_uid)
+            values(:company,'delete-fixture@example.test','Deletion fixture',:uid) returning id"""),
+            {"company": self.company, "uid": str(uuid4())}).scalar_one()
+        params = {"company": self.company, "shopper": shopper, "key": uuid4(), "hash": "deletion-fixture",
+                  "items": json.dumps([{"product_id": self.product_id}])}
+        order = self.db.execute(self.text("""insert into shop_orders(company_id,shopper_id,request_key,request_hash,
+            status,items,address,subtotal_paise,shipping_paise,total_paise,pickup_location)
+            values(:company,:shopper,:key,:hash,'cancelled',cast(:items as jsonb),'{}',100,0,100,'') returning id"""),
+            params).scalar_one()
+        with self.assertRaises(HTTPException) as used:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(used.exception.status_code, 409)
+        self.db.execute(self.text("delete from shop_orders where id=:id"), {"id": order})
+        first_store = self.db.execute(self.text("select id from stores where company_id=:company and is_default"),
+                                      {"company": self.company}).scalar_one()
+        second_store = self.db.execute(self.text("""insert into stores(company_id,code,name,kind,holds_stock,state_code)
+            values(:company,'SECOND','Other stock room','warehouse',true,'33') returning id"""),
+            {"company": self.company}).scalar_one()
+        self.db.execute(self.text("""insert into stock_transfers(company_id,from_store_id,to_store_id,notes,lines)
+            values(:company,:first,:second,'Historical fixture',cast(:lines as jsonb))"""),
+            {"company": self.company, "first": first_store, "second": second_store,
+             "lines": json.dumps([{"product_id": self.product_id, "quantity": 1}])})
+        with self.assertRaises(HTTPException) as used:
+            self.service.delete_product(self.product_id)
+        self.assertEqual(used.exception.status_code, 409)
 
 
 if __name__ == "__main__":

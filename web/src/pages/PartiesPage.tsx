@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { SiteFooter } from "../components/SiteFooter";
 import { PortalHomeLink } from "../components/PortalHomeLink";
-import { OnlineCustomerLinks } from "../components/OnlineCustomerLinks";
+import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import type { Party, PartyCreateInput, PartyType } from "../types";
 
@@ -114,7 +114,7 @@ export function PartiesPage() {
           <h1>Customers and vendors</h1>
           <p>Capture and maintain your party master for billing, purchases, settlements and reporting.</p>
         </section>
-        {user && ["owner", "admin"].includes(user.role) ? <OnlineCustomerLinks key={user.company_id} /> : null}
+        {user && ["owner", "admin"].includes(user.role) ? <p><Link className="ops-inline-link" to="/portal/online-customers">Manage online customer accounts separately</Link></p> : null}
 
         <section className="ops-grid">
           <article className="ops-card">

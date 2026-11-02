@@ -54,6 +54,11 @@ def update_product(product_id: UUID, payload: ProductInput, service: InventorySe
     return service.save_product(payload, str(product_id))
 
 
+@router.delete("/products/{product_id}")
+def delete_product(product_id: UUID, service: InventoryService = Depends(inventory_service)):
+    return service.delete_product(str(product_id))
+
+
 @router.post("/products/{product_id}/variants", status_code=201)
 def create_variant(product_id: UUID, payload: VariantInput, service: InventoryService = Depends(inventory_service)):
     return service.save_variant(str(product_id), payload)

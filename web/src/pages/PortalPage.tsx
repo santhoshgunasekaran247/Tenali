@@ -28,6 +28,7 @@ const operationsLinks: (PortalLink & { module: string })[] = [
 ];
 
 const adminMaintenanceLinks: PortalLink[] = [
+  { label: "Online Customers", path: "/portal/online-customers", status: "live" },
   { label: "Company Setup", path: "/portal/company", status: "live" },
   { label: "Stores & Warehouses", path: "/portal/stores", status: "live" },
   { label: "Users & Roles",path:"/portal/team",status:"live" },

@@ -222,6 +222,35 @@ class InventoryService:
         self.db.commit()
         return self.detail(product_id)
 
+    def delete_product(self, product_id: str) -> dict:
+        identity = self.db.info.get("tenant_context", {})
+        if identity.get("role") not in {"owner", "admin"}:
+            raise HTTPException(403, "Only owners and administrators can delete products")
+        self._product(product_id, lock=True)
+        params = {"product": product_id, "company": self.company_id, "reference": f"%{product_id}%"}
+        used = self.db.execute(text("""
+            select exists(select 1 from stock_balances where product_id=:product and quantity<>0)
+                or exists(select 1 from stock_movements where product_id=:product)
+                or exists(select 1 from invoice_items where product_id=:product)
+                or exists(select 1 from purchase_items where product_id=:product)
+                or exists(select 1 from enquiries where product_id=:product)
+                or exists(select 1 from invoices where company_id=:company and document_data::text ilike :reference)
+                or exists(select 1 from purchases where company_id=:company and line_items::text ilike :reference)
+                or exists(select 1 from shop_orders where company_id=:company and items::text ilike :reference)
+                or exists(select 1 from stock_transfers where company_id=:company and lines::text ilike :reference)
+        """), params).scalar_one()
+        if used:
+            raise HTTPException(409, "This product has stock or business history. Make it inactive instead to preserve records.")
+        try:
+            self.db.execute(text("delete from stock_balances where product_id=:product and company_id=:company"), params)
+            self.db.execute(text("delete from vendor_contributions where product_id=:product"), params)
+            self.db.execute(text("delete from products where id=:product and company_id=:company"), params)
+            self.db.commit()
+        except IntegrityError as error:
+            self.db.rollback()
+            raise HTTPException(409, "This product is linked to other records. Make it inactive instead.") from error
+        return {"deleted": True, "id": product_id}
+
     def save_variant(self, product_id: str, payload: VariantInput, variant_id: str | None = None) -> dict:
         self._product(product_id, lock=True)
         if variant_id:
@@ -459,12 +488,14 @@ class InventoryService:
         rows = self.db.execute(
             text(
                 """
-                select m.id, m.product_id, p.name as product_name, m.variant_id, v.variant_name,
+                select m.id, m.store_id, s.code as store_code, m.product_id, p.name as product_name, m.variant_id, v.variant_name,
                        m.movement_type, m.quantity, m.reference_type, m.reference_id, m.notes, m.created_at
                 from stock_movements m
                 join products p on p.id = m.product_id and p.company_id = m.company_id
+                join stores s on s.id = m.store_id and s.company_id = m.company_id
                 left join product_variants v on v.id = m.variant_id
                 where m.company_id = :company
+                  and (cast(:permitted as uuid[]) is null or m.store_id = any(cast(:permitted as uuid[])))
                   and ((m.reference_type in ('invoice', 'invoice_cancellation')
                         and not exists (select 1 from invoices i
                             where i.company_id = m.company_id and i.id = m.reference_id))
@@ -474,7 +505,7 @@ class InventoryService:
                 order by m.created_at, m.id
                 """
             ),
-            {"company": self.company_id},
+            {"company": self.company_id, "permitted": allowed_stores(self.db.info.get("tenant_context"))},
         ).mappings().all()
         return {"items": [dict(row) for row in rows]}
 

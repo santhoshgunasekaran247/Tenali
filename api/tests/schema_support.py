@@ -32,3 +32,9 @@ def ensure_default_store(db, company_id: str, code: str = "MAIN") -> str:
         values(:company, :code, 'Main store', 'offline', true, true, '33') returning id"""),
         {"company": company_id, "code": code}).scalar_one()
     return str(row)
+
+
+def apply_inventory_deletion_migration(connection):
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "033_inventory_product_deletion.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()

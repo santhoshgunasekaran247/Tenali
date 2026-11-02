@@ -167,6 +167,7 @@ export type StockTransferInput = {
   lines: Array<{ product_id: string; variant_id: string | null; quantity: number }>;
 };
 export type InventoryMissingSource = {
+  store_id: string; store_code: string;
   id: string; product_id: string; product_name: string; variant_id: string | null; variant_name: string | null;
   movement_type: string; quantity: number; reference_type: string; reference_id: string | null; notes: string | null; created_at: string;
 };

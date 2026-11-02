@@ -16,12 +16,17 @@ export function OnlineCustomerLinks() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
   const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
     const [online, counter] = await Promise.all([
       accountRequest<{ items: OnlineCustomer[] }>("/online-customers", undefined, "parties"),
       api.billingCustomers(),
     ]);
     setItems(online.items); setParties(counter.items);
+    } finally { setLoading(false); }
   };
   useEffect(() => { void load().catch(failure => setError(String(failure))); }, []);
   const link = async () => {
@@ -35,15 +40,19 @@ export function OnlineCustomerLinks() {
     finally { setBusy(false); }
   };
   const query = search.trim().toLowerCase();
+  const filtered = items.filter(item => [item.display_name, item.email, item.phone].some(value => value?.toLowerCase().includes(query)));
   return <section className="ops-card"><h2>Online customer accounts</h2>
     <p>Online customers are separate from counter customers. Phone numbers are unverified. Only link after confirming the customer's identity directly.</p>
     {error ? <p className="ops-error" role="alert">{error}</p> : null}
     {message ? <p role="status">{message}</p> : null}
-    <label>Search online customers<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, email or phone" /></label>
+    <label className="online-customer-search">Search online customers<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, email or phone" /></label>
+    {loading ? <p role="status">Loading online customer accounts...</p> : null}
+    {error ? <button className="ops-link-btn" type="button" disabled={loading} onClick={() => void load().catch(failure => setError(String(failure)))}>Retry</button> : null}
     <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Name</th><th>Email</th><th>Phone (unverified)</th><th>Counter link</th></tr></thead>
-      <tbody>{items.filter(item => [item.display_name, item.email, item.phone].some(value => value?.toLowerCase().includes(query))).map(item =>
+      <tbody>{filtered.map(item =>
         <tr key={item.id}><td>{item.display_name}</td><td>{item.email}</td><td>{item.phone}</td><td>{item.customer_party_id ? "Linked" :
-          <button className="ops-link-btn" type="button" disabled={busy} onClick={() => { setSelected(item); setCustomer(""); setConfirmed(false); setError(""); }}>Link manually</button>}</td></tr>)}</tbody>
+          <button className="ops-link-btn" type="button" disabled={busy||loading} onClick={() => { setSelected(item); setCustomer(""); setConfirmed(false); setError(""); }}>Link manually</button>}</td></tr>)}
+        {!loading&&!error&&!filtered.length?<tr><td colSpan={4}>{query?"No matching online customers.":"No online customer accounts yet."}</td></tr>:null}</tbody>
     </table></div>
     {selected ? <fieldset disabled={busy}><legend>Link {selected.display_name} ({selected.email})</legend>
       <PartySelect parties={parties} value={customer} onChange={setCustomer} label="Counter customer" />
