@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { accountRequest } from "../features/shop";
 import { ExternalLink, KeyRound, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 
 type Settings = { supabase_url: string; public_key: string; providers: string[]; enabled: boolean };
 const OPTIONS = [["google", "Google", "Google OAuth client"], ["facebook", "Facebook", "Meta developer application"], ["custom:yahoo", "Yahoo", "Custom provider: custom:yahoo"], ["azure", "Microsoft", "Microsoft Entra application"], ["apple", "Apple", "Apple developer configuration"]];
@@ -43,6 +44,7 @@ export function SocialLoginSettings() {
       <div className="settings-save-bar"><p>Applies to all tenants. Project changes are locked once social accounts exist.</p><button className="btn" disabled={busy || !form.providers.length}>{busy ? "Saving..." : "Save authentication settings"}</button></div>
     </fieldset></form>}</div>
     <aside className="settings-help settings-card"><h3><ShieldCheck size={18}/>Setup checklist</h3>
+      <p><Link to="/platform/policies">Review and publish platform policies</Link> before submitting an OAuth app. Use the published privacy, terms and account/data-deletion URLs; provider approval and any required deletion callback remain separate.</p>
       <ol><li><strong>Configure your providers</strong><p>Google needs an OAuth Client ID and Secret. Enter these in Supabase, not Tenali. Yahoo needs custom:yahoo.</p></li><li><strong>Allow return URLs</strong><p>In Supabase Authentication → URL Configuration, allow each origin's <code>/social-login?**</code> callback.</p></li><li><strong>Connect and test</strong><p>Save public settings here, then test in a browser with popups allowed. No phone OTP or SMS is enabled.</p></li></ol>
       <a className="settings-external-link" href={projectRef ? `https://supabase.com/dashboard/project/${projectRef}/auth/providers` : "https://supabase.com/dashboard"} target="_blank" rel="noreferrer">Open Supabase providers<ExternalLink size={14}/></a>
       <p className="social-caption">Saving is not a connection test. It does not configure providers, approve OAuth apps, or activate paid services.</p>

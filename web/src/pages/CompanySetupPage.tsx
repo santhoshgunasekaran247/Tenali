@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { api } from "../api";
@@ -206,6 +207,7 @@ export function CompanySetupPage() {
         <h1>Company Setup</h1>
       </section>
       <nav className="company-setup-nav" aria-label="Company settings sections">
+        <Link to="/portal/policies">Store Policies</Link>
         <a href="#company-profile">Profile & Contact</a>
         <a href="#storefront-copy">Storefront Copy</a>
         <a href="#site-colours">Site Colours</a>

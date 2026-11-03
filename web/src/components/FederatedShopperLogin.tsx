@@ -3,6 +3,7 @@ import { accountRequest, type Shopper } from "../features/shop";
 import type { FederationConfig, SocialUser } from "../features/shopperFederation";
 import { socialLogin } from "../features/shopperFederation";
 import { SocialProviderButtons } from "./SocialProviderButtons";
+import { PolicyNotice } from "./PolicyLinks";
 
 type ProfileNeeded = { needs_profile: true; email: string; display_name: string };
 
@@ -44,6 +45,7 @@ export function FederatedShopperLogin({ onSignedIn }: { onSignedIn: (shopper: Sh
     finally { setBusy(false); }
   };
   return <section className="access-panel">
+    <PolicyNotice scope="tenant" />
     {error ? <p className="ops-error" role="alert">{error}</p> : null}
     {!config ? <p>Loading sign-in options...</p> : !config.enabled ? <p role="status">Social sign-in is not configured yet. Please contact the store. Email/password registration is disabled.</p> :
       social ? <form className="ops-form" onSubmit={submit}><fieldset disabled={busy} className="access-fields">

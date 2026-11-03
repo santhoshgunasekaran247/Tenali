@@ -18,10 +18,14 @@ from app.api.routes.purchases import router as purchases_router
 from app.api.routes.settlements import router as settlements_router
 from app.api.routes.stores import router as stores_router
 from app.api.routes.dashboard import router as dashboard_router
+from app.api.routes.policies import public_router as public_policies_router, tenant_router as tenant_policies_router, platform_router as platform_policies_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router,prefix="/auth",tags=["authentication"])
 api_router.include_router(platform_router,prefix="/platform",tags=["platform administration"])
+api_router.include_router(platform_policies_router, prefix="/platform/policies", tags=["platform policies"])
+api_router.include_router(tenant_policies_router, prefix="/company/policies", tags=["store policies"])
+api_router.include_router(public_policies_router, prefix="/legal", tags=["public policies"])
 api_router.include_router(shop_router,prefix="/shop",tags=["shopper accounts"])
 api_router.include_router(checkout_admin_router,prefix="/checkout-admin",tags=["checkout administration"])
 api_router.include_router(health_router)

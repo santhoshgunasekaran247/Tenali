@@ -32,6 +32,9 @@ import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettlementsPage } from "./pages/SettlementsPage";
 import { StoresPage } from "./pages/StoresPage";
+import { PoliciesPage } from "./pages/PoliciesPage";
+import { TenantPoliciesPage } from "./pages/TenantPoliciesPage";
+import { PolicyLinks } from "./components/PolicyLinks";
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -49,6 +52,10 @@ export default function App() {
         <Route path="/cart" element={<CartPage />} />
         <Route path="/platform" element={<PlatformAdminPage />} />
         <Route path="/platform/authentication" element={<PlatformAdminPage />} />
+        <Route path="/platform/policies" element={<PlatformAdminPage />} />
+        <Route path="/policies" element={<PoliciesPage />} />
+        <Route path="/policies/:scope" element={<PoliciesPage />} />
+        <Route path="/policies/:scope/:kind" element={<PoliciesPage />} />
         <Route path="/brand" element={<BrandPage />} />
         <Route path="/brand.html" element={<BrandPage />} />
         <Route path="/products/:productId" element={<ProductPage />} />
@@ -64,6 +71,7 @@ export default function App() {
         <Route path="/portal/purchases" element={<PurchasesPage />} />
         <Route path="/portal/billing" element={<BillingPage />} />
         <Route path="/portal/company" element={<CompanySetupPage />} />
+        <Route path="/portal/policies" element={<TenantPoliciesPage />} />
         <Route path="/portal/stores" element={<StoresPage />} />
         <Route path="/portal/checkout" element={<CheckoutAdminPage />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
@@ -79,6 +87,7 @@ export default function App() {
         <Route path="/portal/domains" element={<DomainsPage/>}/>
         </Route>
       </Routes>
+      <div className="policy-footer"><PolicyLinks /></div>
     </div>
   );
 }

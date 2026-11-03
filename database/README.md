@@ -23,6 +23,20 @@ Use Alembic migrations from `api/alembic` and `api/migrations`:
 
 The modular SQL files are intended for maintainability, domain review, and future migration generation.
 
+## Public platform and tenant policies
+
+Migration `034_public_policies` adds `legal_policies`. A null `company_id` identifies
+platform policies; a non-null company identifies a tenant's independent documents.
+Each policy stores a private draft revision and a separate published snapshot with
+its version and publication time. Saving a draft never changes the public copy.
+New templates are unpublished until an authorised operator reviews and publishes them.
+
+Policy endpoints use explicitly scoped identity sessions; runtime roles are not
+granted access to drafts. Publishing and draft changes are audited in the existing
+tenant/platform audit tables. Include policy and audit tables in database backups.
+See [deployment policy guidance](../docs/MULTI_TENANT_DEPLOYMENT.md#public-policies-and-integration-review)
+for editing, public URLs and external-provider review requirements.
+
 ## Purchase and payment attachments
 
 Purchase bills and business-payment receipts use `documents` and `document_links`.

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useAuth } from "../features/auth";
 import { accountRequest, loadRazorpay, payOrder, rupees, shopperSession, type Availability, type DeliveryAddress, type FulfilmentMethod, type PaymentMethod, type Quote, type Shopper, type ShopOrder } from "../features/shop";
 import { cartItemKey, useCart } from "../features/cart";
+import { policyPath } from "../features/policies";
 
 export function CheckoutPage() {
   const { storefront, loading } = useAuth();
@@ -75,6 +76,7 @@ export function CheckoutPage() {
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront || !cart.items.length) return <main className="loading">Your cart is empty. <Link to="/">Browse products</Link></main>;
   return <main className="shop-account-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
+    <p className="policy-notice">Review this seller&apos;s <Link to={policyPath("tenant", "terms")}>terms</Link>, <Link to={policyPath("tenant", "privacy")}>privacy</Link>, <Link to={policyPath("tenant", "shipping")}>shipping and delivery</Link>, <Link to={policyPath("tenant", "payment")}>payment</Link> and <Link to={policyPath("tenant", "returns")}>cancellation, refund, return and exchange policies</Link>. <Link to={policyPath("tenant", "contact")}>Contact the seller</Link> for missing or unclear terms.</p>
     {error ? <p className="ops-error" role="alert">{error}</p> : null}
     {!shopper ? <p>Loading shopper session...</p> : <form className="ops-form ops-card" onSubmit={getQuote}>
       <fieldset className="access-fields" disabled={busy || !!order}><legend>Delivery Details</legend><div className="company-fields">

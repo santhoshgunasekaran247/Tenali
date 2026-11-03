@@ -54,7 +54,7 @@ class TenantBoundary(BaseHTTPMiddleware):
         if request.method == "OPTIONS" or path in {"/health", "/health/", "/docs", "/redoc", "/openapi.json", "/domain-authorization"} or path.startswith("/catalog-assets/"):
             return await call_next(request)
         try:
-            if path.startswith(('/auth/', '/shop/', '/platform/')):
+            if path.startswith(('/auth/', '/shop/', '/platform/', '/legal/')):
                 with SessionLocal() as db:
                     if not host_company(db,request) and not platform_host(request):
                         raise HTTPException(404,'This domain is not configured for a workspace')

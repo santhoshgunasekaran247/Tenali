@@ -63,6 +63,8 @@ KYC documents go directly to the respective provider, not to this settings form.
 Razorpay requirements depend on the business type and include its requested business,
 identity and bank verification. Public website review includes contact, pricing,
 terms, privacy and refund information; this form does not create legal-policy pages.
+Use **Store Policies** (`/portal/policies`) to draft, preview and explicitly publish
+those documents separately, as described below.
 Use a dedicated **shopper** reviewer login if requested, never workspace/admin access.
 Its API-key guide states website review within 3 working days; this is not a guaranteed
 overall account-activation SLA. Shiprocket's KYC guide states manual review may take
@@ -74,6 +76,85 @@ Official references:
 - [Razorpay website review](https://razorpay.com/docs/payments/dashboard/account-settings/business-website-details/)
 - [Shiprocket KYC](https://support.shiprocket.in/support/solutions/articles/43000662578-what-documents-are-required-for-kyc-verification-)
 - [Shiprocket API-user setup](https://support.shiprocket.in/support/solutions/articles/43000337456-shiprocket-api-document-helpsheet)
+
+### Public policies and integration review
+
+Apply Alembic revision `034_public_policies` before deploying the policy editor.
+It adds policy storage, not published legal statements. No policy is automatically
+published and checkout is not blocked by policy status.
+
+Platform operators use **Platform > Public policies** (`/platform/policies`).
+The initial drafts identify **Sru Global**, **Tenali**, `tenali.biz` and
+`sourcedbysru@gmail.com`. Review the supplied address (including the full PIN code)
+and actual data-handling practices before publication. Anonymous visitors now see
+a platform homepage with an app description and public policy links; signed-in
+workspace/storefront routing is preserved.
+
+Tenant owners/admins use **Store Policies** (`/portal/policies`), also linked from
+Company Setup. Each tenant gets independent, editable privacy, terms, shipping and
+delivery, payment, cancellation/refund/returns/exchanges, account/data-deletion and
+contact/business-information drafts. Business name and contact are suggested from
+the workspace profile or signed-in administrator email; review the email before
+making it public. All commercial amounts are INR. Supply the actual business address,
+jurisdiction, shipping estimates/charges, cancellation and return rules, refund
+processing times and other `[[...]]` details. Templates are starting copy, not legal
+advice or certification.
+
+**Save draft** never changes the published page. **Publish this version** requires
+saved, completed contact/business fields, no template placeholders, and explicit
+review confirmation. The server validates these independently of the UI. Publication
+records a version and timestamp and is audited. Stale edits/publications are rejected;
+reload the latest draft rather than overwriting another operator's work. Only the
+latest published snapshot is exposed publicly; drafts and publishing APIs require
+the appropriate tenant administrator or platform-operator session and CSRF protection.
+Previously published snapshots are not an order-by-order legal acceptance archive.
+Editing policies does not record customer consent, alter existing orders, change
+authentication settings or automatically issue refunds/deletions.
+
+Public links (no sign-in required after publication):
+
+| Scope | Policy index | Example privacy page |
+|---|---|---|
+| Platform | `https://tenali.biz/policies/platform` | `https://tenali.biz/policies/platform/privacy` |
+| Tenant path | `/c/<slug>/policies/tenant` | `/c/<slug>/policies/tenant/privacy` |
+| Tenant verified domain | `/policies/tenant` | `/policies/tenant/privacy` |
+
+Other page slugs are `terms`, `shipping`, `payment`, `returns`, `data-deletion` and
+`contact` (platform has privacy, terms, deletion and contact only). The footer,
+sign-in and checkout pages link to the relevant scope. Draft-only pages explicitly
+report that they are unpublished; do not submit these URLs for provider review until
+the policies are reviewed and published.
+
+Integration checklist:
+
+- **Google OAuth / Supabase social sign-in:** configure the production app homepage,
+  privacy and terms URLs on a verified domain, with correct app identity and only
+  the required scopes. The main privacy/terms documents cover authentication data;
+  no separate authentication-policy page is added. Check each enabled provider's
+  current requirements rather than assuming these templates complete verification.
+- **Facebook Login:** supply the published platform privacy and
+  `https://tenali.biz/policies/platform/data-deletion` instructions URL where the
+  provider accepts deletion instructions. This implementation describes a manual
+  email request, not a signed-request callback or automated deletion/status service.
+  If Meta requires a callback for the app's configuration, implement and verify that
+  workflow separately. Removing an app in a provider's settings alone does not erase
+  Tenali/tenant records.
+- **Razorpay:** submit the tenant seller's published terms, privacy, returns/refunds
+  and contact pages, plus the required business/about and actual product/pricing
+  information. Contact templates include a store description; the catalogue remains
+  the pricing source. Publish shipping/payment terms that match the store's actual
+  operations. Provider KYC, review, live-key and webhook checks remain separate.
+- **Shiprocket/couriers:** confirm dispatch/transit windows, service areas, charges,
+  tracking, failed delivery and returns with the actual shipping configuration.
+  Publish disclosures of the delivery/contact data shared with fulfilment providers.
+- Arrange real support handling, retention/deletion procedures and required legal
+  review. These pages do not implement a grievance desk, automatic erasure, consent
+  tracking or guaranteed integration approval.
+
+Official policy references:
+- [Google OAuth policies (including public homepage requirements)](https://developers.google.com/identity/protocols/oauth2/policies)
+- [Meta data-deletion requests](https://developers.facebook.com/docs/development/create-an-app/app-dashboard/data-deletion-callback/)
+- [Razorpay business website review](https://razorpay.com/docs/payments/dashboard/account-settings/business-website-details/)
 
 Generate and store the encryption key in the deployment secret manager (not Git or
 browser environment variables):

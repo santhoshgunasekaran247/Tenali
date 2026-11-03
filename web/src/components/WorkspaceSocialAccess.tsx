@@ -4,6 +4,7 @@ import { tenantSlug } from "../features/tenantTransport";
 import type { FederationConfig, SocialUser } from "../features/shopperFederation";
 import { socialLogin } from "../features/shopperFederation";
 import { SocialProviderButtons } from "./SocialProviderButtons";
+import { PolicyNotice } from "./PolicyLinks";
 
 export function WorkspaceSocialAccess({ register = false, workspaceSlug }: { register?: boolean; workspaceSlug?: string }) {
   const auth = useAuth();
@@ -47,6 +48,7 @@ export function WorkspaceSocialAccess({ register = false, workspaceSlug }: { reg
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to create workspace."); setBusy(false); }
   };
   return <section className="workspace-social-access" aria-label={register ? "Create workspace" : "Owner social sign-in"}>
+    <PolicyNotice scope="platform" />
     <div className="social-section-heading"><h2>{register ? "Start with your social account" : "Workspace owner sign-in"}</h2>
       <p>{register ? "A verified identity for your new business workspace." : "Use the social account you used to create this workspace."}</p></div>
     {error ? <p className="ops-error" role="alert">{error}</p> : null}
