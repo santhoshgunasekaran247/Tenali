@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../features/auth";
@@ -77,7 +78,7 @@ export function CheckoutPage() {
   if (!storefront || !cart.items.length) return <main className="loading">Your cart is empty. <Link to="/">Browse products</Link></main>;
   return <main className="shop-account-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
     <p className="policy-notice">Review this seller&apos;s <Link to={policyPath("tenant", "terms")}>terms</Link>, <Link to={policyPath("tenant", "privacy")}>privacy</Link>, <Link to={policyPath("tenant", "shipping")}>shipping and delivery</Link>, <Link to={policyPath("tenant", "payment")}>payment</Link> and <Link to={policyPath("tenant", "returns")}>cancellation, refund, return and exchange policies</Link>. <Link to={policyPath("tenant", "contact")}>Contact the seller</Link> for missing or unclear terms.</p>
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {!shopper ? <p>Loading shopper session...</p> : <form className="ops-form ops-card" onSubmit={getQuote}>
       <fieldset className="access-fields" disabled={busy || !!order}><legend>Delivery Details</legend><div className="company-fields">
         {(["name", "phone", "address", "city", "state", "pincode"] as const).map(key => <label key={key}>{({ name: "Full Name", phone: "Mobile Number", address: "Street Address", city: "City", state: "State", pincode: "PIN Code" })[key]}<input required value={address[key]} maxLength={key === "address" ? 250 : key === "phone" ? 10 : key === "pincode" ? 6 : 80} pattern={key === "phone" ? "[6-9][0-9]{9}" : key === "pincode" ? "[1-9][0-9]{5}" : undefined} onChange={event => { setAddress({ ...address, [key]: event.target.value }); setQuote(null); setRequestKey(crypto.randomUUID()); }} /></label>)}

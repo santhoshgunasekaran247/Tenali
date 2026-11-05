@@ -123,12 +123,22 @@ Add nullable `store_id` (backfilled to the default store, then set `not null`) t
 `invoice_sequences` becomes `document_sequences(company_id, store_id, kind, year, month, last_number)`
 with `kind in ('invoice','purchase')`. Formats:
 
-- Invoice: `INV-<STORECODE>-YYYYMM-NNNNN`
+- Invoice: `I<STOREID>YYYYMMDDNNNNN` (for example `I012026110600001`, exactly
+  16 characters). Revision `035_invoice_store_codes` assigns each store a permanent
+  two-character alphanumeric invoice ID, distinct from its longer editable display
+  code. IDs are unique per company and cannot be changed; new stores receive the
+  next available ID automatically, including stores created during registration.
+  The full date is the invoice date, not the posting date. The existing per-store,
+  per-month counter continues across days and format changes; it is not reset daily.
+  At 99999 invoices per store/month the API rejects new invoices explicitly rather
+  than truncating or exceeding 16 characters. Two-character IDs support 1295 stores
+  per workspace (`01` through `ZZ`; `00` reserved).
 - Purchase voucher: `PUR-<STORECODE>-YYYYMM-NNNNN` stored in a new
   `purchases.voucher_number`; the vendor's own `bill_number` stays as entered and is
   still what the GSTR-2B reconciliation matches on.
 
 Because there is no live data, counters start at 1 for every store at cut-over.
+Existing invoices keep their issued numbers, including older hyphenated formats.
 Existing test invoices keep their old `INV-YYYYMM-…` strings (or are purged with the
 rest of the test data); the migration does not try to continue or renumber them.
 `invoice_number` uniqueness is per company, so old and new formats cannot collide.

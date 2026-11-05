@@ -1,3 +1,5 @@
+import { useDraftState } from "../features/drafts";
+import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Trash2, Users } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -22,18 +24,18 @@ export function InventoryPage() {
   const [missingSources,setMissingSources]=useState<InventoryMissingSource[]>([]);
   const [search,setSearch]=useState("");const[vendorFilter,setVendorFilter]=useState("");const[includeInactive,setIncludeInactive]=useState(false);
   const [selectedIds,setSelectedIds]=useState<string[]>([]);const[bulkVendor,setBulkVendor]=useState("");
-  const [selectedId,setSelectedId]=useState<string|null>(null);const[tab,setTab]=useState<'details'|'variants'|'vendors'|'stock'>('details');
-  const [view,setView]=useState<'products'|'alerts'|'check'>(()=>new URLSearchParams(location.search).get('view')==='alerts'?'alerts':'products');const[editor,setEditor]=useState<'product'|'variant'|null>(null);
-  const [newProduct,setNewProduct]=useState(false);const[variantTarget,setVariantTarget]=useState<InventoryVariant|undefined>();
-  const [offerEditor,setOfferEditor]=useState<{offer?:InventoryOffer;variantId:string|null}|null>(null);
+  const [selectedId,setSelectedId]=useDraftState<string|null>("InventoryPage.selectedId", null);const[tab,setTab]=useDraftState<'details'|'variants'|'vendors'|'stock'>("InventoryPage.tab", 'details');
+  const [view,setView]=useState<'products'|'alerts'|'check'>(()=>new URLSearchParams(location.search).get('view')==='alerts'?'alerts':'products');const[editor,setEditor]=useDraftState<'product'|'variant'|null>("InventoryPage.editor", null);
+  const [newProduct,setNewProduct]=useDraftState("InventoryPage.newProduct", false);const[variantTarget,setVariantTarget]=useDraftState<InventoryVariant|undefined>("InventoryPage.variantTarget", undefined);
+  const [offerEditor,setOfferEditor]=useDraftState<{offer?:InventoryOffer;variantId:string|null}|null>("InventoryPage.offerEditor", null);
   const [loading,setLoading]=useState(true);const[busy,setBusy]=useState(false);const[error,setError]=useState("");const[message,setMessage]=useState("");
-  const [stock,setStock]=useState({variant_id:"",direction:"IN" as "IN"|"OUT",quantity:"",notes:""});const[movements,setMovements]=useState<InventoryMovement[]>([]);
-  const [reminders,setReminders]=useState<Record<string,string>>({});
-  const [lookupKind,setLookupKind]=useState<'brands'|'categories'>('brands');const[lookupName,setLookupName]=useState("");const[showLookup,setShowLookup]=useState(false);
+  const [stock,setStock]=useDraftState("InventoryPage.stock", {variant_id:"",direction:"IN" as "IN"|"OUT",quantity:"",notes:""});const[movements,setMovements]=useState<InventoryMovement[]>([]);
+  const [reminders,setReminders]=useDraftState<Record<string,string>>("InventoryPage.reminders", {});
+  const [lookupKind,setLookupKind]=useDraftState<'brands'|'categories'>("InventoryPage.lookupKind", 'brands');const[lookupName,setLookupName]=useDraftState("InventoryPage.lookupName", "");const[showLookup,setShowLookup]=useDraftState("InventoryPage.showLookup", false);
   const detailDialog=useRef<HTMLDialogElement>(null);
   const createDialog=useRef<HTMLDialogElement>(null);
   const selected=products.find(product=>product.id===selectedId);
-  const [stockKey,setStockKey]=useState(postingKey);
+  const [stockKey,setStockKey]=useDraftState("InventoryPage.stockKey", postingKey);
   const storeContext=useStores();
   const [transferOpen,setTransferOpen]=useState(false);
   const {user}=useAuth();
@@ -65,7 +67,7 @@ export function InventoryPage() {
       <button role="tab" type="button" aria-selected={view==='alerts'} onClick={()=>setView('alerts')}><Bell size={16}/>Reorder Alerts ({alerts.length})</button>
       <button role="tab" type="button" aria-selected={view==='check'} onClick={()=>setView('check')}>Stock check ({reconciliation.filter(row=>Number(row.difference)!==0||Number(row.missing_document_references)>0).length})</button>
     </div></header>
-    {!selected&&!newProduct&&error?<p role="alert" className="inventory-feedback ops-error">{error}</p>:null}{!selected&&!newProduct&&message?<p role="status" className="inventory-feedback">{message}</p>:null}{loading?<p className="inventory-feedback" role="status">Loading inventory...</p>:null}
+    {!selected&&!newProduct&&error?<FloatingAlert>{error}</FloatingAlert>:null}{!selected&&!newProduct&&message?<FloatingAlert tone="success">{message}</FloatingAlert>:null}{loading?<p className="inventory-feedback" role="status">Loading inventory...</p>:null}
     {view==='check'&&!selected&&!newProduct&&!loading&&!error?<StockCheckPanel rows={reconciliation} missingSources={missingSources} busy={busy}
       onOpen={id=>{const product=products.find(item=>item.id===id);if(product)open(product,'stock');}}
       onAttribute={(id,reference,notes)=>perform(()=>api.inventoryAttributeExternalSource(id,reference,notes),"Document reference saved. Stock quantities were not changed.")}/>:null}
@@ -104,7 +106,7 @@ export function InventoryPage() {
         <div className="inventory-tabs" role="tablist" aria-label="Product detail views">{(['details','variants','vendors','stock'] as const).map(value=><button type="button" role="tab" aria-selected={tab===value} key={value} onClick={()=>{setTab(value);setEditor(null);setOfferEditor(null);}}>{value==='vendors'?'Vendor Offers':value==='stock'?'Owned Stock':value==='details'?'Product Details':'Variants'}</button>)}</div>
         </div>
         {selected.pricing_error?<p className="ops-error">{selected.pricing_error}</p>:null}
-        {error?<p role="alert" className="inventory-dialog-feedback ops-error">{error}</p>:null}{message?<p role="status" className="inventory-dialog-feedback">{message}</p>:null}
+        {error?<FloatingAlert>{error}</FloatingAlert>:null}{message?<FloatingAlert tone="success">{message}</FloatingAlert>:null}
         {tab==='details'?editor==='product'?<ProductEditor key={selected.id} product={selected} lookups={lookups} hsn={hsn} onSaved={saved} onClose={()=>setEditor(null)}/>:<>
           <div className="inventory-summary"><div><span>Catalog Price</span><strong>{inventoryMoney(selected.catalog_price)}</strong></div><div><span>Discount</span><strong>{selected.effective_discount==null?'-':`${Number(selected.effective_discount)}%`}</strong></div><div><span>Preferred Vendor</span><strong>{selected.preferred_vendor_name||'Not selected'}</strong></div><div><span>Owned Stock</span><strong>{Number(selected.stock_qty)}</strong></div></div>
           <p>{selected.description||'No description.'}</p><dl className="inventory-specs">{[['Item name',selected.item_name],['Size',selected.size],['Colour',selected.colour],['Weight (kg)',selected.weight],['Height (cm)',selected.height],['Width (cm)',selected.width],['Length (cm)',selected.length],...Object.entries(selected.attributes)].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>

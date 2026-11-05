@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -41,7 +43,7 @@ export function SettlementsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<BorrowingEntry[]>([]);
   const [summary, setSummary] = useState<BorrowingSummary[]>([]);
-  const [form, setForm] = useState<BorrowingForm>(EMPTY_FORM);
+  const [form, setForm] = useDraftState<BorrowingForm>("SettlementsPage.form", EMPTY_FORM);
   const [selectedParty, setSelectedParty] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -218,7 +220,7 @@ export function SettlementsPage() {
             <span className="catalog-count">{summary.length} parties</span>
           </div>
 
-          {error ? <p className="ops-error">{error}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
 
           <div className="ops-list-tools">
             <PartySelect parties={parties} value={selectedParty} onChange={setSelectedParty} label="Party filter" placeholder="All parties" />

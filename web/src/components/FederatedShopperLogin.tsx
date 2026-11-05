@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { accountRequest, type Shopper } from "../features/shop";
 import type { FederationConfig, SocialUser } from "../features/shopperFederation";
@@ -46,7 +47,7 @@ export function FederatedShopperLogin({ onSignedIn }: { onSignedIn: (shopper: Sh
   };
   return <section className="access-panel">
     <PolicyNotice scope="tenant" />
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {!config ? <p>Loading sign-in options...</p> : !config.enabled ? <p role="status">Social sign-in is not configured yet. Please contact the store. Email/password registration is disabled.</p> :
       social ? <form className="ops-form" onSubmit={submit}><fieldset disabled={busy} className="access-fields">
         <legend>Complete your shopper profile</legend>

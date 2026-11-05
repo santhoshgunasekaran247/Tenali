@@ -1,3 +1,5 @@
+import { FloatingAlert } from "./Notifications";
+import { useClearDrafts, useDraftState } from "../features/drafts";
 import { FormEvent, useState } from "react";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import { api } from "../api";
@@ -30,15 +32,17 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   product?: InventoryProduct; variant?: InventoryVariant; variantMode?: boolean; lookups: InventoryLookups; hsn: HsnMaster[];
   onSaved: (product: InventoryProduct) => void; onClose: () => void;
 }) {
-  const [draft, setDraft] = useState<InventoryProductInput & {variant_name:string}>(() => ({
+  const draftKey = `inventory.product.${product?.id || "new"}.${variantMode ? variant?.id || "new-variant" : "base"}.`;
+  const clearDrafts = useClearDrafts();
+  const [draft, setDraft] = useDraftState<InventoryProductInput & {variant_name:string}>(`${draftKey}form`, () => ({
     ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, hsn_code: null, image_url: null, image_urls: [],
     catalog_visible: false, best_seller: false, sru_special: false, home_order: 999, minimum_order_quantity: 1,
     ...(product && !variantMode ? productPayload(product) : {}),
     ...(variantMode ? { pricing_mode: "inherit" as const, ...(variant ? itemPayload(variant) : {}) } : {}),
     variant_name: variant?.variant_name || "",
   }));
-  const [attributes, setAttributes] = useState<Array<[string,string]>>(Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
-  const [gallery, setGallery] = useState((!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
+  const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
+  const [gallery, setGallery] = useDraftState(`${draftKey}gallery`, (!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
   const [saving, setSaving] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [error, setError] = useState("");
@@ -62,6 +66,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       const result = variantMode && product
         ? await api.inventorySaveVariant(product.id,{...item,variant_name:draft.variant_name.trim() || [draft.size,draft.colour].filter(Boolean).join(" / ")},variant?.id)
         : await api.inventorySaveProduct({...draft,...item,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
+      clearDrafts(draftKey);
       onSaved(result);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to save product."); }
     finally { setSaving(false); }
@@ -77,8 +82,8 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
     finally{setImageBusy(false);}
   };
   return <section className="inventory-editor" aria-label={variantMode ? "Variant editor" : "Product editor"}>
-    <div className="inventory-section-head"><h2>{variantMode ? variant ? "Edit Variant" : "Add Variant" : product ? "Edit Product" : "Add Product"}</h2><button className="ops-link-btn" type="button" title="Close editor" aria-label="Close product editor" disabled={saving} onClick={onClose}><X size={18}/></button></div>
-    {error?<p role="alert" className="ops-error">{error}</p>:null}
+    <div className="inventory-section-head"><h2>{variantMode ? variant ? "Edit Variant" : "Add Variant" : product ? "Edit Product" : "Add Product"}</h2><button className="ops-link-btn" type="button" title="Close editor" aria-label="Close product editor" disabled={saving} onClick={() => { clearDrafts(draftKey); onClose(); }}><X size={18}/></button></div>
+    {error?<FloatingAlert>{error}</FloatingAlert>:null}
     <form className="ops-form" onSubmit={submit}><fieldset disabled={saving} className="inventory-fields">
       <label>{variantMode?"Variant Name":"Product Name"}<input required={!variantMode} maxLength={200} value={variantMode?draft.variant_name:draft.name} onChange={event=>patch(variantMode?{variant_name:event.target.value}:{name:event.target.value})}/></label>
       <label>Item Name<input maxLength={200} value={draft.item_name||""} onChange={event=>patch({item_name:event.target.value})}/></label>
@@ -125,14 +130,16 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
 export function VendorOfferEditor({ product, offer, variantId, vendors, onSaved, onClose }: {
   product:InventoryProduct; offer?:InventoryOffer; variantId:string|null; vendors:InventoryLookups['vendors']; onSaved:(product:InventoryProduct)=>void;onClose:()=>void;
 }) {
-  const [draft,setDraft]=useState<InventoryOfferInput>({vendor_id:offer?.vendor_id||"",variant_id:offer?.variant_id||variantId,mrp:offer?.mrp??null,buying_price:offer?.buying_price??null,
+  const draftKey = `inventory.offer.${product.id}.${offer?.id || variantId || "new"}.`;
+  const clearDrafts = useClearDrafts();
+  const [draft,setDraft]=useDraftState<InventoryOfferInput>(`${draftKey}form`, {vendor_id:offer?.vendor_id||"",variant_id:offer?.variant_id||variantId,mrp:offer?.mrp??null,buying_price:offer?.buying_price??null,
     available_quantity:offer?.available_quantity??0,availability:offer?.availability||"UNKNOWN",lead_time_days:offer?.lead_time_days||0,sku:offer?.sku||null,
     vendor_reference:offer?.vendor_reference||null,vendor_product_url:offer?.vendor_product_url||null,is_active:offer?.is_active??true});
   const [saving,setSaving]=useState(false);const[error,setError]=useState("");
   const patch=(values:Partial<InventoryOfferInput>)=>setDraft(previous=>({...previous,...values}));
-  const submit=async(event:FormEvent)=>{event.preventDefault();setSaving(true);setError("");try{onSaved(await api.inventorySaveOffer(product.id,draft,offer?.id));}catch(failure){setError(failure instanceof Error?failure.message:"Unable to save vendor offer.");}finally{setSaving(false);}};
-  return <section className="inventory-editor" aria-label="Vendor offer editor"><div className="inventory-section-head"><h3>{offer?"Edit Vendor Offer":"Map Vendor to Product"}</h3><button className="ops-link-btn" type="button" aria-label="Close vendor offer" title="Close vendor offer" onClick={onClose}><X size={18}/></button></div>
-    {error?<p className="ops-error" role="alert">{error}</p>:null}<form className="ops-form" onSubmit={submit}><fieldset disabled={saving} className="inventory-fields">
+  const submit=async(event:FormEvent)=>{event.preventDefault();setSaving(true);setError("");try{const result = await api.inventorySaveOffer(product.id,draft,offer?.id);clearDrafts(draftKey);onSaved(result);}catch(failure){setError(failure instanceof Error?failure.message:"Unable to save vendor offer.");}finally{setSaving(false);}};
+  return <section className="inventory-editor" aria-label="Vendor offer editor"><div className="inventory-section-head"><h3>{offer?"Edit Vendor Offer":"Map Vendor to Product"}</h3><button className="ops-link-btn" type="button" aria-label="Close vendor offer" title="Close vendor offer" onClick={() => { clearDrafts(draftKey); onClose(); }}><X size={18}/></button></div>
+    {error?<FloatingAlert>{error}</FloatingAlert>:null}<form className="ops-form" onSubmit={submit}><fieldset disabled={saving} className="inventory-fields">
       <PartySelect parties={vendors} value={draft.vendor_id} label="Vendor" required disabled={!!offer}
         onChange={id => patch({ vendor_id: id })} />
       <label>Product / Variant<select disabled={!!offer} value={draft.variant_id||""} onChange={event=>patch({variant_id:event.target.value||null})}><option value="">{product.name} - Base product</option>{product.variants.map(variant=><option value={variant.id} key={variant.id}>{variant.variant_name}</option>)}</select></label>

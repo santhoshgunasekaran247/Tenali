@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
@@ -34,9 +36,9 @@ const EMPTY_FORM: PaymentForm = {
 export function BusinessPaymentsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
-  const [form, setForm] = useState<PaymentForm>(EMPTY_FORM);
-  const [requestKey,setRequestKey]=useState(postingKey);
-  const [attachments, setAttachments] = useState<AttachmentInput[]>([]);
+  const [form, setForm] = useDraftState<PaymentForm>("BusinessPaymentsPage.form", EMPTY_FORM);
+  const [requestKey,setRequestKey]=useDraftState("BusinessPaymentsPage.requestKey", postingKey);
+  const [attachments, setAttachments] = useDraftState<AttachmentInput[]>("BusinessPaymentsPage.attachments", []);
   const [attachmentReading, setAttachmentReading] = useState(false);
   const [payments, setPayments] = useState<AccountTransaction[]>([]);
   const [attachmentTarget, setAttachmentTarget] = useState<AccountTransaction | null>(null);
@@ -134,8 +136,8 @@ export function BusinessPaymentsPage() {
           </div>
 
           {loading ? <p>Loading accounts...</p> : null}
-          {error ? <p className="ops-error">{error}</p> : null}
-          {message ? <p>{message}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+          {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
 
           <form className="ops-form" onSubmit={submit}>
             <label>

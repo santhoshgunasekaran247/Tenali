@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
@@ -80,24 +82,24 @@ export function PurchasesPage() {
   const [vendors, setVendors] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [inventory,setInventory]=useState<InventoryProduct[]>([]);
-  const [requestKey,setRequestKey]=useState(postingKey);
+  const [requestKey,setRequestKey]=useDraftState("PurchasesPage.requestKey", postingKey);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [paymentStatus, setPaymentStatus] = useState("");
-  const [form, setForm] = useState<PurchaseForm>(EMPTY_FORM);
-  const [attachments, setAttachments] = useState<AttachmentInput[]>([]);
+  const [form, setForm] = useDraftState<PurchaseForm>("PurchasesPage.form", EMPTY_FORM);
+  const [attachments, setAttachments] = useDraftState<AttachmentInput[]>("PurchasesPage.attachments", []);
   const [attachmentReading, setAttachmentReading] = useState(false);
   const [attachmentTarget, setAttachmentTarget] = useState<Purchase | null>(null);
-  const [lines, setLines] = useState<InvoiceLineInput[]>([newTaxLine()]);
+  const [lines, setLines] = useDraftState<InvoiceLineInput[]>("PurchasesPage.lines", [newTaxLine()]);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const storeContext = useStores();
   const [storeFilter, setStoreFilter] = useState("");
   const { subtotal, gstTotal, total } = calculateLineTotals(lines, false);
-  const [paymentTarget, setPaymentTarget] = useState<Purchase | null>(null);
-  const [paymentForm, setPaymentForm] = useState<PaymentForm>(EMPTY_PAYMENT_FORM);
+  const [paymentTarget, setPaymentTarget] = useDraftState<Purchase | null>("PurchasesPage.paymentTarget", null);
+  const [paymentForm, setPaymentForm] = useDraftState<PaymentForm>("PurchasesPage.paymentForm", EMPTY_PAYMENT_FORM);
   const [paymentHistory, setPaymentHistory] = useState<PurchasePayment[]>([]);
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
-  const [receiptTarget, setReceiptTarget] = useState<Purchase | null>(null);
-  const [receiptForm, setReceiptForm] = useState<ReceiptForm>(EMPTY_RECEIPT_FORM);
+  const [receiptTarget, setReceiptTarget] = useDraftState<Purchase | null>("PurchasesPage.receiptTarget", null);
+  const [receiptForm, setReceiptForm] = useDraftState<ReceiptForm>("PurchasesPage.receiptForm", EMPTY_RECEIPT_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -360,8 +362,8 @@ export function PurchasesPage() {
             <h2>Create Purchase Bill</h2>
           </div>
 
-          {error ? <p className="ops-error">{error}</p> : null}
-          {message ? <p className="ops-success-banner">{message}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+          {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
 
           <form className="ops-form" onSubmit={submit}>
             <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Receiving store" />
@@ -402,6 +404,7 @@ export function PurchasesPage() {
             <label>
               Payment Mode
               <input
+                required={Number(form.amount_paid) > 0}
                 value={form.payment_mode}
                 onChange={(event) => setForm((prev) => ({ ...prev, payment_mode: event.target.value }))}
                 placeholder="cash / bank / upi"
@@ -411,6 +414,7 @@ export function PurchasesPage() {
             <label>
               Paid From Account
               <select
+                required={Number(form.amount_paid) > 0}
                 value={form.account_id}
                 onChange={(event) => setForm((prev) => ({ ...prev, account_id: event.target.value }))}
               >

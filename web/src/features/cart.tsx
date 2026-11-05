@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import { FloatingAlert } from "../components/Notifications";
 import { useAuth } from "./auth";
 
 export type CartItem = { product_id: string; variant_id: string | null; quantity: number };
@@ -63,7 +64,7 @@ function WorkspaceCart({ companyId, children }: { companyId?: string; children: 
       }));
     },
   };
-  return <CartContext.Provider value={value}>{error ? <p className="checkout-notice ops-error" role="alert">{error}</p> : null}{children}</CartContext.Provider>;
+  return <CartContext.Provider value={value}>{error ? <FloatingAlert>{error}</FloatingAlert> : null}{children}</CartContext.Provider>;
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {

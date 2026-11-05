@@ -24,11 +24,12 @@ class MultiStoreTests(unittest.TestCase):
         from app.services.inventory_service import InventoryService
         from app.services.masters_service import MastersService
         from app.services.stores_service import StoresService
-        from schema_support import ensure_default_store
+        from schema_support import apply_invoice_store_code_migration, ensure_default_store
 
         self.text = text
         self.connection = engine.connect()
         self.outer = self.connection.begin()
+        apply_invoice_store_code_migration(self.connection)
         self.db = Session(bind=self.connection, join_transaction_mode="create_savepoint")
         self.company, self.party, self.shopper = (str(uuid4()) for _ in range(3))
         self.db.execute(text("""insert into companies(id, company_name, address, gst_number, whatsapp_number)
@@ -116,8 +117,8 @@ class MultiStoreTests(unittest.TestCase):
             invoice_date=date(2026, 10, 5), lines=[{"product_id": self.product, "description": "x", "hsn": "8516", "quantity": 1, "rate": 1180}]))
         second = billing.create_invoice(self.company, InvoiceCreate(customer_party_id=self.party, store_id=self.shop["id"], place_of_supply="33 - Tamil Nadu",
             invoice_date=date(2026, 10, 5), subtotal=100))
-        self.assertEqual(first["invoice_number"], "INV-MAIN-202610-00001")
-        self.assertEqual(second["invoice_number"], "INV-T2-202610-00001")
+        self.assertEqual(first["invoice_number"], "I012026100500001")
+        self.assertEqual(second["invoice_number"], "I022026100500001")
         self.assertEqual((first["subtotal"], first["gst_total"], first["total"]), (Decimal("1000.00"), Decimal("180.00"), Decimal("1180.00")))
         self.assertEqual(self.stock(self.main), Decimal("9"))
         purchase = PurchasesService(self.db).create_purchase(self.company, PurchaseCreate(vendor_party_id=self.party, store_id=self.shop["id"],
@@ -144,7 +145,7 @@ class MultiStoreTests(unittest.TestCase):
         self.assertEqual(dispatched["status"], "dispatched")
         invoice = self.db.execute(self.text("select invoice_number, total, collection_status, store_id from invoices where id=:id"),
                                   {"id": dispatched["invoice_id"]}).mappings().one()
-        self.assertTrue(invoice["invoice_number"].startswith("INV-WEB-"))
+        self.assertTrue(invoice["invoice_number"].startswith(f"I{self.web['invoice_code']}"))
         self.assertEqual((invoice["total"], invoice["collection_status"], str(invoice["store_id"])), (Decimal("2410.00"), "UNPAID", self.web["id"]))
         self.assertEqual(self.stock(self.main), Decimal("8"))
         outstanding = service.cod_outstanding(self.db, self.company)
@@ -207,7 +208,7 @@ class MultiStoreTests(unittest.TestCase):
         self.assertEqual(collected["status"], "collected")
         invoice = self.db.execute(self.text("select invoice_number, collection_status, amount_received, store_id from invoices where id=:id"),
                                   {"id": collected["invoice_id"]}).mappings().one()
-        self.assertTrue(invoice["invoice_number"].startswith("INV-T2-"))
+        self.assertTrue(invoice["invoice_number"].startswith(f"I{self.shop['invoice_code']}"))
         self.assertEqual((invoice["collection_status"], invoice["amount_received"], str(invoice["store_id"])), ("SETTLED", Decimal("2360.00"), self.shop["id"]))
         self.assertEqual((self.stock(self.shop["id"]), self.stock(self.main)), (Decimal("1"), Decimal("7")))
 

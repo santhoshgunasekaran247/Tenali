@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { MapPin, MessageCircle } from "lucide-react";
@@ -44,7 +45,7 @@ export function NearbyStores({ productId, variantId, productName, quantity, chec
   const label = { available: "In stock", few_left: "Few left", unavailable: "Not in stock" };
   return <section className="ops-card nearby-stores" aria-labelledby="nearby-heading">
     <h2 id="nearby-heading"><MapPin size={18} aria-hidden="true" /> Pick up at a nearby store</h2>
-    {error ? <p role="alert" className="ops-error">{error}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     <div className="shop-actions"><button type="button" className="btn light" onClick={locate}>Use my location</button>
       <label>PIN code<input inputMode="numeric" maxLength={6} value={pincode} onChange={event => setPincode(event.target.value)} placeholder="600001" /></label></div>
     {stores === null ? <p>Checking stores...</p> : !stores.length ? <p>No pickup stores are available yet. Delivery and WhatsApp enquiry remain available.</p>

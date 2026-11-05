@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { useEffect,useRef,useState } from "react";
 import { Building2,ChevronDown,LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -23,7 +24,7 @@ export function WorkspaceBar(){
       <Link to="/portal/account" className="workspace-action">{label("account","Account")}</Link>
       {auth.user.role==="owner"||auth.user.role==="admin"?<Link to="/portal/checkout" className="workspace-action">Shopper Checkout &amp; Orders</Link>:null}
       <button className="workspace-action" disabled={busy} onClick={()=>{setBusy(true);void auth.logout().catch(failure=>setError(String(failure))).finally(()=>setBusy(false));}}><LogOut size={15}/>{label("sign_out","Sign Out")}</button>
-      {error?<p role="alert" className="ops-error">{error}</p>:null}
+      {error?<FloatingAlert>{error}</FloatingAlert>:null}
     </div>
   </details>;
 }

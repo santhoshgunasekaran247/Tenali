@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
@@ -68,21 +70,21 @@ function AssetInput({ label, value, disabled, onChange, onError, privateAsset = 
 }
 
 export function CompanySetupPage() {
-  const [company, setCompany] = useState<CompanySetup | null>(null);
+  const [company, setCompany] = useDraftState<CompanySetup | null>("company.profile", null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [socialLinks, setSocialLinks] = useState("");
+  const [socialLinks, setSocialLinks] = useDraftState("company.socialLinks", "");
 
   useEffect(() => {
     let active = true;
     api.company().then((result) => {
       if (!active) return;
       setSavedSiteTheme(result.site_theme);
-      setCompany({ ...result, invoice_settings: { ...DEFAULT_INVOICE_SETTINGS, ...result.invoice_settings }, site_theme: normalizeSiteTheme(result.site_theme) });
-      setSocialLinks(JSON.stringify(result.social_links || {}, null, 2));
+      setCompany(previous => previous ?? { ...result, invoice_settings: { ...DEFAULT_INVOICE_SETTINGS, ...result.invoice_settings }, site_theme: normalizeSiteTheme(result.site_theme) });
+      if (!company) setSocialLinks(JSON.stringify(result.social_links || {}, null, 2));
     }).catch((failure) => {
       if (active) setError(failure instanceof Error ? failure.message : "Unable to load company.");
     }).finally(() => { if (active) setLoading(false); });
@@ -216,8 +218,8 @@ export function CompanySetupPage() {
         <a href="#invoice-colours">Invoice Colours</a>
       </nav>
       {loading ? <p className="company-setup-status">Loading...</p> : null}
-      {error ? <p className="company-setup-status ops-error" role="alert">{error}</p> : null}
-      {message ? <p className="company-setup-status" role="status">{message}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+      {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
       {company ? <form className="company-setup-form ops-form" onSubmit={save}>
         <fieldset id="company-profile" disabled={saving} className="company-setup-section">
           <legend>Company Details</legend>

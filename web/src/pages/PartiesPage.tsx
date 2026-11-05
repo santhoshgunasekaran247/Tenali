@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { SiteFooter } from "../components/SiteFooter";
@@ -35,9 +37,9 @@ export function PartiesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [activeOnly, setActiveOnly] = useState(true);
-  const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [form, setForm] = useDraftState<FormState>("PartiesPage.form", INITIAL_FORM);
   const [saving, setSaving] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useDraftState<string | null>("PartiesPage.editingId", null);
 
   async function loadParties() {
     setLoading(true);
@@ -229,7 +231,7 @@ export function PartiesPage() {
                 {loading ? "Loading..." : "Refresh"}
               </button>
             </div>
-            {error && <p className="ops-error">{error}</p>}
+            {error && <FloatingAlert>{error}</FloatingAlert>}
             <div className="ops-table-wrap">
               <table className="ops-table">
                 <thead>

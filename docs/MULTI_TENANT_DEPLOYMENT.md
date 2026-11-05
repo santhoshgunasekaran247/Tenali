@@ -336,7 +336,61 @@ Sessions are opaque, stored hashed, host-only HttpOnly cookies, SameSite=Lax, Se
 production and expire in 12 hours. Unsafe requests require same-origin CSRF protection.
 Changing roles/deactivating membership revokes that company's sessions for the member.
 
+## Request concurrency and billing loading
+
+Tenant boundary database checks use Starlette's worker thread pool, not the async
+event-loop thread. Each request still creates and closes its own identity session
+and performs the same host, tenant, role, module and CSRF checks. No authorization
+results are cached. Database network latency can still affect individual requests,
+but a waiting database check must not block other requests on the event loop.
+
+The billing page displays each reference dataset as it arrives. Invoice history and
+reconciliation history load independently; invoice filters and audit pagination
+do not refetch customers, accounts, HSN masters, products or company settings.
+Posting, cancellation, reconciliation and manual Refresh reload billing data.
+Failed reference requests are displayed with a retry action and prevent submission.
+Responses from superseded filters or unmounted pages are ignored.
+
+Deploy both API and web changes for these improvements; no migration is required.
+From `api`, run `python -m unittest discover -s tests -p test_tenant_concurrency.py`.
+From `web`, run `node --test tests/billing-loading.test.cjs`.
+The concurrency regression uses simulated database latency and does not measure
+production response times.
+
 ## Verification and release gates
+
+### Form feedback and navigation drafts
+
+Client-side navigation starts each new page at the top, including browser Back and
+Forward. Query-only filter changes do not reset scrolling. Section links still
+scroll to their target, including sections rendered after an asynchronous load.
+The shared route-scroll handler disables native history scroll restoration while
+mounted so the browser cannot reapply another page's position.
+
+Apply revision `035_invoice_store_codes` before deploying the new API. It adds
+immutable two-character store invoice IDs without renumbering existing invoices
+or resetting counters. New invoices use `I<STOREID>YYYYMMDDNNNNN` (16 characters).
+The store/month limit is 99999 invoices, and a workspace supports 1295 store IDs.
+
+Temporary messages use shared floating alerts throughout the app: success messages
+close after five seconds, errors remain until dismissed, and every alert has a close
+button. Persistent setup notices, record-specific problems and validation guidance
+stay inline. Required native controls have a visible `* Required` marker and a
+distinct border, including invoice/purchase payment fields when a payment is entered.
+
+Operational drafts are held only in React memory, scoped to the signed-in user and
+workspace. Navigation preserves billing and purchase lines, shipping/payment fields,
+attachments already read into the form, idempotency keys, parties, accounts,
+settlements, receivables, business payments, HSN/brand/category/store forms, inventory
+editors, company settings and custom-domain input. Saved/reset forms clear their
+input using their normal reset actions. Reloading, signing out or changing identity
+destroys the in-memory scope. No drafts are written to browser storage. Password
+and provider-credential forms are intentionally excluded; policy drafts still use
+their explicit Save draft workflow. In-progress file reads must finish before
+navigating for their completed result to remain available.
+
+From `web`, run `node --test tests/drafts.test.cjs tests/notifications.test.cjs
+tests/billing-loading.test.cjs` and `npx tsc --noEmit`.
 
 Use `api/requirements-dev.txt` for tests. `TENALI_TEST_DB=1` enables rollback-only tenant
 HTTP/RLS tests covering unauthenticated access, company overrides, record tampering,

@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ImageOff } from "lucide-react";
@@ -144,7 +145,7 @@ export function ProductPage() {
                     : <p>{Number(price) > 0 ? "Not enough stock for the minimum order. Contact the store." : "Contact the store for a quote on this item."}</p>}
                 <Link className="btn light" to="/cart">View cart</Link>
                 {cartMessage ? <p role="status">{cartMessage} <Link to="/cart">Review cart &amp; checkout</Link></p> : null}
-                {cartError ? <p role="alert" className="ops-error">{cartError}</p> : null}
+                {cartError ? <FloatingAlert>{cartError}</FloatingAlert> : null}
               </div> : null}
               {company?.phone?<a
                 className="btn whatsapp-btn"

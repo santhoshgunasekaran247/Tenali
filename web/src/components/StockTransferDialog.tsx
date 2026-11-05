@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, Plus, Trash2 } from "lucide-react";
 import { api } from "../api";
@@ -40,7 +41,7 @@ export function StockTransferDialog({ products, stores, onClose, onDone }:
     <form className="ops-form" onSubmit={submit}>
       <div className="ops-card-head"><h2><ArrowRightLeft size={18} /> Transfer stock</h2><button type="button" className="ops-link-btn" onClick={onClose}>Close</button></div>
       <p className="ops-copy-note">Moves stock immediately between two stores of this workspace. Correct a mistake with a reverse transfer, never by editing balances.</p>
-      {error ? <p role="alert" className="ops-error">{error}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       <fieldset disabled={busy} className="inventory-fields">
         <label>From store<select required value={from} onChange={event => setFrom(event.target.value)}>{stores.map(store => <option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>
         <label>To store<select required value={to} onChange={event => setTo(event.target.value)}>{stores.filter(store => store.id !== from).map(store => <option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>

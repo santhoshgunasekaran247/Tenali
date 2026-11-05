@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { useEffect, useState } from "react";
 import type { Provider } from "@supabase/supabase-js";
 import type { FederationConfig } from "../features/shopperFederation";
@@ -81,5 +82,5 @@ export function SocialLoginCallbackPage() {
     void completion.then(() => setMessage("Login complete. Return to the original window."))
       .catch(error => setMessage(error instanceof Error ? error.message : "Social login failed."));
   }, []);
-  return <main className="access-panel"><h1>Social login</h1><p role="status">{message}</p></main>;
+  return <main className="access-panel"><h1>Social login</h1><FloatingAlert tone="success">{message}</FloatingAlert></main>;
 }

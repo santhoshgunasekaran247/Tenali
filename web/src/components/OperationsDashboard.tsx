@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FloatingAlert } from "./Notifications";
 import { Link } from "react-router-dom";
 import { ArrowDownToLine, ClipboardList, Package, RefreshCw, ShoppingBag, Truck } from "lucide-react";
 import { api } from "../api";
@@ -51,7 +52,7 @@ export function OperationsDashboard() {
       </div>
     </header>
     <div className="dashboard-content">
-    {error ? <div className="ops-error" role="alert">{error} <button type="button" className="ops-link-btn" onClick={() => setRevision(value => value + 1)}>Retry</button></div> : null}
+    {error ? <FloatingAlert>{error} <button type="button" className="ops-link-btn" onClick={() => setRevision(value => value + 1)}>Retry</button></FloatingAlert> : null}
     {loading ? <p className="dashboard-loading" role="status">Loading dashboard...</p> : data ? <>
       <div className="dashboard-activity-row">
         {data.orders ? <article className="dashboard-panel dashboard-activity"><h3>Sales activity</h3><p className="dashboard-caption">Pending online / WhatsApp orders, across all dates. Counts are orders, not item quantities.</p><div className="dashboard-activity-grid">{activity.map(item => <Link key={item.label} className={`dashboard-activity-card ${item.tone}`} to="/portal/checkout"><strong>{quantity(item.value)}</strong><span>orders</span><h4><item.icon size={15} />{item.label}</h4></Link>)}</div></article> : null}

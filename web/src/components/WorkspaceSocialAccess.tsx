@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { authRequest, type Identity, useAuth } from "../features/auth";
 import { tenantSlug } from "../features/tenantTransport";
@@ -51,7 +52,7 @@ export function WorkspaceSocialAccess({ register = false, workspaceSlug }: { reg
     <PolicyNotice scope="platform" />
     <div className="social-section-heading"><h2>{register ? "Start with your social account" : "Workspace owner sign-in"}</h2>
       <p>{register ? "A verified identity for your new business workspace." : "Use the social account you used to create this workspace."}</p></div>
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {!config ? <p className="social-caption" role="status">{error ? "Sign-in options could not be loaded. Refresh to retry." : "Loading sign-in options..."}</p> : !config.enabled ? <p className="social-setup-notice" role="status">Social sign-in is not available yet. {register ? "Ask the platform administrator to complete authentication setup." : "Existing staff can sign in with their password below."}</p> : <>
       {!register && !tenantSlug() && !auth.storefront && workspaceSlug === undefined ? <label className="social-workspace-label">Workspace address<input value={form.slug} maxLength={48} onChange={event => setForm({ ...form, slug: event.target.value.toLowerCase().trim() })} /></label> : null}
       {register && social ? <form className="ops-form" onSubmit={create}><fieldset disabled={busy} className="access-fields">

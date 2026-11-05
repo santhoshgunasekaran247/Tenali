@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { accountRequest } from "../features/shop";
 import { ExternalLink, KeyRound, ShieldCheck } from "lucide-react";
@@ -29,8 +30,8 @@ export function SocialLoginSettings() {
   };
   return <section className="authentication-settings" id="social-login">
     <div className="platform-section-title"><div className="settings-title-row"><div><h2>Social login</h2><p>Connect Supabase once. Use it for shopper accounts and workspace owner sign-in.</p></div><span className={`platform-status ${savedEnabled ? "is-enabled" : ""}`}>{!form ? "Loading settings" : savedEnabled ? "Enabled in Tenali" : "Not enabled"}</span></div></div>
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     <div className="authentication-settings-layout">
     <div>{!form ? <p role="status">{error ? "Settings could not be loaded. Refresh to retry." : "Loading social login settings..."}</p> : <form className="ops-form authentication-form" onSubmit={save}><fieldset disabled={busy} className="authentication-fields">
       <section className="settings-card"><h3><KeyRound size={18}/>Project connection</h3><p className="social-caption">Use the same Supabase project as your database. Only public configuration belongs here.</p>

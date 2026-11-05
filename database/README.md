@@ -109,7 +109,7 @@ tests can be enabled with `TENALI_TEST_DB=1` when running `api/tests/test_invent
   carry `store_id`. The `tenali_default_store` trigger derives it from the parent
   document or the default store when a caller omits it.
 - Numbering is per store and per month from `document_sequences`:
-  `INV-<CODE>-YYYYMM-NNNNN` and an internal `PUR-<CODE>-YYYYMM-NNNNN` voucher
+  `I<STOREID>YYYYMMDDNNNNN` (16 characters, no hyphens) and an internal `PUR-<CODE>-YYYYMM-NNNNN` voucher
   (`purchases.voucher_number`); the vendor's `bill_number` stays as entered.
   Counters start at 1 at cut-over; `invoice_sequences` was dropped.
 - Selling prices are **GST-inclusive** (`companies.prices_include_gst`, true for all

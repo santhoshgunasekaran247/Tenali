@@ -151,12 +151,12 @@ export type InventoryReconciliation = {
   movement_count: number; missing_document_references: number;
 };
 export type Store = {
-  id: string; company_id: string; code: string; name: string; kind: 'offline' | 'warehouse' | 'online'; holds_stock: boolean;
+  id: string; company_id: string; code: string; invoice_code: string; name: string; kind: 'offline' | 'warehouse' | 'online'; holds_stock: boolean;
   fulfilment_store_id: string | null; allows_pickup: boolean; address: string | null; state_code: string | null; pincode: string | null;
   latitude: number | null; longitude: number | null; gst_number: string | null; whatsapp_number: string | null;
   settlement_account_id: string | null; is_default: boolean; is_active: boolean;
 };
-export type StoreInput = Omit<Store, 'id' | 'company_id' | 'holds_stock' | 'is_default'>;
+export type StoreInput = Omit<Store, 'id' | 'company_id' | 'invoice_code' | 'holds_stock' | 'is_default'>;
 export type StockTransfer = {
   id: string; from_store_id: string; to_store_id: string; from_store_code: string; to_store_code: string; transfer_date: string;
   reference: string | null; notes: string; lines: Array<{ product_id: string; variant_id: string | null; quantity: number }>;

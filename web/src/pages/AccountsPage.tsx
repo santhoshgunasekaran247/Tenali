@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -116,12 +118,10 @@ function getTransactionStatus(
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<AccountTransaction[]>([]);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [txForm, setTxForm] = useState<TransactionFormState>(EMPTY_TX_FORM);
+  const [form, setForm] = useDraftState<FormState>("AccountsPage.form", EMPTY_FORM);
+  const [txForm, setTxForm] = useDraftState<TransactionFormState>("AccountsPage.txForm", EMPTY_TX_FORM);
   const [txFilters, setTxFilters] = useState<TransactionFilterState>(DEFAULT_TX_FILTERS);
-  const [periodLockForm, setPeriodLockForm] = useState<PeriodLockFormState>(
-    DEFAULT_PERIOD_LOCK_FORM
-  );
+  const [periodLockForm, setPeriodLockForm] = useDraftState<PeriodLockFormState>("AccountsPage.periodLockForm", DEFAULT_PERIOD_LOCK_FORM);
   const [periodLocks, setPeriodLocks] = useState<PeriodLock[]>([]);
   const [journalFilters, setJournalFilters] = useState<JournalFilterState>(
     DEFAULT_JOURNAL_FILTERS
@@ -132,7 +132,7 @@ export function AccountsPage() {
   const [journalBuckets, setJournalBuckets] = useState<AuditJournalBucket[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
   const [activeOnly, setActiveOnly] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useDraftState<string | null>("AccountsPage.editingId", null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -525,7 +525,7 @@ export function AccountsPage() {
             </label>
           </div>
 
-          {error ? <p className="ops-error">{error}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
 
           <div className="ops-table-wrap">
             <table className="ops-table">

@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { useMemo, useState } from "react";
 import { api } from "../api";
 import { GstReconciliation } from "../components/GstReconciliation";
@@ -86,7 +87,7 @@ export function ReportsPage() {
               <input type="date" value={asOfDate} onChange={(event) => setAsOfDate(event.target.value)} />
             </label>
           </div>
-          {periodError ? <p className="ops-error">{periodError}</p> : null}
+          {periodError ? <FloatingAlert>{periodError}</FloatingAlert> : null}
         </article>
 
         <article className="ops-card">

@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { FederatedShopperLogin } from "../components/FederatedShopperLogin";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -63,8 +64,8 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   return <main className="shop-account-page">
     <header className="shop-account-heading"><Link to="/">Back to Storefront</Link><h1>{shopper ? "My Shopper Account" : register ? "Create Shopper Account" : "Shopper Sign In"}</h1><p>{storefront.company_name} · Separate from staff and other stores.</p></header>
     <div className="shop-account-content">
-      {error ? <p className="ops-error" role="alert">{error}</p> : null}
-      {message ? <p role="status">{message}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+      {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
       {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <>
         <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p><p>Phone: {shopper.phone || "Not recorded"} (unverified)</p>
           <details><summary>Edit contact details</summary><form className="ops-form" onSubmit={(event: FormEvent) => {

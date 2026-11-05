@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PolicyDocument } from "./PolicyDocument";
@@ -61,8 +62,8 @@ export function PolicyEditor({ scope }: { scope: PolicyScope }) {
     {scope === "platform" ? <p className="checkout-notice">Confirm the supplied address &quot;Chennai 100&quot; includes the correct full postal code before publishing.</p> : null}
     <p><Link to={policyPath(scope)}>View public policy index</Link></p>
     {loading ? <p role="status">Loading policy drafts...</p> : null}
-    {error ? <div role="alert" className="ops-error"><p>{error}</p><button type="button" className="ops-link-btn" disabled={busy || dirty} onClick={() => setRetry(value => value + 1)}>Reload latest drafts</button>{dirty ? <p>Copy unsaved work first, then discard edits to reload.</p> : null}</div> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {error ? <FloatingAlert><p>{error}</p><button type="button" className="ops-link-btn" disabled={busy || dirty} onClick={() => setRetry(value => value + 1)}>Reload latest drafts</button>{dirty ? <p>Copy unsaved work first, then discard edits to reload.</p> : null}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     {!loading && current && content ? <>
       <label className="policy-selector">Policy<select disabled={busy || dirty} value={selected} onChange={event => {
         const next = items.find(item => item.kind === event.target.value);

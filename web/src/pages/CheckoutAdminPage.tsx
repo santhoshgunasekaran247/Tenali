@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, Settings2, ShoppingBag, Truck } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -138,8 +139,8 @@ export function CheckoutAdminPage() {
         <button type="button" aria-pressed={tab === "enquiries"} onClick={() => setTab("enquiries")}><MessageCircle size={18} aria-hidden="true" />Enquiries</button>
         <Link to="/">View storefront<ExternalLink size={14} aria-hidden="true" /></Link>
       </nav>
-      {error ? <p className="checkout-notice ops-error" role="alert">{error}</p> : null}
-      {message ? <p className="checkout-notice" role="status">{message}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+      {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
       {tab === "setup" ? <>
         <section className="checkout-overview" aria-label="Store checkout status">
           <div><p className="checkout-kicker">Your store status</p><h2>{statusLabel}</h2><p>To accept real orders: finish your Razorpay and Shiprocket account setup, save their login details here, test a payment, then turn on Add to Cart below. Turning it on only shows the shopping button; it cannot activate your payment or shipping account.</p></div>

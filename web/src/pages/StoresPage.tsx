@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Save, Star, X } from "lucide-react";
@@ -11,11 +13,20 @@ const empty: StoreInput = {
 const text = (value: string | number | null | undefined) => value === null || value === undefined ? "" : String(value);
 const clean = (value: string) => value.trim() === "" ? null : value.trim();
 
+export function storeInput(store: Store): StoreInput {
+  return {
+    code: store.code, name: store.name, kind: store.kind, fulfilment_store_id: store.fulfilment_store_id,
+    allows_pickup: store.allows_pickup, address: store.address, state_code: store.state_code, pincode: store.pincode,
+    latitude: store.latitude, longitude: store.longitude, gst_number: store.gst_number,
+    whatsapp_number: store.whatsapp_number, settlement_account_id: store.settlement_account_id, is_active: store.is_active,
+  };
+}
+
 export function StoresPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [form, setForm] = useState<StoreInput>(empty);
-  const [editing, setEditing] = useState<Store | null>(null);
+  const [form, setForm] = useDraftState<StoreInput>("StoresPage.form", empty);
+  const [editing, setEditing] = useDraftState<Store | null>("StoresPage.editing", null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,12 +66,13 @@ export function StoresPage() {
   const stockStores = stores.filter(store => store.holds_stock && store.is_active);
   return <main className="ops-page masters-page">
     <header className="masters-heading"><Link className="ops-inline-link" to="/portal">Operations Portal</Link><h1>Stores</h1>
-      <p>Shops and warehouses hold stock and number their own documents (INV-CODE-…, PUR-CODE-…). The online store sells from its fulfilment warehouse; shops that allow pickup appear to shoppers as nearby stores.</p></header>
-    {error ? <p role="alert" className="masters-feedback ops-error">{error}</p> : null}
-    {message ? <p role="status" className="masters-feedback">{message}</p> : null}
+      <p>Invoices use I + the store's permanent two-character invoice ID + YYYYMMDD + a five-digit monthly sequence (16 characters, no hyphens). Purchase vouchers use PUR-CODE-YYYYMM-00001. The online store sells from its fulfilment warehouse; shops that allow pickup appear to shoppers as nearby stores.</p></header>
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     <section className="ops-grid">
       <article className="ops-card"><div className="ops-card-head"><h2>{editing ? `Edit ${editing.code}` : "Add store"}</h2>{editing ? <button type="button" className="ops-link-btn" aria-label="Cancel editing" onClick={reset}><X size={16} /></button> : null}</div>
         <form className="ops-form" onSubmit={save}>
+          {editing ? <p>Permanent invoice store ID: <strong>{editing.invoice_code}</strong></p> : null}
           <label>Code<input required maxLength={8} pattern="[A-Za-z0-9]{2,8}" value={form.code} onChange={event => update({ code: event.target.value.toUpperCase() })} /><small>2–8 letters/digits; used in document numbers and cannot change once documents exist.</small></label>
           <label>Name<input required maxLength={120} value={form.name} onChange={event => update({ name: event.target.value })} /></label>
           <label>Kind<select value={form.kind} onChange={event => update({ kind: event.target.value as StoreInput["kind"] })} disabled={!!editing}>
@@ -83,10 +95,10 @@ export function StoresPage() {
           <button className="btn" disabled={busy}><Save size={16} />{editing ? "Save store" : "Create store"}</button>
         </form></article>
       <article className="ops-card ops-list-card"><div className="ops-card-head"><h2>All stores</h2></div>
-        <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Code</th><th>Name</th><th>Kind</th><th>Pickup</th><th>Fulfils from</th><th>State</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{stores.map(store => <tr key={store.id}><td>{store.code}{store.is_default ? <Star size={14} aria-label="Default store" /> : null}</td><td>{store.name}</td><td>{store.kind}</td><td>{store.allows_pickup ? "Yes" : ""}</td>
+        <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Code</th><th>Invoice ID</th><th>Name</th><th>Kind</th><th>Pickup</th><th>Fulfils from</th><th>State</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>{stores.map(store => <tr key={store.id}><td>{store.code}{store.is_default ? <Star size={14} aria-label="Default store" /> : null}</td><td>{store.invoice_code}</td><td>{store.name}</td><td>{store.kind}</td><td>{store.allows_pickup ? "Yes" : ""}</td>
             <td>{store.fulfilment_store_id ? stores.find(item => item.id === store.fulfilment_store_id)?.code : ""}</td><td>{store.state_code || ""}</td><td>{store.is_active ? "Active" : "Inactive"}</td>
-            <td><button className="ops-link-btn" type="button" aria-label={`Edit ${store.code}`} onClick={() => { setEditing(store); setForm({ ...store }); }}><Pencil size={16} /></button>
+            <td><button className="ops-link-btn" type="button" aria-label={`Edit ${store.code}`} onClick={() => { setEditing(store); setForm(storeInput(store)); }}><Pencil size={16} /></button>
               {!store.is_default && store.holds_stock && store.is_active ? <button className="ops-link-btn" type="button" disabled={busy} onClick={() => void makeDefault(store)}>Make default</button> : null}</td></tr>)}</tbody></table></div>
         <p className="ops-copy-note">The default store receives documents posted without a store choice. Deactivating a store requires zero stock and no online store fulfilling from it.</p>
       </article>

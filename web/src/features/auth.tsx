@@ -3,6 +3,7 @@ import { Navigate,Outlet,useLocation } from "react-router-dom";
 import { tenantBase,tenantFetch,tenantSlug } from "./tenantTransport";
 import type { SiteTheme,StorefrontContent } from "../types";
 import { PlatformHomePage } from "../pages/PlatformHomePage";
+import { WorkspaceDraftProvider } from "./drafts";
 
 export type Workspace={company_id:string;company_name:string;tenant_slug:string;role:'owner'|'admin'|'staff'|'viewer'};
 export type Identity=Workspace&{user_id:string;email:string;display_name:string;authentication_method?:'social'|'password';nickname?:string;logo_url?:string;store_ids?:string[]|null;modules?:string[]|null};
@@ -52,7 +53,7 @@ export function AuthProvider({children}:{children:ReactNode}){
     register:async payload=>{const result=await authRequest<Session>('/register',{method:'POST',body:JSON.stringify(payload)});accept(result);return result.user;},
     logout:async()=>{await authRequest('/logout',{method:'POST'});setSession(null);window.dispatchEvent(new Event('auth-updated'));},
     switchWorkspace:async()=>{throw new Error('Each workspace requires its own login. Open the destination workspace and sign in.');},
-  }}>{children}</Context.Provider>;
+  }}><WorkspaceDraftProvider key={session ? `${session.user.company_id}:${session.user.user_id}` : "anonymous"}>{children}</WorkspaceDraftProvider></Context.Provider>;
 }
 
 export function useAuth(){const context=useContext(Context);if(!context)throw new Error('AuthProvider missing');return context;}

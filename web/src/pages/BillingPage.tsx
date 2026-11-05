@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
@@ -62,18 +64,23 @@ export function BillingPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [company, setCompany] = useState<CompanySetup | null>(null);
   const [inventory,setInventory]=useState<InventoryProduct[]>([]);
-  const [requestKey,setRequestKey]=useState(postingKey);
+  const [requestKey,setRequestKey]=useDraftState("BillingPage.requestKey", postingKey);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [collectionStatus, setCollectionStatus] = useState("");
-  const [form, setForm] = useState<InvoiceForm>(EMPTY_FORM);
-  const [lines, setLines] = useState<InvoiceLineInput[]>([newLine()]);
-  const [sameShipping, setSameShipping] = useState(true);
+  const [form, setForm] = useDraftState<InvoiceForm>("BillingPage.form", EMPTY_FORM);
+  const [lines, setLines] = useDraftState<InvoiceLineInput[]>("BillingPage.lines", [newLine()]);
+  const [sameShipping, setSameShipping] = useDraftState("BillingPage.sameShipping", true);
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
   const [reconcileRuns, setReconcileRuns] = useState<InvoiceReconcileRun[]>([]);
   const [reconcileOffset, setReconcileOffset] = useState(0);
   const [reconcileTotal, setReconcileTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [invoiceLoading, setInvoiceLoading] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [referenceErrors, setReferenceErrors] = useState<string[]>([]);
+  const [invoiceError, setInvoiceError] = useState("");
+  const [reconcileError, setReconcileError] = useState("");
   const [saving, setSaving] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -95,37 +102,46 @@ export function BillingPage() {
     }
   };
 
-  const load = async () => {
+  useEffect(() => {
+    let active = true;
     setLoading(true);
-    setError(null);
-    try {
-      const [partyRes, accountRes, invoiceRes, hsnRes, inventoryRes, companyRes] = await Promise.all([
-        api.billingCustomers(),
-        api.accounts({ active_only: true }),
-        api.invoices({ collection_status: collectionStatus || undefined, store_id: storeFilter || undefined }),
-        api.hsnMasters(),
-        api.inventoryProducts(),
-        api.company(),
-      ]);
-      const runsRes = await api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset);
-      setParties(partyRes.items.filter((party) => party.party_type !== "vendor"));
-      setAccounts(accountRes.items);
-      setCompany(companyRes);
-      setInventory(inventoryRes.items);
-      setHsnMasters(hsnRes.items);
-      setInvoices(invoiceRes.items);
-      setReconcileRuns(runsRes.items);
-      setReconcileTotal(runsRes.total);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load billing data.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    setReferenceErrors([]);
+    const report = (label: string, failure: unknown) => {
+      if (active) setReferenceErrors(previous => [...previous, `${label}: ${failure instanceof Error ? failure.message : "Unable to load data."}`]);
+    };
+    void Promise.all([
+      api.billingCustomers().then(result => { if (active) setParties(result.items.filter(party => party.party_type !== "vendor")); })
+        .catch(failure => report("Customers", failure)),
+      api.accounts({ active_only: true }).then(result => { if (active) setAccounts(result.items); })
+        .catch(failure => report("Accounts", failure)),
+      api.hsnMasters().then(result => { if (active) setHsnMasters(result.items); })
+        .catch(failure => report("HSN / SAC", failure)),
+      api.inventoryProducts().then(result => { if (active) setInventory(result.items); })
+        .catch(failure => report("Inventory", failure)),
+      api.company().then(result => { if (active) setCompany(result); })
+        .catch(failure => report("Company", failure)),
+    ]).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [refreshVersion]);
 
   useEffect(() => {
-    void load();
-  }, [collectionStatus, reconcileOffset, storeFilter]);
+    let active = true;
+    setInvoiceLoading(true); setInvoiceError("");
+    api.invoices({ collection_status: collectionStatus || undefined, store_id: storeFilter || undefined })
+      .then(result => { if (active) setInvoices(result.items); })
+      .catch(failure => { if (active) setInvoiceError(failure instanceof Error ? failure.message : "Unable to load invoices."); })
+      .finally(() => { if (active) setInvoiceLoading(false); });
+    return () => { active = false; };
+  }, [collectionStatus, storeFilter, refreshVersion]);
+
+  useEffect(() => {
+    let active = true;
+    setReconcileError("");
+    api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset).then(result => {
+      if (active) { setReconcileRuns(result.items); setReconcileTotal(result.total); }
+    }).catch(failure => { if (active) setReconcileError(failure instanceof Error ? failure.message : "Unable to load reconciliation history."); });
+    return () => { active = false; };
+  }, [reconcileOffset, refreshVersion]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -182,7 +198,7 @@ export function BillingPage() {
       setLines([newLine()]);
       setSameShipping(true);
       setMessage("Invoice posted. PDF is available in the invoice list.");
-      await load();
+      setRefreshVersion(previous => previous + 1);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to create invoice.");
     } finally {
@@ -197,7 +213,7 @@ export function BillingPage() {
     try {
       const result = await api.reconcileInvoices("operations_user");
       setMessage(`Reconciliation complete. Healed ${result.healed_count} invoice records.`);
-      await load();
+      setRefreshVersion(previous => previous + 1);
     } catch (reconcileError) {
       setError(
         reconcileError instanceof Error ? reconcileError.message : "Unable to reconcile invoices."
@@ -273,8 +289,12 @@ export function BillingPage() {
             <h2>Create Invoice</h2>
           </div>
 
-          {error ? <p className="ops-error">{error}</p> : null}
-          {message ? <p className="ops-success-banner">{message}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+          {loading ? <p role="status">Loading invoice data...</p> : null}
+          {referenceErrors.map((failure, index) => <FloatingAlert key={index}>{failure}</FloatingAlert>)}
+          {storeContext.error ? <FloatingAlert>{storeContext.error}</FloatingAlert> : null}
+          {referenceErrors.length || storeContext.error ? <button className="ops-link-btn" type="button" disabled={loading} onClick={() => { setRefreshVersion(previous => previous + 1); void storeContext.reload(); }}>Retry loading invoice data</button> : null}
+          {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
           {company && company.gst_registered !== false && (!company.address?.trim() || !/^\d{2}[A-Z0-9]{13}$/.test((company.gst_number || "").trim())) ? (
             <p className="ops-error" role="status">
               Itemized invoices require a company address and a valid 15-character GSTIN.
@@ -359,6 +379,7 @@ export function BillingPage() {
             <label>
               Payment Mode
               <input
+                required={Number(form.amount_received) > 0}
                 value={form.payment_mode}
                 onChange={(event) => setForm((prev) => ({ ...prev, payment_mode: event.target.value }))}
                 placeholder="cash / bank / upi"
@@ -368,6 +389,7 @@ export function BillingPage() {
             <label>
               Received In Account
               <select
+                required={Number(form.amount_received) > 0}
                 value={form.account_id}
                 onChange={(event) => setForm((prev) => ({ ...prev, account_id: event.target.value }))}
               >
@@ -428,7 +450,7 @@ export function BillingPage() {
               Auto-create receivable for unpaid balance
             </label>
 
-            <button className="btn" type="submit" disabled={saving || loading || !hsnMasters.length}>
+            <button className="btn" type="submit" disabled={saving || loading || !!referenceErrors.length || !!storeContext.error || !storeContext.selected || !hsnMasters.length}>
               {saving ? "Saving..." : "Post Invoice"}
             </button>
           </form>
@@ -451,7 +473,7 @@ export function BillingPage() {
             <button className="btn" type="button" onClick={() => void reconcileInvoices()} disabled={reconciling}>
               {reconciling ? "Reconciling..." : "Reconcile Now"}
             </button>
-            <button className="btn" type="button" onClick={() => void load()}>
+            <button className="btn" type="button" onClick={() => setRefreshVersion(previous => previous + 1)}>
               Refresh
             </button>
             <button className="btn" type="button" onClick={exportSalesRegisterCsv}>
@@ -459,7 +481,9 @@ export function BillingPage() {
             </button>
           </div>
 
-          {loading ? <p>Loading...</p> : null}
+          {invoiceLoading ? <p role="status">Loading invoices...</p> : null}
+          {invoiceError ? <FloatingAlert>{invoiceError}</FloatingAlert> : null}
+          {reconcileError ? <FloatingAlert>{reconcileError}</FloatingAlert> : null}
 
           <div className="ops-table-wrap">
             <table className="ops-table">
@@ -500,7 +524,7 @@ export function BillingPage() {
                           onClick={() => void exportInvoice(item)}>
                           <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}
                         </button>
-                        {item.status!=='CANCELLED'&&item.amount_received===0?<button type="button" className="ops-link-btn" onClick={()=>{const reason=window.prompt('Reason for cancellation (stock is returned; no refund is issued):');if(reason?.trim())void api.cancelInvoice(item.id,reason).then(()=>load()).catch(failure=>setError(String(failure)));}}>Cancel Invoice</button>:null}
+                        {item.status!=='CANCELLED'&&item.amount_received===0?<button type="button" className="ops-link-btn" onClick={()=>{const reason=window.prompt('Reason for cancellation (stock is returned; no refund is issued):');if(reason?.trim())void api.cancelInvoice(item.id,reason).then(()=>setRefreshVersion(previous => previous + 1)).catch(failure=>setError(String(failure)));}}>Cancel Invoice</button>:null}
                         {item.status!=='CANCELLED'&&(item.collection_status === "UNPAID" ||
                           item.collection_status === "PARTIAL") && (
                           <Link

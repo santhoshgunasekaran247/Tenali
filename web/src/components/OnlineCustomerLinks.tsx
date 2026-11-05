@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { useEffect, useState } from "react";
 import { accountRequest, type Shopper } from "../features/shop";
 import { api } from "../api";
@@ -43,8 +44,8 @@ export function OnlineCustomerLinks() {
   const filtered = items.filter(item => [item.display_name, item.email, item.phone].some(value => value?.toLowerCase().includes(query)));
   return <section className="ops-card"><h2>Online customer accounts</h2>
     <p>Online customers are separate from counter customers. Phone numbers are unverified. Only link after confirming the customer's identity directly.</p>
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     <label className="online-customer-search">Search online customers<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, email or phone" /></label>
     {loading ? <p role="status">Loading online customer accounts...</p> : null}
     {error ? <button className="ops-link-btn" type="button" disabled={loading} onClick={() => void load().catch(failure => setError(String(failure)))}>Retry</button> : null}

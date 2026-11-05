@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { FormEvent,useState } from "react";
 import { Building2,Eye,EyeOff,LogIn } from "lucide-react";
 import { Link,Navigate,useLocation,useNavigate } from "react-router-dom";
@@ -19,7 +20,7 @@ export function AccessPage({register=false}:{register?:boolean}){
     navigate(destination,{replace:true});
   }catch(failure){setError(failure instanceof Error?failure.message:'Unable to sign in.');}finally{setBusy(false);}};
   return <main className="access-page workspace-access-page"><section className="access-panel workspace-access-panel"><div className="access-title"><span className="access-title-icon"><Building2 size={26}/></span><div><h1>Welcome back</h1><p>{auth.storefront?.company_name||'Tenali Business Workspace'}</p></div></div>
-    {auth.error?<p role="alert" className="ops-error">{auth.error}<button className="ops-link-btn" onClick={()=>void auth.refresh()}>Retry</button></p>:null}{error?<p className="ops-error" role="alert">{error}</p>:null}
+    {auth.error?<p role="alert" className="ops-error">{auth.error}<button className="ops-link-btn" onClick={()=>void auth.refresh()}>Retry</button></p>:null}{error?<FloatingAlert>{error}</FloatingAlert>:null}
     {!tenantBase()&&!auth.storefront?<label className="social-workspace-label">Workspace address<input aria-label="Workspace address" aria-describedby="workspace-address-help" form="workspace-password-login" required minLength={3} maxLength={48} value={form.slug} autoComplete="organization" placeholder="e.g. sourcebysru" onChange={event=>setForm(previous=>({...previous,slug:event.target.value.toLowerCase().trim()}))}/><span id="workspace-address-help" className="access-workspace-url">Used for both owner and staff sign-in.</span></label>:null}
     <WorkspaceSocialAccess workspaceSlug={form.slug} />
     <div className="access-divider"><span>or sign in with a password</span></div>

@@ -46,6 +46,7 @@ class StoreOut(BaseModel):
     id: UUID
     company_id: UUID
     code: str
+    invoice_code: str
     name: str
     kind: str
     holds_stock: bool

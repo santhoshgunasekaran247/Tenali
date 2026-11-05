@@ -34,6 +34,14 @@ def ensure_default_store(db, company_id: str, code: str = "MAIN") -> str:
     return str(row)
 
 
+def apply_invoice_store_code_migration(connection):
+    if "invoice_code" in {column["name"] for column in inspect(connection).get_columns("stores")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "035_invoice_store_codes.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def apply_inventory_deletion_migration(connection):
     migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "033_inventory_product_deletion.py"))
     with Operations.context(MigrationContext.configure(connection)):

@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { useState } from "react";
 import { api } from "../api";
 import type { Party } from "../types";
@@ -32,7 +33,7 @@ export function BillingCustomer({ parties, value, onChange, onCreated, disabled 
       <label>Phone number<input type="tel" autoComplete="tel" value={form.phone} maxLength={40} onChange={event => setForm({ ...form, phone: event.target.value })} /></label>
       <label>Email (optional)<input type="email" value={form.email} maxLength={254} onChange={event => setForm({ ...form, email: event.target.value })} /></label>
       <p>Phone is recorded, not verified. Online accounts stay separate unless an administrator links them.</p>
-      {error ? <p className="ops-error" role="alert">{error}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       <button type="button" className="btn light" onClick={() => void save()}>{busy ? "Adding..." : "Add and select customer"}</button>
     </fieldset> : null}
   </section>;

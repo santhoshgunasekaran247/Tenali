@@ -1,3 +1,4 @@
+import { FloatingAlert } from "./Notifications";
 import { useEffect, useState } from "react";
 import { Download, FileText, Paperclip, RefreshCw, Trash2, Upload, X } from "lucide-react";
 import { api } from "../api";
@@ -58,7 +59,7 @@ export function AttachmentPicker({ value, onChange, disabled = false, onBusyChan
         onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void choose(files); }} />
     </label>
     {reading ? <span role="status">Reading files...</span> : null}
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {value.length ? <ul className="attachment-list">
       {value.map((file, index) => <li key={`${file.file_name}-${index}`}>
         <FileText size={16} aria-hidden="true" /><span className="attachment-name">{file.file_name}</span><small>{sizeLabel(fileBytes(file))}</small>
@@ -123,8 +124,8 @@ export function AttachmentManager({ entity, recordId, title, onClose }: {
         <button className="ops-link-btn" type="button" title="Close attachments" aria-label="Close attachments" disabled={saving || reading} onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
     </div>
-    {error ? <p className="ops-error" role="alert">{error}</p> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     {loading ? <p role="status">Loading attachments...</p> : null}
     {!loading && !items.length ? <p>No attachments.</p> : null}
     <ul className="attachment-list">{items.map((file) => <li key={file.id}>

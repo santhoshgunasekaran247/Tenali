@@ -7,12 +7,13 @@ import { tenantBase } from "./features/tenantTransport";
 import { AuthProvider,CanonicalTenantUrl } from "./features/auth";
 import { CartProvider } from "./features/cart";
 import { SocialLoginCallbackPage } from "./pages/SocialLoginCallbackPage";
+import { NotificationProvider } from "./components/Notifications";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+  <React.StrictMode><NotificationProvider>
     {window.location.pathname === "/social-login" ? <SocialLoginCallbackPage /> :
     <BrowserRouter basename={tenantBase()||undefined}>
       <AuthProvider><CanonicalTenantUrl><CartProvider><App /></CartProvider></CanonicalTenantUrl></AuthProvider>
     </BrowserRouter>}
-  </React.StrictMode>
+  </NotificationProvider></React.StrictMode>
 );

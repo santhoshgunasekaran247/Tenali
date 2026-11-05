@@ -35,12 +35,14 @@ import { StoresPage } from "./pages/StoresPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
 import { TenantPoliciesPage } from "./pages/TenantPoliciesPage";
 import { PolicyLinks } from "./components/PolicyLinks";
+import { RouteScroll } from "./components/RouteScroll";
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div>
+      <RouteScroll />
       <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} />
       <Routes>
         <Route path="/" element={<StorefrontRoot><HomePage /></StorefrontRoot>} />
@@ -77,8 +79,8 @@ export default function App() {
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />
-        <Route path="/portal/masters/brands" element={<InventoryMasterPage kind="brands" />} />
-        <Route path="/portal/masters/categories" element={<InventoryMasterPage kind="categories" />} />
+        <Route path="/portal/masters/brands" element={<InventoryMasterPage key="brands" kind="brands" />} />
+        <Route path="/portal/masters/categories" element={<InventoryMasterPage key="categories" kind="categories" />} />
         <Route path="/portal/reports" element={<ReportsPage />} />
         <Route path="/portal/audit" element={<AuditPage />} />
         <Route path="/portal/team" element={<TeamPage/>}/>

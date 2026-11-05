@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PartySelect } from "../components/PartySelect";
 import { useSearchParams } from "react-router-dom";
@@ -85,13 +87,13 @@ export function ReceivablesPage() {
     statusQuery && statusQuery !== "OPEN" ? statusQuery : ""
   );
   const [showOpenOnly, setShowOpenOnly] = useState(statusQuery === "OPEN");
-  const [receivableForm, setReceivableForm] = useState<ReceivableForm>(EMPTY_RECEIVABLE_FORM);
-  const [collectionForm, setCollectionForm] = useState<CollectionForm>(createEmptyCollectionForm);
+  const [receivableForm, setReceivableForm] = useDraftState<ReceivableForm>("ReceivablesPage.receivableForm", EMPTY_RECEIVABLE_FORM);
+  const [collectionForm, setCollectionForm] = useDraftState<CollectionForm>("ReceivablesPage.collectionForm", createEmptyCollectionForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [remindingId, setRemindingId] = useState<string | null>(null);
-  const [nextReminderById, setNextReminderById] = useState<Record<string, string>>({});
+  const [nextReminderById, setNextReminderById] = useDraftState<Record<string, string>>("ReceivablesPage.nextReminderById", {});
   const [historyForReceivableId, setHistoryForReceivableId] = useState<string | null>(null);
   const [historyForReceivableLabel, setHistoryForReceivableLabel] = useState<string>("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -130,12 +132,6 @@ export function ReceivablesPage() {
       setShowOpenOnly(false);
     }
   }, [invoiceIdQuery, statusFilter]);
-
-  useEffect(() => {
-    if (!success) return;
-    const timeout = window.setTimeout(() => setSuccess(null), 2500);
-    return () => window.clearTimeout(timeout);
-  }, [success]);
 
   useEffect(() => {
     if (!loading && focusQuery === "reminders") {
@@ -347,7 +343,7 @@ export function ReceivablesPage() {
         </p>
       </section>
 
-      {success ? <p className="ops-success-banner">{success}</p> : null}
+      {success ? <FloatingAlert tone="success">{success}</FloatingAlert> : null}
 
       <section className="ops-grid">
         <article className="ops-card">
@@ -557,7 +553,7 @@ export function ReceivablesPage() {
             </button>
           </div>
 
-          {error ? <p className="ops-error">{error}</p> : null}
+          {error ? <FloatingAlert>{error}</FloatingAlert> : null}
           {loading ? <p>Loading...</p> : null}
 
           <div className="ops-table-wrap">

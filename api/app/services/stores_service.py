@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.schemas.stores import StoreInput
 from app.services.access import allowed_stores, check_store
 
-STORE_COLUMNS = """id, company_id, code, name, kind, holds_stock, fulfilment_store_id, allows_pickup, address,
+STORE_COLUMNS = """id, company_id, code, invoice_code, name, kind, holds_stock, fulfilment_store_id, allows_pickup, address,
     state_code, pincode, latitude, longitude, gst_number, whatsapp_number, settlement_account_id, is_default, is_active"""
 
 
@@ -95,6 +95,8 @@ class StoresService:
             ).mappings().one()
         except IntegrityError as error:
             self.db.rollback()
+            if "limit of 1295 store invoice identifiers" in str(error):
+                raise HTTPException(422, "This workspace has reached the limit of 1295 store invoice identifiers.") from error
             if "stores_company_id_code_key" in str(error):
                 raise HTTPException(409, f"Store code {payload.code} already exists") from error
             raise HTTPException(422, "Store could not be saved; check the code, GSTIN and contact details") from error

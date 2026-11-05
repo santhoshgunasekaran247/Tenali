@@ -1,3 +1,4 @@
+import { FloatingAlert } from "../components/Notifications";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -62,7 +63,7 @@ export function CartPage() {
   if (!storefront) return <main className="loading">Open a workspace storefront to view its cart.</main>;
   return <main className="shop-account-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>Your Cart</h1><p>{storefront.company_name} only · Products from other workspaces stay in their own carts.</p></header>
     <div className="shop-account-content">
-      {error ? <p className="ops-error" role="alert">{error}</p> : null}
+      {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {!cart.items.length ? <section className="ops-card"><h2>Your cart is empty</h2><p>Add products, choose quantities and pay for them together.</p><Link className="btn" to="/">Browse products</Link></section>
         : !ready ? <p role="status">Checking current products and prices...</p> : <form onSubmit={checkout}>
           <div className="cart-items">{rows.map(({ item, product, variant, unit, quantity, minimum, problem }) => <article className="ops-card cart-item" key={cartItemKey(item)}>

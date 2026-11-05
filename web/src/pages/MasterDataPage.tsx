@@ -1,3 +1,5 @@
+import { FloatingAlert } from "../components/Notifications";
+import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Power, Save, X } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -9,8 +11,8 @@ const EMPTY = { code: "", description: "", gst_rate: "", is_active: true };
 
 export function MasterDataPage() {
   const [items, setItems] = useState<HsnMaster[]>([]);
-  const [form, setForm] = useState(EMPTY);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useDraftState("MasterDataPage.form", EMPTY);
+  const [editingId, setEditingId] = useDraftState<string | null>("MasterDataPage.editingId", null);
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -79,8 +81,8 @@ export function MasterDataPage() {
         <Link to="/portal/company">Company Setup</Link>
       </nav>
     </header>
-    {error ? <p className="masters-feedback ops-error" role="alert">{error}</p> : null}
-    {message ? <p className="masters-feedback" role="status">{message}</p> : null}
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     <section className="ops-grid">
       <article className="ops-card">
         <div className="ops-card-head">
