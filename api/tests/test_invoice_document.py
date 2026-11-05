@@ -1,5 +1,7 @@
+import json
 import unittest
 from decimal import Decimal
+from uuid import uuid4
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -69,6 +71,40 @@ class InvoiceDocumentTests(unittest.TestCase):
         document = build_invoice_document(self.payload, self.company, self.customer, store)
         self.assertTrue(document["interstate"])
         self.assertEqual((document["seller"]["gst_number"], document["seller"]["store"]["code"]), ("29ABCDE1234F1Z5", "BLR"))
+
+    def test_billing_service_five_argument_contract(self):
+        store = {"code": "MAIN", "state_code": "33", "address": "Store address"}
+        document = build_invoice_document(self.payload, self.company, self.customer, store, False)
+        self.assertEqual((document["subtotal"], document["gst_total"], document["total"]),
+                         ("200.00", "36.00", "236.00"))
+        self.assertEqual(document["pricing"], "exclusive")
+        self.assertEqual(document["seller"]["address"], "Store address")
+        self.assertEqual(document["seller"]["gst_number"], self.company["gst_number"])
+        store["address"] = "Changed"
+        self.assertEqual(document["seller"]["store"]["address"], "Store address")
+
+    def test_unregistered_business_has_no_gst_even_with_taxable_lines(self):
+        self.company.update(gst_registered=False, gst_number=None)
+        for inclusive in (True, False):
+            with self.subTest(inclusive=inclusive):
+                document = build_invoice_document(self.payload, self.company, self.customer,
+                    {"gst_number": "33ABCDE1234F1Z5", "state_code": "33"}, inclusive)
+                self.assertEqual((document["document_title"], document["gst_registered"]),
+                                 ("BILL OF SUPPLY", False))
+                self.assertEqual((document["subtotal"], document["gst_total"], document["total"]),
+                                 ("200.00", "0.00", "200.00"))
+                self.assertEqual(document["lines"][0]["gst_rate"], "0")
+                self.assertIsNone(document["seller"]["gst_number"])
+                self.assertEqual(self.payload.lines[0].gst_rate, Decimal("18"))
+
+    def test_database_store_snapshot_is_json_serializable(self):
+        store_id = uuid4()
+        store = {"id": store_id, "company_id": uuid4(), "code": "MAIN",
+                 "state_code": "33", "latitude": Decimal("13.05"), "longitude": Decimal("80.25")}
+        document = build_invoice_document(self.payload, self.company, self.customer, store, True)
+        snapshot = json.loads(json.dumps(document))
+        self.assertEqual(snapshot["seller"]["store"]["id"], str(store_id))
+        self.assertEqual(snapshot["seller"]["store"]["latitude"], 13.05)
 
     def test_snapshot_is_independent_of_master_data(self):
         self.company["invoice_settings"] = {"thank_you_note": "Original thanks", "signatory_name": "Original signer"}

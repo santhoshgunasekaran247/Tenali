@@ -274,6 +274,12 @@ the `wa.me` link.
   invoice total equals quantity × shelf price exactly. Manual/service lines get an
   "inclusive" toggle defaulting to inclusive. The invoice snapshot records
   `pricing='inclusive'` and both values per line.
+  The document builder accepts the invoicing store and company pricing default;
+  line-level `price_includes_gst` overrides that default. Store address/GSTIN/state
+  override company values where provided, and the store snapshot is JSON-safe.
+  Unregistered businesses issue a Bill of Supply with zero GST without requiring
+  a GSTIN. These are application-code behaviors; fixing the builder contract
+  does not require a database migration.
 - **Purchases**: vendor rates stay **exclusive** (`taxable = qty × rate`, GST on top),
   matching vendor bills and GSTR-2B.
 - `price_item` (checkout) already treats the catalog price as the amount charged;
