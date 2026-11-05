@@ -1,6 +1,6 @@
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -106,37 +106,32 @@ export function PurchasesPage() {
   const [confirmingReceipt, setConfirmingReceipt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
+  const loadVersion = useRef(0);
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
-    setError(null);
-    try {
-      const [partyRes, accountRes, purchaseRes, hsnRes,inventoryRes] = await Promise.all([
-        api.parties({ active_only: true }),
-        api.accounts({ active_only: true }),
-        api.purchases({ payment_status: paymentStatus || undefined, store_id: storeFilter || undefined }),
-        api.hsnMasters(),
-        api.inventoryProducts(),
-      ]);
-
-      setVendors(
-        partyRes.items.filter(
-          (party) => party.party_type === "vendor" || party.party_type === "customer_vendor"
-        )
-      );
-      setAccounts(accountRes.items);
-      setInventory(inventoryRes.items);
-      setHsnMasters(hsnRes.items);
-      setPurchases(purchaseRes.items);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load purchases data.");
-    } finally {
-      setLoading(false);
-    }
+    setLoadErrors([]);
+    const accept = <T,>(set: (value: T) => void) => (value: T) => { if (version === loadVersion.current) set(value); };
+    const report = (label: string) => (failure: unknown) => {
+      if (version === loadVersion.current) setLoadErrors(previous => [...previous, `${label}: ${failure instanceof Error ? failure.message : "Unable to load data."}`]);
+    };
+    await Promise.all([
+      api.parties({ active_only: true }).then(result => result.items.filter(party => party.party_type === "vendor" || party.party_type === "customer_vendor"))
+        .then(accept(setVendors)).catch(report("Vendors")),
+      api.accounts({ active_only: true }).then(result => result.items).then(accept(setAccounts)).catch(report("Accounts")),
+      api.purchases({ payment_status: paymentStatus || undefined, store_id: storeFilter || undefined })
+        .then(result => result.items).then(accept(setPurchases)).catch(report("Purchase history")),
+      api.hsnMasters().then(result => result.items).then(accept(setHsnMasters)).catch(report("HSN / SAC")),
+      api.inventoryProducts().then(result => result.items).then(accept(setInventory)).catch(report("Product inventory")),
+    ]);
+    if (version === loadVersion.current) setLoading(false);
   };
 
   useEffect(() => {
     void load();
+    return () => { loadVersion.current += 1; };
   }, [paymentStatus, storeFilter]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -363,6 +358,10 @@ export function PurchasesPage() {
           </div>
 
           {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+          {loadErrors.map(failure => <FloatingAlert key={failure}>{failure}</FloatingAlert>)}
+          {storeContext.error ? <FloatingAlert>{storeContext.error}</FloatingAlert> : null}
+          {loading ? <p role="status">Loading purchase data...</p> : null}
+          {loadErrors.length || storeContext.error ? <button className="ops-link-btn" type="button" disabled={loading} onClick={() => { void load(); void storeContext.reload(); }}>Retry loading purchase data</button> : null}
           {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
 
           <form className="ops-form" onSubmit={submit}>
@@ -471,7 +470,7 @@ export function PurchasesPage() {
             </label>
 
             <AttachmentPicker value={attachments} onChange={setAttachments} disabled={saving} onBusyChange={setAttachmentReading} />
-            <button className="btn" type="submit" disabled={saving || loading || attachmentReading || !hsnMasters.length}>
+            <button className="btn" type="submit" disabled={saving || loading || !!loadErrors.length || !!storeContext.error || attachmentReading || !hsnMasters.length}>
               {saving ? "Saving..." : "Post Purchase"}
             </button>
           </form>

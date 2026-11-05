@@ -23,10 +23,18 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
   const effectiveLines = gstRegistered ? lines : lines.map(line => ({ ...line, gst_rate: 0 }));
   const { subtotal, gstTotal, total } = calculateLineTotals(effectiveLines, pricesIncludeGst);
   const formatTotal = (value: number) => Number.isFinite(value) ? `INR ${value.toFixed(2)}` : "Invalid amount";
+  const availableProducts = products.filter(product => product.is_active && (!vendorId ||
+    (product.variants.some(variant => variant.is_active)
+      ? product.variants.some(variant => variant.is_active && variant.offers.some(offer => offer.vendor_id === vendorId && offer.is_active))
+      : product.offers.some(offer => offer.vendor_id === vendorId && offer.is_active))));
   return <>
     <fieldset className="invoice-lines" disabled={disabled}>
       <legend>Items</legend>
       <Link className="ops-inline-link" to="/portal/masters/hsn">Manage HSN / GST</Link>
+      {vendorId ? <p className="ops-copy-note">
+        {availableProducts.length ? "Showing products mapped to the selected vendor." : "No active products are mapped to the selected vendor."}{" "}
+        <Link to="/portal/inventory">Manage product / vendor mappings</Link>. Add an active vendor offer to the product or its active variants, then return here. Your purchase draft is kept.
+      </p> : !products.some(product => product.is_active) ? <p className="ops-copy-note">No active inventory products available. <Link to="/portal/inventory">Open Product Inventory</Link> to add or activate products.</p> : null}
       {lines.map((line, index) => <div className="invoice-line" key={index}>
         <div className="invoice-line-heading">
           <strong>Item {index + 1}</strong>
@@ -43,7 +51,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
             const product=products.find(item=>item.id===event.target.value);
             const offer=product?.offers.find(item=>item.vendor_id===vendorId&&item.is_active);
             updateLine(index,product?{product_id:product.id,variant_id:null,description:product.name,hsn:product.hsn_code||"",gst_rate:Number(masters.find(item=>item.code===product.hsn_code)?.gst_rate||0),rate:Number(vendorId?offer?.buying_price||0:product.catalog_price||0)}:{product_id:null,variant_id:null,description:"",hsn:"",gst_rate:0,rate:0});
-          }}><option value="">Manual / service item</option>{products.filter(product=>product.is_active&&(!vendorId||[...product.offers,...product.variants.flatMap(variant=>variant.offers)].some(offer=>offer.vendor_id===vendorId&&offer.is_active))).map(product=><option key={product.id} value={product.id}>{product.name} ({product.portal_product_id})</option>)}</select>
+          }}><option value="">Manual / service item</option>{availableProducts.map(product=><option key={product.id} value={product.id}>{product.name} ({product.portal_product_id})</option>)}</select>
         </label>
         {line.product_id&&products.find(item=>item.id===line.product_id)?.variants.some(variant=>variant.is_active)?<label>Variant
           <select required value={line.variant_id||""} onChange={event=>{

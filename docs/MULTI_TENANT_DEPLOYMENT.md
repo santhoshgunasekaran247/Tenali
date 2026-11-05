@@ -361,6 +361,14 @@ production response times.
 
 ### Form feedback and navigation drafts
 
+Purchase reference datasets display independently as their requests finish; a
+failed history/account request does not hide successfully loaded products.
+Failures identify the dataset and offer a retry. Purchase product choices require
+an active mapping to the selected vendor, matching posting validation; for
+variant products the mapping must belong to an active variant. The items editor
+explains empty vendor-filtered lists and links to Product Inventory to manage
+vendor offers without losing the purchase draft.
+
 Client-side navigation starts each new page at the top, including browser Back and
 Forward. Query-only filter changes do not reset scrolling. Section links still
 scroll to their target, including sections rendered after an asynchronous load.
