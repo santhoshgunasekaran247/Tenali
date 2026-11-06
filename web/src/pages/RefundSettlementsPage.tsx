@@ -40,6 +40,12 @@ export function RefundSettlementsPage() {
     }
   };
   useEffect(() => { void load(); }, [status]);
+  const formCard = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!target || !formCard.current) return;
+    formCard.current.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "start" });
+    formCard.current.querySelector("select")?.focus({ preventScroll: true });
+  }, [target]);
 
   const open = (item: RefundSettlement) => {
     setTarget(item); setMessage(null); setError(null);
@@ -91,14 +97,14 @@ export function RefundSettlementsPage() {
               <td>{money(item.amount)}</td>
               <td>{item.original_account_name || "-"} · {item.original_payment_mode || "-"}<br /><small>{item.paid_on}</small></td>
               <td>{status === "PENDING" ? item.reversal_date : <>{item.settled_on} · {item.account_name} · {item.payment_mode || "-"}{item.reference ? <><br /><small>Ref {item.reference}</small></> : null}</>}</td>
-              <td>{item.status === "PENDING" ? <button type="button" className="ops-link-btn" onClick={() => open(item)}>Confirm settled</button> : null}</td>
+              <td>{item.status === "PENDING" ? <button type="button" className="ops-link-btn" onClick={() => open(item)}>Settle / change account</button> : null}</td>
             </tr>)}</tbody></table></div>
       </article>
-      {target ? <article className="ops-card">
+      {target ? <article className="ops-card" ref={formCard}>
         <div className="ops-card-head"><h2>Confirm refund · {money(target.amount)}</h2>
           <button type="button" className="ops-link-btn" disabled={busy} onClick={() => setTarget(null)}>Close</button></div>
         <p className="ops-copy-note">{refundDirectionLabel(target.direction)} for {target.document_type === "invoice" ? "invoice" : "bill"} {target.document_number}. It was originally {target.direction === "PAY_CUSTOMER" ? "received into" : "paid from"} {target.original_account_name || "an account"} by {target.original_payment_mode || "an unrecorded mode"}. Correct the account and mode if the refund moved differently.</p>
-        <form className="ops-form" onSubmit={submit}>
+        <form className="ops-form refund-settle-form" onSubmit={submit}>
           <label>{target.direction === "PAY_CUSTOMER" ? "Paid from account" : "Received into account"}
             <select required value={form.account_id} onChange={event => setForm({ ...form, account_id: event.target.value })}>
               <option value="">Select account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.nickname}</option>)}</select></label>
