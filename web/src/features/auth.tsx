@@ -4,6 +4,7 @@ import { tenantBase,tenantFetch,tenantSlug } from "./tenantTransport";
 import type { SiteTheme,StorefrontContent } from "../types";
 import { PlatformHomePage } from "../pages/PlatformHomePage";
 import { WorkspaceDraftProvider } from "./drafts";
+import { WorkflowGuide } from "../components/WorkflowGuide";
 
 export type Workspace={company_id:string;company_name:string;tenant_slug:string;role:'owner'|'admin'|'staff'|'viewer'};
 export type Identity=Workspace&{user_id:string;email:string;display_name:string;authentication_method?:'social'|'password';nickname?:string;logo_url?:string;store_ids?:string[]|null;modules?:string[]|null};
@@ -66,7 +67,7 @@ export function RequireWorkspace(){
   if(!auth.user)return <Navigate to="/login" replace state={{next:location.pathname+location.search}}/>;
   if(!auth.storefront&&!tenantBase()&&location.pathname!=="/portal/new-workspace")return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
   if(auth.storefront&&auth.storefront.id!==auth.user.company_id&&tenantBase())return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
-  return <Outlet/>;
+  return <><WorkflowGuide/><Outlet/></>;
 }
 
 export function StorefrontRoot({children}:{children:ReactNode}){

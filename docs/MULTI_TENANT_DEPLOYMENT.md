@@ -466,6 +466,26 @@ under Company Setup → Deleted transactions. Run `alembic upgrade head` before
 deploying the API. Tests: `python -m unittest test_transaction_deletion` (API, needs
 `TENALI_TEST_DB=1`) and `node --test tests/deletions.test.cjs` (web).
 
+## Next-step workflow guidance
+
+After any write request (create, cancel, delete, settle, lock), the web client
+announces the result, and a separate floating "Next step" message suggests what to
+do next. For example: settle the pending refund after cancelling a paid invoice;
+confirm goods receipt and pay the vendor after a purchase; reopen, correct and
+lock again when a date falls in a closed period. Rules live in
+`web/src/features/workflowGuide.ts`. Results with no matching rule show nothing.
+
+Owners and admins can turn it on or off for the workspace in Company Setup →
+Operations Portal. The setting is stored in `companies.workflow_guidance_enabled`,
+default on, added by migration `040_workflow_guidance`. Tests:
+`node --test tests/workflow-guide.test.cjs` (web) and
+`python -m unittest test_storefront_toggle` (API).
+
+The Portal "Single-Person Workflow" checklist covers day, month and year close. This
+includes the stock check, refund settlement, GST registers, the period lock under
+Accounts → Period Close / Lock, and the reopen → correct → lock-again cycle. A
+locked period blocks posting, cancelling, deleting and settling entries dated inside it.
+
 ## Verification and release gates
 
 ### Form feedback and navigation drafts

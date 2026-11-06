@@ -72,8 +72,17 @@ import type {
 import { tenantFetch } from "./features/tenantTransport";
 
 export const API_BASE = "/api";
+export const API_RESULT_EVENT = "tenali-api-result";
+export type ApiResult = { method: string; path: string; ok: boolean; status: number; data?: unknown; message?: string };
+
+// Lets the workflow guide suggest the next step after any create, cancel, delete or failure, without each page wiring it up.
+function announce(result: ApiResult) {
+  if (result.method === "GET" || typeof window === "undefined" || typeof CustomEvent === "undefined") return;
+  window.dispatchEvent(new CustomEvent<ApiResult>(API_RESULT_EVENT, { detail: result }));
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method || "GET").toUpperCase();
   const response = await tenantFetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -101,10 +110,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
     }
+    announce({ method, path, ok: false, status: response.status, message });
     throw new Error(message || `Request failed: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  announce({ method, path, ok: true, status: response.status, data });
+  return data;
 }
 
 export const api = {

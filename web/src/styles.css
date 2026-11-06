@@ -1336,6 +1336,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--site-primary);
 .floating-notice strong { display: block; margin-bottom: 4px; }
 .floating-notice-success { background: #eef8ed; color: #1f5f3a; border-color: #bbdcb9; }
 .floating-notice-error { background: #fff3f3; color: #8b2020; border-color: #e8baba; }
+.floating-notice-workflow { background: #eef4fb; color: #1d3a5f; border-color: #b8cde6; }
+.workflow-notice p { margin: 0 0 6px; }
+.workflow-notice ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.workflow-notice button { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; text-align: left; }
+.workflow-notice small { display: block; margin-top: 6px; opacity: 0.8; }
 .notice-dismiss { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 24px; min-width: 32px; min-height: 32px; }
 input[required], select[required], textarea[required] { border-inline-start: 3px solid #98671b; }
 

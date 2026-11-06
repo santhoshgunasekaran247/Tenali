@@ -259,6 +259,7 @@ class CompanyUpdate(BaseModel):
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
     # None keeps the current setting so callers that omit it never reopen or close the storefront by accident.
     storefront_enabled: bool | None = None
+    workflow_guidance_enabled: bool | None = None
 
     _validate_logo = field_validator("logo_url")(validate_image_source)
 
@@ -277,5 +278,6 @@ class CompanySetupOut(CompanyUpdate):
     site_theme: SiteTheme = Field(default_factory=SiteTheme)
     tenant_slug: str | None = None
     storefront_enabled: bool = True
+    workflow_guidance_enabled: bool = True
     id: UUID
     is_active: bool

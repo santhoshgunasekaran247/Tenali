@@ -142,6 +142,7 @@ export function CompanySetupPage() {
         site_theme: company.site_theme,
         storefront_content: company.storefront_content,
         storefront_enabled: company.storefront_enabled !== false,
+        workflow_guidance_enabled: company.workflow_guidance_enabled !== false,
       });
       setSavedSiteTheme(result.site_theme);
       setCompany(result);
@@ -214,6 +215,7 @@ export function CompanySetupPage() {
         <Link to="/portal/policies">Store Policies</Link>
         <a href="#company-profile">Profile & Contact</a>
         <a href="#storefront-copy">Storefront Copy</a>
+        <a href="#portal-settings">Portal Settings</a>
         <a href="#site-colours">Site Colours</a>
         <a href="#brand-assets">Logo & Signature</a>
         <a href="#invoice-wording">Invoice Wording</a>
@@ -263,6 +265,11 @@ export function CompanySetupPage() {
             </details>
           ))}
         </section>
+        <fieldset id="portal-settings" disabled={saving} className="company-setup-section">
+          <legend>Operations Portal</legend>
+          <label className="ops-toggle"><input type="checkbox" checked={company.workflow_guidance_enabled !== false} onChange={(event) => update({ workflow_guidance_enabled: event.target.checked })} />Show next-step workflow messages</label>
+          <p className="ops-copy-note">After a record is created, cancelled or deleted, or a save fails, a separate &quot;Next step&quot; message suggests what to do next (for example settle a refund, record a payment or reopen a closed period). Applies to everyone in this workspace. Save to apply.</p>
+        </fieldset>
         <fieldset id="site-colours" disabled={saving} className="company-setup-section">
           <legend>Site Colours</legend>
           <div className="site-theme-grid">

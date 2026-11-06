@@ -7,6 +7,7 @@ export type Company = {
   site_theme?: SiteTheme;
   storefront_content?: StorefrontContent;
   storefront_enabled?: boolean;
+  workflow_guidance_enabled?: boolean;
   gst_number?: string;
   gst_registered?: boolean;
   whatsapp_number?: string | null;

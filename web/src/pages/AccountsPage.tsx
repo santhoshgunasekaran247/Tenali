@@ -649,7 +649,7 @@ export function AccountsPage() {
         </article>
       </section>
 
-      <section className="ops-grid ops-grid-single">
+      <section id="period-locks" className="ops-grid ops-grid-single">
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
             <h2>Period Close / Lock</h2>

@@ -46,9 +46,14 @@ const workflowSections: WorkflowSection[] = [
     title: "Start of Day",
     cadence: "Daily",
     steps: [
+      { id: "start-dashboard", label: "Open the dashboard: receivables, pending refunds and low stock", path: "/portal/dashboard" },
       { id: "start-kpi", label: "Review receivable reminders and open receivables", path: "/portal/receivables?focus=reminders" },
-      { id: "start-cash", label: "Check account balances and yesterday ending", path: "/portal/accounts" },
-      { id: "start-priority", label: "List today customer collections and vendor payments", path: "/portal" },
+      { id: "start-cash", label: "Check account balances match yesterday's closing cash and bank", path: "/portal/accounts" },
+      { id: "start-refunds", label: "Check pending refunds to pay customers or receive from vendors", path: "/portal/settlements/refunds" },
+      { id: "start-reorder", label: "Review reorder alerts and place purchase orders", path: "/portal/inventory?view=alerts" },
+      { id: "start-receipts", label: "Check purchases awaiting goods receipt", path: "/portal/purchases" },
+      { id: "start-online", label: "Process online orders and COD settlements", path: "/portal/checkout" },
+      { id: "start-priority", label: "List today's customer collections and vendor payments" },
     ],
   },
   {
@@ -58,8 +63,12 @@ const workflowSections: WorkflowSection[] = [
     steps: [
       { id: "work-sales", label: "Post sales invoices as they happen", path: "/portal/billing" },
       { id: "work-collections", label: "Record collections with payment mode + account", path: "/portal/receivables" },
-      { id: "work-purchase", label: "Post purchase bills and payments", path: "/portal/purchases" },
+      { id: "work-purchase", label: "Post purchase bills and vendor payments", path: "/portal/purchases" },
+      { id: "work-receipt", label: "Confirm goods receipt so purchased stock is added", path: "/portal/purchases" },
+      { id: "work-drafts", label: "Confirm or merge new product drafts from purchases", path: "/portal/inventory" },
+      { id: "work-transfer", label: "Transfer stock between stores when needed", path: "/portal/inventory" },
       { id: "work-settle", label: "Capture borrow/repay settlements", path: "/portal/settlements" },
+      { id: "work-cancel", label: "Cancel wrong invoices or bills (reverse, don't delete), then reissue", path: "/portal/billing" },
       { id: "work-refunds", label: "Confirm refunds for cancelled invoices and bills", path: "/portal/settlements/refunds" },
       { id: "work-funds", label: "Record business outflows and transfers", path: "/portal/business-payments" },
     ],
@@ -69,8 +78,11 @@ const workflowSections: WorkflowSection[] = [
     title: "End of Day Close",
     cadence: "Daily",
     steps: [
+      { id: "eod-cash", label: "Count cash and match it with the account tally", path: "/portal/accounts" },
+      { id: "eod-refunds", label: "Settle refunds paid out today", path: "/portal/settlements/refunds" },
       { id: "eod-collect", label: "Mark all reminders attempted for the day", path: "/portal/receivables?focus=reminders" },
       { id: "eod-audit", label: "Review audit journal for unusual entries", path: "/portal/accounts" },
+      { id: "eod-events", label: "Review audit events (deletions, cancellations, logins)", path: "/portal/audit" },
       { id: "eod-export", label: "Export transactions and journal CSV backup", path: "/portal/reports" },
       { id: "eod-pending", label: "Note pending payments/collections for tomorrow", path: "/portal/receivables?status=OPEN" },
     ],
@@ -82,8 +94,13 @@ const workflowSections: WorkflowSection[] = [
     steps: [
       { id: "eom-reconcile", label: "Run invoice reconciliation and verify receivable status", path: "/portal/billing" },
       { id: "eom-baddebt", label: "Review stale dues and mark bad debt where needed", path: "/portal/receivables?status=BAD_DEBT" },
+      { id: "eom-refunds", label: "Settle every pending refund before closing", path: "/portal/settlements/refunds" },
+      { id: "eom-receipts", label: "Confirm all pending goods receipts and vendor payments", path: "/portal/purchases" },
+      { id: "eom-stock", label: "Run the stock check and fix differences", path: "/portal/inventory?view=check" },
+      { id: "eom-gst", label: "Export sales and purchase GST registers; match purchases with GSTR-2B", path: "/portal/reports" },
       { id: "eom-ledgers", label: "Finalize account tally and month journal exports", path: "/portal/reports" },
-      { id: "eom-lock", label: "Close accounting period after checks", path: "/portal/accounts" },
+      { id: "eom-lock", label: "Lock the month: Accounts → Period Close / Lock", path: "/portal/accounts#period-locks" },
+      { id: "eom-reopen", label: "Correction needed later? Reopen the period, reverse and re-post, then lock again", path: "/portal/accounts#period-locks" },
     ],
   },
   {
@@ -91,10 +108,12 @@ const workflowSections: WorkflowSection[] = [
     title: "End of Year Close",
     cadence: "Yearly",
     steps: [
+      { id: "eoy-months", label: "Confirm every month of the financial year (Apr–Mar) is locked", path: "/portal/accounts#period-locks" },
       { id: "eoy-aging", label: "Finalize receivable aging and recovery plan", path: "/portal/receivables" },
-      { id: "eoy-summary", label: "Freeze year-end account exports and journal", path: "/portal/reports" },
-      { id: "eoy-lock", label: "Lock final year period after approval", path: "/portal/accounts" },
-      { id: "eoy-reset", label: "Prepare next-year opening workflow and checklist" },
+      { id: "eoy-stock", label: "Physical year-end stock count and stock check", path: "/portal/inventory?view=check" },
+      { id: "eoy-summary", label: "Freeze year-end account exports, GST registers and journal", path: "/portal/reports" },
+      { id: "eoy-lock", label: "Lock the full financial year after approval", path: "/portal/accounts#period-locks" },
+      { id: "eoy-reset", label: "Prepare next-year opening balances and checklist", path: "/portal/accounts" },
     ],
   },
 ];
@@ -145,7 +164,9 @@ export function PortalPage() {
   const auth=useAuth();
   const showAdminMaintenance=auth.user?.role==='owner'||auth.user?.role==='admin';
   const canAccess = (path?: string) => {
-    const module = operationsLinks.find(item => item.path === path)?.module;
+    const base = path?.split(/[?#]/)[0];
+    if (adminMaintenanceLinks.some(item => item.path === base)) return showAdminMaintenance;
+    const module = operationsLinks.find(item => item.path === base)?.module;
     return !module || showAdminMaintenance || !auth.user?.modules || auth.user.modules.includes(module);
   };
   const storageKey = (section: WorkflowSection["key"]) => checkpointStorageKey(auth.user!.company_id, auth.user!.user_id, section);
@@ -208,7 +229,7 @@ export function PortalPage() {
             <div className="ops-workflow-grid">
             {workflowSections.map((section) => {
               const doneMap = completedBySection[section.key] || {};
-              const visibleSteps = section.steps.filter(step => canAccess(step.path?.split("?")[0]));
+              const visibleSteps = section.steps.filter(step => canAccess(step.path));
               const doneCount = visibleSteps.filter((step) => doneMap[step.id]).length;
               return (
                 <article className="ops-workflow-card" key={section.key}>
@@ -245,6 +266,7 @@ export function PortalPage() {
               );
             })}
             </div>
+            <p className="ops-copy-note">Locked periods block new, cancelled or deleted entries dated inside them; reopen, correct and lock again. After each save a &quot;Next step&quot; message suggests what to do next{showAdminMaintenance ? <> (turn it on or off in <Link to="/portal/company#portal-settings">Company Setup → Operations Portal</Link>)</> : null}.</p>
           </details>
         </article>
       </section>

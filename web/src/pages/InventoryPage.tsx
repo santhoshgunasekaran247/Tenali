@@ -2,7 +2,7 @@ import { useDraftState } from "../features/drafts";
 import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRightLeft, Bell, ChevronRight, PackagePlus, Pencil, Plus, RefreshCw, Save, Star, Tags, Trash2, Users } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { postingKey } from "../features/postingKey";
@@ -17,6 +17,11 @@ import { matchesInventorySearch } from "../features/inventorySearch";
 import { useAuth } from "../features/auth";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
 
+function inventoryViewFrom(search: string): 'alerts'|'check'|null {
+  const view=new URLSearchParams(search).get('view');
+  return view==='alerts'||view==='check'?view:null;
+}
+
 export function InventoryPage() {
   const [products,setProducts]=useState<InventoryProduct[]>([]);
   const [lookups,setLookups]=useState<InventoryLookups>({brands:[],categories:[],vendors:[]});
@@ -26,7 +31,9 @@ export function InventoryPage() {
   const [search,setSearch]=useState("");const[vendorFilter,setVendorFilter]=useState("");const[includeInactive,setIncludeInactive]=useState(false);
   const [selectedIds,setSelectedIds]=useState<string[]>([]);const[bulkVendor,setBulkVendor]=useState("");
   const [selectedId,setSelectedId]=useDraftState<string|null>("InventoryPage.selectedId", null);const[tab,setTab]=useDraftState<'details'|'variants'|'vendors'|'stock'>("InventoryPage.tab", 'details');
-  const [view,setView]=useState<'products'|'alerts'|'check'>(()=>new URLSearchParams(location.search).get('view')==='alerts'?'alerts':'products');const[editor,setEditor]=useDraftState<'product'|'variant'|null>("InventoryPage.editor", null);
+  const routeLocation=useLocation();
+  const [view,setView]=useState<'products'|'alerts'|'check'>(()=>inventoryViewFrom(routeLocation.search)??'products');const[editor,setEditor]=useDraftState<'product'|'variant'|null>("InventoryPage.editor", null);
+  useEffect(()=>{const requested=inventoryViewFrom(routeLocation.search);if(requested)setView(requested);},[routeLocation.search]);
   const [newProduct,setNewProduct]=useDraftState("InventoryPage.newProduct", false);const[variantTarget,setVariantTarget]=useDraftState<InventoryVariant|undefined>("InventoryPage.variantTarget", undefined);
   const [offerEditor,setOfferEditor]=useDraftState<{offer?:InventoryOffer;variantId:string|null}|null>("InventoryPage.offerEditor", null);
   const [loading,setLoading]=useState(true);const[busy,setBusy]=useState(false);const[error,setError]=useState("");const[message,setMessage]=useState("");

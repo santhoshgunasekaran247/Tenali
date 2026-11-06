@@ -48,6 +48,17 @@ class StorefrontToggleTests(TenantDatabaseCase):
         self.assertEqual(self.client.get("/catalog/home", headers=public).status_code, 200)
         self.assertEqual(self.client.get("/shop/availability", headers=public).status_code, 200)
 
+    def test_workflow_guidance_toggle_is_kept_unless_sent(self):
+        _, cookies, _ = self.register("guide-toggle")
+        self.use_cookies(cookies)
+        self.assertTrue(self.client.get("/company").json()["workflow_guidance_enabled"])
+        off = self.save_company(cookies, workflow_guidance_enabled=False)
+        self.assertEqual(off.status_code, 200, off.text)
+        self.assertFalse(off.json()["workflow_guidance_enabled"])
+        omitted = self.save_company(cookies)
+        self.assertFalse(omitted.json()["workflow_guidance_enabled"], "Omitting the flag must keep the current setting")
+        self.assertTrue(self.save_company(cookies, workflow_guidance_enabled=True).json()["workflow_guidance_enabled"])
+
     def test_staff_cannot_toggle_storefront(self):
         from sqlalchemy import text
         owner, cookies, _ = self.register("shop-staff")
