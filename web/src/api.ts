@@ -58,6 +58,11 @@ import type {
   ReceivableStatusUpdateInput,
   TransactionReverseCreateInput,
   TransactionReverseResponse,
+  DeletionHistoryItem,
+  DeletionKind,
+  DeletionPreview,
+  DeletionRequest,
+  DeletionResult,
 } from "./types";
 
 import { tenantFetch } from "./features/tenantTransport";
@@ -107,6 +112,9 @@ export const api = {
   inventoryUpdateMaster:(kind:string,id:string,payload:{name:string;description:string;is_active:boolean})=>request(`/inventory/lookups/${kind}/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(payload)}),
   cancelInvoice:(id:string,reason:string)=>request(`/billing/invoices/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason})}),
   cancelPurchase:(id:string,reason:string)=>request(`/purchases/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason})}),
+  deletionPreview: (kind: DeletionKind, id: string | null, cascade = false) => request<DeletionPreview>(`/company/deletions/preview?${new URLSearchParams({ kind, cascade: String(cascade), ...(id ? { id } : {}) })}`),
+  deleteTransaction: (payload: DeletionRequest) => request<DeletionResult>("/company/deletions", { method: "POST", body: JSON.stringify(payload) }),
+  deletionHistory: () => request<{ items: DeletionHistoryItem[] }>("/company/deletions"),
   inventoryProducts: () => request<{ items: InventoryProduct[] }>("/inventory/products"),
   inventoryDeleteProduct: (id: string) => request<{deleted: boolean; id: string}>(`/inventory/products/${encodeURIComponent(id)}`, {method: "DELETE"}),
   inventoryConfirmProduct: (id: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(id)}/confirm`, {method: "POST"}),

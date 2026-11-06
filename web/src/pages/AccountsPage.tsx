@@ -3,6 +3,9 @@ import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
+import { useAuth } from "../features/auth";
+import { canDeleteTransactions } from "../features/deletions";
 import type {
   Account,
   AccountCreateInput,
@@ -135,6 +138,10 @@ export function AccountsPage() {
   const [editingId, setEditingId] = useDraftState<string | null>("AccountsPage.editingId", null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const canDelete = canDeleteTransactions(user?.role);
+  const [deleteTarget, setDeleteTarget] = useState<AccountTransaction | null>(null);
+  const [deletedMessage, setDeletedMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [txSaving, setTxSaving] = useState(false);
   const [lockSaving, setLockSaving] = useState(false);
@@ -977,6 +984,7 @@ export function AccountsPage() {
                               Reverse
                             </button>
                           )}
+                          {canDelete ? <button className="ops-link-btn" type="button" onClick={() => setDeleteTarget(item)}>Delete</button> : null}
                         </td>
                       </tr>
                     );
@@ -985,6 +993,12 @@ export function AccountsPage() {
               </tbody>
             </table>
           </div>
+          {deleteTarget ? <DeleteTransactionDialog kind="account_transaction" id={deleteTarget.id}
+            title={`transaction of ${deleteTarget.amount.toFixed(2)} on ${deleteTarget.transaction_date}`}
+            onClose={() => setDeleteTarget(null)} onDone={async result => {
+              setDeleteTarget(null); setDeletedMessage(`Deleted ${result.label}.`); await load(); await loadJournal();
+            }} /> : null}
+          {deletedMessage ? <FloatingAlert tone="success">{deletedMessage}</FloatingAlert> : null}
         </article>
       </section>
 

@@ -219,7 +219,7 @@ class InventoryDatabaseTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as used:
             self.service.delete_product(self.product_id)
         self.assertEqual(used.exception.status_code, 409)
-        self.db.execute(self.text("delete from invoices where id=:id"), {"id": invoice})
+        self.db.execute(self.text("""update invoices set document_data='{"lines":[]}'::jsonb where id=:id"""), {"id": invoice})
         params["data"] = json.dumps([{"product_id": self.product_id}])
         self.db.execute(self.text("""insert into purchases(company_id,vendor_party_id,purchase_date,subtotal,gst_total,total,line_items)
             values(:company,:party,current_date,0,0,0,cast(:data as jsonb))"""), params)
@@ -264,7 +264,7 @@ class InventoryDatabaseTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as used:
             self.service.delete_product(self.product_id)
         self.assertEqual(used.exception.status_code, 409)
-        self.db.execute(self.text("delete from shop_orders where id=:id"), {"id": order})
+        self.db.execute(self.text("update shop_orders set items='[]'::jsonb where id=:id"), {"id": order})
         first_store = self.db.execute(self.text("select id from stores where company_id=:company and is_default"),
                                       {"company": self.company}).scalar_one()
         second_store = self.db.execute(self.text("""insert into stores(company_id,code,name,kind,holds_stock,state_code)

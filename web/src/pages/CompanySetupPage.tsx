@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { TransactionDeletionPanel } from "../components/TransactionDeletionPanel";
 import { api } from "../api";
 import { toAssetUrl } from "../features/catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "../features/invoiceSettings";
@@ -318,6 +319,7 @@ export function CompanySetupPage() {
           <button className="btn light" type="button" disabled={saving || previewing} onClick={() => void preview()}><Download size={16} aria-hidden="true" /> {previewing ? "Generating..." : "Sample Invoice PDF"}</button>
         </div>
       </form> : null}
+      <TransactionDeletionPanel />
     </main>
   );
 }

@@ -416,6 +416,36 @@ From `web`, run `node --test tests/billing-loading.test.cjs`.
 The concurrency regression uses simulated database latency and does not measure
 production response times.
 
+## Transaction deletion
+
+Owners and admins can delete posted transactions after a reviewed, two-step
+confirmation. Staff cannot. The API is mounted at `/company/deletions`:
+`GET /preview?kind=&id=&cascade=` lists every record that will be removed, the stock
+and account balance changes, warnings, blockers and critical linked records.
+`POST /company/deletions` requires the preview token, the exact typed confirmation
+text and a reason. A stale token (data changed since review) is rejected with 409.
+
+Supported kinds: purchases, purchase payments, customer receipts, borrowings,
+account transactions, stock adjustments, stock transfers, COD settlements and
+`all` (erase every transaction of the workspace; products, parties, accounts,
+stores and settings are kept). Issued sales invoices cannot be deleted. Cancel the
+invoice and use **Reissue** to create a corrected copy with a new number. For GST,
+cancelling adds no tax. Before GSTR-1 filing it is reported as cancelled. After
+filing, issue a credit note.
+
+Linked payments, reversals and transfers are critical children. The deletion is
+refused until they are deleted first or **Delete everything together** is chosen.
+Deletions that would make stock negative, or remove stock that was already sold,
+are blocked. Paid bills and invoices become unpaid again when their payments are
+deleted.
+
+Migration `038_transaction_deletions` adds a database guard. Deleting from ledger
+tables outside a reviewed deletion batch raises an error, and every deleted row is
+archived in `deleted_records` with a `transaction_deletions` history entry, shown
+under Company Setup → Deleted transactions. Run `alembic upgrade head` before
+deploying the API. Tests: `python -m unittest test_transaction_deletion` (API, needs
+`TENALI_TEST_DB=1`) and `node --test tests/deletions.test.cjs` (web).
+
 ## Verification and release gates
 
 ### Form feedback and navigation drafts

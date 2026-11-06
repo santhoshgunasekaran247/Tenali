@@ -11,7 +11,10 @@ import { StoreSelect, useStores } from "../features/stores";
 import { PartySelect } from "../components/PartySelect";
 import type { InventoryProduct } from "../types";
 import { TaxLinesEditor, newTaxLine } from "../components/TaxLinesEditor";
-import type { Account, AttachmentInput, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
+import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
+import { useAuth } from "../features/auth";
+import { canDeleteTransactions } from "../features/deletions";
+import type { Account, AttachmentInput, DeletionKind, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
 
 type PurchaseForm = {
   vendor_party_id: string;
@@ -91,6 +94,9 @@ export function PurchasesPage() {
   const [attachments, setAttachments] = useDraftState<AttachmentInput[]>("PurchasesPage.attachments", []);
   const [attachmentReading, setAttachmentReading] = useState(false);
   const [attachmentTarget, setAttachmentTarget] = useState<Purchase | null>(null);
+  const { user } = useAuth();
+  const canDelete = canDeleteTransactions(user?.role);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: DeletionKind; id: string; title: string } | null>(null);
   const [lines, setLines] = useDraftState<InvoiceLineInput[]>("PurchasesPage.lines", [newTaxLine()]);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const storeContext = useStores();
@@ -572,6 +578,8 @@ export function PurchasesPage() {
                               Confirm Receipt
                             </button>
                           ) : null}
+                          {canDelete ? <button className="ops-link-btn" type="button" onClick={() => setDeleteTarget({ kind: "purchase", id: item.id,
+                            title: `bill ${item.voucher_number || item.bill_number || item.vendor_name}` })}>Delete</button> : null}
                         </div>
                       </td>
                     </tr>
@@ -580,6 +588,11 @@ export function PurchasesPage() {
               </tbody>
             </table>
           </div>
+
+          {deleteTarget ? <DeleteTransactionDialog kind={deleteTarget.kind} id={deleteTarget.id} title={deleteTarget.title}
+            onClose={() => setDeleteTarget(null)} onDone={async result => {
+              setDeleteTarget(null); setPaymentTarget(null); setMessage(`Deleted ${result.label}.`); await load();
+            }} /> : null}
 
           {attachmentTarget ? <AttachmentManager key={attachmentTarget.id} entity="purchase" recordId={attachmentTarget.id}
             title={attachmentTarget.bill_number || attachmentTarget.vendor_name} onClose={() => setAttachmentTarget(null)} /> : null}
@@ -692,16 +705,17 @@ export function PurchasesPage() {
                       <th>Amount</th>
                       <th>Mode</th>
                       <th>Reference</th>
+                      {canDelete ? <th>Actions</th> : null}
                     </tr>
                   </thead>
                   <tbody>
                     {paymentHistoryLoading ? (
                       <tr>
-                        <td colSpan={4}>Loading payment history...</td>
+                        <td colSpan={5}>Loading payment history...</td>
                       </tr>
                     ) : paymentHistory.length === 0 ? (
                       <tr>
-                        <td colSpan={4}>No payments recorded yet.</td>
+                        <td colSpan={5}>No payments recorded yet.</td>
                       </tr>
                     ) : (
                       paymentHistory.map((entry) => (
@@ -710,6 +724,8 @@ export function PurchasesPage() {
                           <td>{entry.amount.toFixed(2)}</td>
                           <td>{entry.payment_mode}</td>
                           <td>{entry.reference || "-"}</td>
+                          {canDelete ? <td><button className="ops-link-btn" type="button" onClick={() => setDeleteTarget({ kind: "purchase_payment", id: entry.id,
+                            title: `payment of ${entry.amount.toFixed(2)} on ${entry.payment_date}` })}>Delete</button></td> : null}
                         </tr>
                       ))
                     )}

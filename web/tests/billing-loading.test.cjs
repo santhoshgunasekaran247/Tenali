@@ -53,6 +53,7 @@ function mountBilling() {
     "../components/BillingCustomer": { BillingCustomer: component },
     "../components/Notifications": { FloatingAlert: component },
     "../features/drafts": { useDraftState: (_key, initial) => react.useState(initial) },
+    "../features/invoiceReissue": { reissueInvoice: () => ({ form: {}, lines: [], sameShipping: true }) },
   };
   const source = readFileSync(path.join(__dirname, "..", "src", "pages", "BillingPage.tsx"), "utf8");
   const compiled = ts.transpileModule(source, {

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, orderStatus, paymentLabel, rupees, type ShopOrder } from "../features/shop";
 import { OrderActions, useStoresAndAccounts } from "../components/OrderActions";
+import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
 
 type Policy = { prepaid_enabled: boolean; shipping_sac: string; shipping_gst_rate: number | string; cod_enabled: boolean; cod_limit: number | string; cod_approval_hours: number;
   cod_overdue_days: number; cod_serviceable_pincodes: string[]; pickup_enabled: boolean; pickup_hold_hours: number; pickup_reminder_hours: number; prepaid_hold_minutes: number };
@@ -56,6 +57,7 @@ export function CheckoutAdminPage() {
   const [reconcileId, setReconcileId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [settlementDelete, setSettlementDelete] = useState<Settlement | null>(null);
   const [busy, setBusy] = useState(false);
   const locked = busy || checking !== null;
   const webhookUrl = `${window.location.origin}/api/shop/webhooks/razorpay/${user?.tenant_slug || ""}`;
@@ -255,8 +257,11 @@ export function CheckoutAdminPage() {
             <button className="btn" disabled={locked || !Object.values(settlementItems).some(value => Number(value) > 0)}>Record settlement</button>
           </form>
           <h3>Recent settlements</h3>
-          <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Date</th><th>Courier</th><th>Reference</th><th>Expected</th><th>Received</th><th>Shortfall reason</th></tr></thead>
-            <tbody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td></tr>) : <tr><td colSpan={6}>No settlements yet.</td></tr>}</tbody></table></div>
+          <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Date</th><th>Courier</th><th>Reference</th><th>Expected</th><th>Received</th>          <th>Shortfall reason</th><th>Actions</th></tr></thead>
+                      <tbody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td>
+                        <td>{allowed ? <button type="button" className="ops-link-btn" onClick={() => setSettlementDelete(row)}>Delete</button> : null}</td></tr>) : <tr><td colSpan={7}>No settlements yet.</td></tr>}</tbody></table></div>
+                    {settlementDelete ? <DeleteTransactionDialog kind="cod_settlement" id={settlementDelete.id} title={`COD settlement ${settlementDelete.settlement_reference}`}
+                      onClose={() => setSettlementDelete(null)} onDone={async result => { setSettlementDelete(null); setMessage(`Deleted ${result.label}.`); await refreshCod(); }} /> : null}
         </>}
       </section> : null}
       {tab === "enquiries" ? <section className="checkout-orders-section">

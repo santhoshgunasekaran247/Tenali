@@ -58,6 +58,14 @@ def apply_product_draft_migration(connection):
         migration["upgrade"]()
 
 
+def apply_transaction_deletion_migration(connection):
+    if inspect(connection).has_table("transaction_deletions"):
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "038_transaction_deletions.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def apply_inventory_deletion_migration(connection):
     migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "033_inventory_product_deletion.py"))
     with Operations.context(MigrationContext.configure(connection)):

@@ -48,6 +48,9 @@ test("purchase inventory displays before other requests finish and survives a hi
     "../components/PortalHomeLink": { PortalHomeLink: component },
     "../components/PartySelect": { PartySelect: component },
     "../components/Attachments": { AttachmentPicker: component, AttachmentManager: component },
+    "../components/DeleteTransactionDialog": { DeleteTransactionDialog: component },
+    "../features/auth": { useAuth: () => ({ user: { role: "owner" } }) },
+    "../features/deletions": { canDeleteTransactions: () => true },
   });
   const render = () => { cursor = 0; return PurchasesPage(); };
   render(); effects[0]();

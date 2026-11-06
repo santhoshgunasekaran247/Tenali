@@ -10,6 +10,7 @@ import { postingKey } from "../features/postingKey";
 import { calculateLineTotals } from "../features/taxTotals";
 import { StoreSelect, useStores } from "../features/stores";
 import { BillingCustomer } from "../components/BillingCustomer";
+import { reissueInvoice } from "../features/invoiceReissue";
 import type { InventoryProduct } from "../types";
 import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
 
@@ -525,6 +526,11 @@ export function BillingPage() {
                           <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}
                         </button>
                         {item.status!=='CANCELLED'&&item.amount_received===0?<button type="button" className="ops-link-btn" onClick={()=>{const reason=window.prompt('Reason for cancellation (stock is returned; no refund is issued):');if(reason?.trim())void api.cancelInvoice(item.id,reason).then(()=>setRefreshVersion(previous => previous + 1)).catch(failure=>setError(String(failure)));}}>Cancel Invoice</button>:null}
+                        {item.status==='CANCELLED'&&item.document_data?<button type="button" className="ops-link-btn" title="Start a new invoice with the same customer and items" onClick={()=>{
+                          const draft=reissueInvoice(item);
+                          setForm({...EMPTY_FORM,...draft.form});setLines(draft.lines.length?draft.lines:[newLine()]);setSameShipping(draft.sameShipping);setRequestKey(postingKey());
+                          setError(null);setMessage(`Copied ${item.invoice_number} into a new invoice. Review it and post; it gets a new number.`);window.scrollTo({top:0,behavior:'smooth'});
+                        }}>Reissue</button>:null}
                         {item.status!=='CANCELLED'&&(item.collection_status === "UNPAID" ||
                           item.collection_status === "PARTIAL") && (
                           <Link

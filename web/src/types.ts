@@ -144,7 +144,7 @@ export type InventoryAlert = {
   stock_qty: number; reorder_level: number; reorder_quantity: number;
   reminder_date: string | null; reminder_due: boolean; low_stock: boolean;
 };
-export type InventoryMovement = { id: string; store_id?: string | null; variant_id: string | null; movement_type: string; quantity: number; notes: string; created_at: string };
+export type InventoryMovement = { id: string; store_id?: string | null; variant_id: string | null; movement_type: string; quantity: number; notes: string; created_at: string; reference_type?: string | null; reference_id?: string | null };
 export type InventoryReconciliation = {
   store_id: string; store_code: string;
   product_id: string; product_name: string; variant_id: string | null; variant_name: string | null;
@@ -166,6 +166,22 @@ export type StockTransfer = {
 export type StockTransferInput = {
   idempotency_key?: string; from_store_id: string; to_store_id: string; transfer_date?: string; reference?: string | null; notes: string;
   lines: Array<{ product_id: string; variant_id: string | null; quantity: number }>;
+};
+export type DeletionKind = "purchase" | "purchase_payment" | "receivable_payment" | "account_transaction" | "stock_adjustment"
+  | "stock_transfer" | "borrowing" | "cod_settlement" | "invoice" | "shop_order" | "all";
+export type DeletionPreview = {
+  kind: DeletionKind; id: string | null; label: string; confirm_text: string; cascade: boolean; token: string; can_delete: boolean;
+  deletes: Array<{ table: string; title: string; count: number; items: Array<{ id: string; label: string; critical: string | null }> }>;
+  critical: Array<{ table: string; title: string; id: string; label: string; reason: string }>;
+  stock_changes: Array<{ store_code: string; product_name: string; current: number; change: number; after: number }>;
+  account_changes: Array<{ account_id: string; account_name: string; change: number }>;
+  blockers: string[]; warnings: string[];
+};
+export type DeletionRequest = { kind: DeletionKind; id: string | null; cascade: boolean; token: string; confirm_text: string; reason: string };
+export type DeletionResult = { deletion_id: string; label: string; deleted: Record<string, number> };
+export type DeletionHistoryItem = {
+  id: string; kind: DeletionKind; label: string; reason: string; deleted_at: string; deleted_by: string | null;
+  deletes: DeletionPreview["deletes"] | null;
 };
 export type InventoryMissingSource = {
   store_id: string; store_code: string;
