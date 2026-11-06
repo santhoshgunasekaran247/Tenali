@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductInput, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
 from app.services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -52,6 +52,16 @@ def product(product_id: UUID, service: InventoryService = Depends(inventory_serv
 @router.put("/products/{product_id}")
 def update_product(product_id: UUID, payload: ProductInput, service: InventoryService = Depends(inventory_service)):
     return service.save_product(payload, str(product_id))
+
+
+@router.post("/products/{product_id}/confirm")
+def confirm_product(product_id: UUID, service: InventoryService = Depends(inventory_service)):
+    return service.confirm_draft(str(product_id))
+
+
+@router.post("/products/{product_id}/merge")
+def merge_product(product_id: UUID, payload: ProductMerge, service: InventoryService = Depends(inventory_service)):
+    return service.merge_draft(str(product_id), payload)
 
 
 @router.delete("/products/{product_id}")

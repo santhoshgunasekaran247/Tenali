@@ -132,6 +132,12 @@ class ReorderReminder(BaseModel):
     reminder_date: date
 
 
+class ProductMerge(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_product_id: UUID
+    target_variant_id: UUID | None = None
+
+
 class ExternalMovementSource(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     external_reference: str = Field(min_length=1, max_length=200)

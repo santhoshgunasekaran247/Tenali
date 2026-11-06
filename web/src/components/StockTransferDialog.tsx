@@ -7,15 +7,20 @@ import type { InventoryProduct, Store } from "../types";
 
 type Line = { product_id: string; variant_id: string; quantity: string };
 
-export function StockTransferDialog({ products, stores, onClose, onDone }:
-  { products: InventoryProduct[]; stores: Store[]; onClose: () => void; onDone: () => Promise<void> | void }) {
+export function StockTransferDialog({ products, stores, productId, onClose, onDone }:
+  { products: InventoryProduct[]; stores: Store[]; productId?: string; onClose: () => void; onDone: () => Promise<void> | void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [from, setFrom] = useState(stores.find(store => store.is_default)?.id || stores[0]?.id || "");
+  const focus = productId ? products.find(item => item.id === productId) : undefined;
+  // Opened from a product: start from the store holding the most of it, with that product on the first line.
+  const holding = focus ? [focus, ...focus.variants].flatMap(item => item.store_stocks || [])
+    .filter(entry => Number(entry.quantity) > 0 && stores.some(store => store.id === entry.store_id))
+    .sort((a, b) => Number(b.quantity) - Number(a.quantity))[0]?.store_id : undefined;
+  const [from, setFrom] = useState(holding || stores.find(store => store.is_default)?.id || stores[0]?.id || "");
   const [to, setTo] = useState(stores.find(store => store.id !== from)?.id || "");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ product_id: "", variant_id: "", quantity: "" }]);
+  const [lines, setLines] = useState<Line[]>([{ product_id: focus?.id || "", variant_id: "", quantity: "" }]);
   const [key] = useState(postingKey);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

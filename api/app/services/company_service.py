@@ -63,6 +63,7 @@ class CompanyService:
                     social_links = cast(:social_links as jsonb),
                     invoice_settings = cast(:invoice_settings as jsonb),
                     storefront_content = cast(:storefront_content as jsonb),
+                    storefront_enabled = coalesce(cast(:storefront_enabled as boolean), storefront_enabled),
                     site_theme = coalesce(cast(:site_theme as jsonb), site_theme), updated_at = now()
                 where id = :id returning *
                 """), values,

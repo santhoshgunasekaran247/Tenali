@@ -24,6 +24,7 @@ type PurchaseForm = {
   due_date: string;
   notes: string;
   receipt_type: "PRODUCT" | "STOCK" | "SERVICE";
+  received_now: boolean;
 };
 
 type PaymentForm = {
@@ -60,6 +61,7 @@ const EMPTY_FORM: PurchaseForm = {
   due_date: "",
   notes: "",
   receipt_type: "PRODUCT",
+  received_now: false,
 };
 
 const EMPTY_PAYMENT_FORM: PaymentForm = {
@@ -179,6 +181,7 @@ export function PurchasesPage() {
         due_date: form.due_date || undefined,
         notes: form.notes || undefined,
         receipt_type: form.receipt_type,
+        received_now: form.received_now && form.receipt_type !== "SERVICE",
       });
 
       setForm(EMPTY_FORM);
@@ -186,7 +189,7 @@ export function PurchasesPage() {
       setAttachments([]);
       setAttachmentTarget(created);
       setLines([newTaxLine()]);
-      setMessage("Purchase bill posted.");
+      setMessage(created.receipt_status === "RECEIVED" ? "Purchase bill posted and goods added to stock." : "Purchase bill posted.");
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to create purchase.");
@@ -468,6 +471,15 @@ export function PurchasesPage() {
                 <option value="SERVICE">Service</option>
               </select>
             </label>
+
+            {form.receipt_type !== "SERVICE" ? <label className="ops-toggle">
+              <input
+                type="checkbox"
+                checked={!!form.received_now}
+                onChange={(event) => setForm((prev) => ({ ...prev, received_now: event.target.checked }))}
+              />
+              Goods received now (add product lines to stock on posting)
+            </label> : null}
 
             <AttachmentPicker value={attachments} onChange={setAttachments} disabled={saving} onBusyChange={setAttachmentReading} />
             <button className="btn" type="submit" disabled={saving || loading || !!loadErrors.length || !!storeContext.error || attachmentReading || !hsnMasters.length}>

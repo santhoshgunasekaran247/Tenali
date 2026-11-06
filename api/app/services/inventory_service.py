@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, ProductInput, ReorderReminder, StockAdjustment, StockTransferCreate, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, VariantInput, VendorOfferInput
 from app.services.access import allowed_stores
 from app.services.inventory_pricing import resolve_catalog_price
 from app.services.period_lock_service import assert_period_open
@@ -207,8 +207,8 @@ class InventoryService:
                     raise HTTPException(422, f"{variant['variant_name']}: {variant['pricing_error']}")
 
     def save_product(self, payload: ProductInput, product_id: str | None = None) -> dict:
-        if product_id:
-            self._product(product_id, lock=True)
+        if product_id and self._product(product_id, lock=True).get("is_draft") and payload.catalog_visible:
+            raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
         self._validate_item(values, product_id)
         files = FileStore(self.db)
@@ -221,6 +221,90 @@ class InventoryService:
         self._check_price(product_id)
         self.db.commit()
         return self.detail(product_id)
+
+    def confirm_draft(self, product_id: str) -> dict:
+        product = self._product(product_id, lock=True)
+        if not product.get("hsn_code"):
+            raise HTTPException(422, "Set an HSN/SAC code before confirming this product")
+        self.db.execute(text("update products set is_draft=false, updated_at=now() where id=:id and company_id=:company"),
+                        {"id": product_id, "company": self.company_id})
+        self.db.commit()
+        return self.detail(product_id)
+
+    def merge_draft(self, draft_id: str, payload: ProductMerge) -> dict:
+        """Fold a draft from a purchase bill into an existing product: stock history, store balances,
+        bill/transfer lines and vendor offers move to the target, then the draft is removed."""
+        identity = self.db.info.get("tenant_context", {})
+        if identity.get("role") not in {"owner", "admin"}:
+            raise HTTPException(403, "Only owners and administrators can merge products")
+        target_id = str(payload.target_product_id)
+        if target_id == draft_id:
+            raise HTTPException(422, "Choose a different product to merge into")
+        draft = self._product(draft_id, lock=True)
+        if not draft.get("is_draft"):
+            raise HTTPException(422, "Only draft products can be merged into another product")
+        target = self._product(target_id, lock=True)
+        if not target["is_active"]:
+            raise HTTPException(422, "Merge into an active product")
+        variant_id = str(payload.target_variant_id) if payload.target_variant_id else None
+        if variant_id:
+            if not self._variant(target_id, variant_id)["is_active"]:
+                raise HTTPException(422, "Merge into an active variant")
+        elif self.db.execute(text("select 1 from product_variants where product_id=:product and is_active=true limit 1"),
+                             {"product": target_id}).scalar_one_or_none():
+            raise HTTPException(422, f"Choose which variant of {target['name']} receives the stock")
+        if self.db.execute(text("select 1 from product_variants where product_id=:product limit 1"), {"product": draft_id}).scalar_one_or_none():
+            raise HTTPException(422, "A draft with variants cannot be merged")
+        params = {"draft": draft_id, "target": target_id, "variant": variant_id, "company": self.company_id}
+
+        for balance in self.db.execute(text("""select id,store_id,quantity from stock_balances
+            where company_id=:company and product_id=:draft for update"""), params).mappings().all():
+            existing = self.db.execute(text("""select id from stock_balances where company_id=:company and store_id=:store
+                and product_id=:target and variant_id is not distinct from cast(:variant as uuid) for update"""),
+                {**params, "store": balance["store_id"]}).scalar_one_or_none()
+            if existing:
+                self.db.execute(text("update stock_balances set quantity=quantity+:quantity where id=:id"), {"id": existing, "quantity": balance["quantity"]})
+                self.db.execute(text("delete from stock_balances where id=:id"), {"id": balance["id"]})
+            else:
+                self.db.execute(text("update stock_balances set product_id=:target, variant_id=cast(:variant as uuid) where id=:id"), {**params, "id": balance["id"]})
+        for table in ("stock_movements", "purchase_items", "invoice_items", "enquiries"):
+            self.db.execute(text(f"update {table} set product_id=:target, variant_id=cast(:variant as uuid) where product_id=:draft"), params)
+
+        def repoint(lines):
+            changed = False
+            for line in lines or []:
+                if isinstance(line, dict) and str(line.get("product_id")) == draft_id:
+                    line.update(product_id=target_id, variant_id=variant_id)
+                    changed = True
+            return changed
+        reference = f"%{draft_id}%"
+        for table, column in (("purchases", "line_items"), ("stock_transfers", "lines")):
+            for row in self.db.execute(text(f"select id,{column} as lines from {table} where company_id=:company and {column}::text like :reference"),
+                                       {"company": self.company_id, "reference": reference}).mappings().all():
+                lines = row["lines"]
+                if repoint(lines):
+                    self.db.execute(text(f"update {table} set {column}=cast(:lines as jsonb) where id=:id"), {"id": row["id"], "lines": json.dumps(lines)})
+
+        for offer in self.db.execute(text("select id,vendor_id from vendor_contributions where product_id=:draft"), params).mappings().all():
+            taken = self.db.execute(text("""select 1 from vendor_contributions where product_id=:target
+                and variant_id is not distinct from cast(:variant as uuid) and vendor_id=:vendor limit 1"""),
+                {**params, "vendor": offer["vendor_id"]}).scalar_one_or_none()
+            if taken:
+                self.db.execute(text("delete from vendor_contributions where id=:id"), {"id": offer["id"]})
+            else:
+                self.db.execute(text("update vendor_contributions set product_id=:target, variant_id=cast(:variant as uuid), updated_at=now() where id=:id"),
+                                {**params, "id": offer["id"]})
+        preferred_table = "product_variants" if variant_id else "products"
+        self.db.execute(text(f"""update {preferred_table} set preferred_vendor_id=:vendor where id=:id and preferred_vendor_id is null
+            and exists(select 1 from vendor_contributions where vendor_id=:vendor and product_id=:target
+                       and variant_id is not distinct from cast(:variant as uuid) and is_active=true)"""),
+            {**params, "id": variant_id or target_id, "vendor": draft.get("preferred_vendor_id")})
+        if draft.get("hsn_code"):
+            self.db.execute(text("update products set hsn_code=:hsn, updated_at=now() where id=:target and coalesce(hsn_code,'')=''"),
+                            {**params, "hsn": draft["hsn_code"]})
+        self.db.execute(text("delete from products where id=:draft and company_id=:company"), params)
+        self.db.commit()
+        return self.detail(target_id)
 
     def delete_product(self, product_id: str) -> dict:
         identity = self.db.info.get("tenant_context", {})

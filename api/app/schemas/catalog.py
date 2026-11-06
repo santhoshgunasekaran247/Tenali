@@ -17,6 +17,7 @@ class CompanyOut(BaseModel):
     site_theme: SiteTheme = Field(default_factory=SiteTheme)
     tenant_slug: str | None = None
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
+    storefront_enabled: bool = True
 
 
 class BrandOut(BaseModel):

@@ -19,6 +19,8 @@ class InvoiceLineCreate(BaseModel):
     gst_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
     # None = the document default: sales lines are GST-inclusive, purchase lines exclusive.
     price_includes_gst: bool | None = None
+    # Purchases only: add this line's item to Product Inventory as a draft product.
+    new_product: bool = False
 
 
 class InvoiceCreate(BaseModel):

@@ -6,6 +6,7 @@ export type Company = {
   logo_url?: string;
   site_theme?: SiteTheme;
   storefront_content?: StorefrontContent;
+  storefront_enabled?: boolean;
   gst_number?: string;
   gst_registered?: boolean;
   whatsapp_number?: string | null;
@@ -131,7 +132,7 @@ export type InventoryItem = InventoryItemInput & {
 export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string };
 export type InventoryProduct = InventoryItem & Omit<InventoryProductInput, "image_urls"> & {
   image_urls: string; portal_product_id: string; brand_name?: string; category_name?: string;
-  base_stock_qty: number; variants: InventoryVariant[];
+  base_stock_qty: number; variants: InventoryVariant[]; is_draft?: boolean;
 };
 export type InventoryLookups = {
   brands: Array<{ id: string; name: string; code: string }>;
@@ -603,6 +604,8 @@ export type InvoiceLineInput = {
   rate: number;
   gst_rate: number;
   price_includes_gst?: boolean | null;
+  /** Purchases only: create a draft inventory product from this line. */
+  new_product?: boolean;
 };
 
 export type InvoiceDocument = {
@@ -746,6 +749,7 @@ export type PurchaseCreateInput = {
   due_date?: string;
   notes?: string;
   receipt_type?: "PRODUCT" | "STOCK" | "SERVICE";
+  received_now?: boolean;
 };
 
 export type PurchasePaymentCreateInput = {

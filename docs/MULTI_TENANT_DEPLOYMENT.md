@@ -77,6 +77,65 @@ Official references:
 - [Shiprocket KYC](https://support.shiprocket.in/support/solutions/articles/43000662578-what-documents-are-required-for-kyc-verification-)
 - [Shiprocket API-user setup](https://support.shiprocket.in/support/solutions/articles/43000337456-shiprocket-api-document-helpsheet)
 
+### Turning a storefront off
+
+Owners and admins can switch **Storefront open to the public** off in Company Setup
+(`companies.storefront_enabled`, revision `036_storefront_enabled`; existing
+workspaces stay open). Apply that revision before deploying the API, because the
+public company endpoint reads the column.
+
+While the storefront is off:
+
+- Visitors see an "unavailable" page with the store's contact details instead of
+  the home, brand, product, cart and checkout pages. Catalog navigation and the
+  cart link are hidden.
+- `/catalog/home`, `/catalog/list`, `/catalog/products/*`, `/shop/availability`,
+  `/shop/nearby`, `/shop/enquiries`, `/shop/quote` and `POST /shop/orders` return
+  403 "This storefront is currently unavailable".
+- `/catalog/company` still answers (it reports `storefront_enabled`), and these
+  keep working: public store policies, shopper sign-in and existing order tracking,
+  payment confirmation and Razorpay webhooks for orders already placed, and the
+  Operations Portal.
+
+Omitting `storefront_enabled` from a company update keeps the current setting.
+
+### Purchase bills, stock and draft products
+
+Apply revision `037_product_drafts` (`products.is_draft`, default false) before
+deploying the API, because line resolution and the inventory list read it.
+
+- **HSN on products without one:** a sales or purchase line for a product with no
+  HSN/SAC uses the active code chosen on the line, and that code is saved to the
+  product. Products that already have a code always use their own.
+- **New items on a purchase bill:** choose "New item - add to inventory as draft".
+  Posting creates a product named after the line description, with the chosen
+  HSN, mapped to the bill's vendor at the line's taxable unit rate. It is hidden
+  from the storefront. A name matching an active product is rejected with 409, so
+  the existing product is picked instead. Drafts can be bought again but cannot be
+  sold or made visible on the storefront until **Confirm product** is used in
+  Product Inventory (`POST /inventory/products/{id}/confirm`).
+- **Merging a draft:** owners and admins can instead merge a draft into an
+  existing active product (`POST /inventory/products/{id}/merge` with
+  `target_product_id`, plus `target_variant_id` when the target has active
+  variants). Store balances are added to the target, and stock movements and
+  purchase/transfer lines are re-pointed, so later receipts and cancellations act
+  on the target. Vendor offers move across unless the target already has an offer
+  from that vendor (the existing offer is kept). The target's empty HSN and
+  preferred vendor are filled from the draft. The draft is then deleted.
+- **Manual / service lines** never touch stock.
+- **Goods received now** (`received_now`, unticked by default) books product lines
+  into the posting store's stock and marks the bill RECEIVED in the same
+  transaction. It is ignored for SERVICE bills. Otherwise stock is added when the
+  receipt is confirmed later.
+- **Transfers from a product:** the product's Owned Stock tab has **Transfer
+  between stores** when the tenant has two or more stock stores and the product
+  has stock. It opens the stock transfer dialog with the product on the first
+  line and the store holding the most of it as the source.
+- **Reorder alerts** only appear when alerts are enabled on the product or
+  variant and stock is at or below the reorder level. Entering a level in the
+  editor turns alerts on and raises the target to at least the level; a level
+  with alerts off is flagged in the editor.
+
 ### Public policies and integration review
 
 Apply Alembic revision `034_public_policies` before deploying the policy editor.

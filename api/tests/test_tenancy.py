@@ -49,9 +49,11 @@ class TenantDatabaseCase(unittest.TestCase):
         self.outer=self.connection.begin()
         self.addCleanup(self.outer.rollback)
         from sqlalchemy import text
-        from schema_support import apply_customer_migration, apply_product_minimum_migration
+        from schema_support import apply_customer_migration, apply_product_draft_migration, apply_product_minimum_migration, apply_storefront_enabled_migration
         apply_customer_migration(self.connection,getattr(self,'prepare_legacy_accounts',None))
         apply_product_minimum_migration(self.connection)
+        apply_storefront_enabled_migration(self.connection)
+        apply_product_draft_migration(self.connection)
         self.stack=ExitStack()
         self.addCleanup(self.stack.close)
         connection=self.connection

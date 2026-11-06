@@ -42,6 +42,22 @@ def apply_invoice_store_code_migration(connection):
         migration["upgrade"]()
 
 
+def apply_storefront_enabled_migration(connection):
+    if "storefront_enabled" in {column["name"] for column in inspect(connection).get_columns("companies")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "036_storefront_enabled.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
+def apply_product_draft_migration(connection):
+    if "is_draft" in {column["name"] for column in inspect(connection).get_columns("products")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "037_product_drafts.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def apply_inventory_deletion_migration(connection):
     migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "033_inventory_product_deletion.py"))
     with Operations.context(MigrationContext.configure(connection)):

@@ -21,6 +21,7 @@ from app.services.customer_contacts import normalize_phone
 from app.services.federation_settings import public_config
 from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company
 from app.services.shop_checkout import ORDER_COLUMNS, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
+from app.services.storefront_access import ensure_storefront_enabled
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
 from app.services.tenant_security import Login, token_digest
@@ -32,6 +33,11 @@ admin_router = APIRouter()
 def store(request: Request, db=Depends(identity_db)):
     check_write(request)
     return storefront_company(db, request)
+
+
+def open_store(company=Depends(store), db=Depends(identity_db)):
+    ensure_storefront_enabled(db, company["id"])
+    return company
 
 
 def customer(request: Request, company=Depends(store), db=Depends(identity_db)):
@@ -146,7 +152,7 @@ def public_db(company=Depends(store)):
 
 
 @router.get("/availability")
-def availability(company=Depends(store), db=Depends(identity_db)):
+def availability(company=Depends(open_store), db=Depends(identity_db)):
     settings = db.execute(text("""select enabled,shipping_paise,prepaid_enabled,cod_enabled,cod_limit,pickup_enabled
         from checkout_settings where company_id=:company"""), {"company": company["id"]}).mappings().first()
     pickup_stores = [dict(row) for row in db.execute(text("""select id,code,name,address,pincode,whatsapp_number from stores
@@ -162,19 +168,19 @@ def availability(company=Depends(store), db=Depends(identity_db)):
 @router.get("/nearby")
 def nearby(product_id: UUID, variant_id: UUID | None = None, lat: float | None = Query(None, ge=-90, le=90),
            lng: float | None = Query(None, ge=-180, le=180), pincode: str | None = Query(None, pattern=r"^[1-9][0-9]{5}$"),
-           request: Request = None, company=Depends(store), db=Depends(public_db), privileged=Depends(identity_db)):
+           request: Request = None, company=Depends(open_store), db=Depends(public_db), privileged=Depends(identity_db)):
     throttle(privileged, request, company["id"])
     return orders_service.nearby_availability(db, str(company["id"]), str(product_id), str(variant_id) if variant_id else None, lat, lng, pincode)
 
 
 @router.post("/enquiries", status_code=201)
-def enquire(payload: EnquiryInput, request: Request, company=Depends(store), db=Depends(public_db), privileged=Depends(identity_db)):
+def enquire(payload: EnquiryInput, request: Request, company=Depends(open_store), db=Depends(public_db), privileged=Depends(identity_db)):
     throttle(privileged, request, company["id"])
     return orders_service.create_enquiry(db, str(company["id"]), payload)
 
 
 @router.post("/quote")
-def quote(payload: CheckoutInput, company=Depends(store), identity=Depends(customer), db=Depends(shop_db), privileged=Depends(identity_db)):
+def quote(payload: CheckoutInput, company=Depends(open_store), identity=Depends(customer), db=Depends(shop_db), privileged=Depends(identity_db)):
     settings = settings_for(privileged, str(company["id"]))
     result = quote_order(db, settings, str(company["id"]), payload)
     db.rollback()
@@ -183,7 +189,7 @@ def quote(payload: CheckoutInput, company=Depends(store), identity=Depends(custo
 
 
 @router.post("/orders", status_code=201)
-def checkout(payload: CheckoutInput, company=Depends(store), identity=Depends(customer), db=Depends(shop_db), privileged=Depends(identity_db)):
+def checkout(payload: CheckoutInput, company=Depends(open_store), identity=Depends(customer), db=Depends(shop_db), privileged=Depends(identity_db)):
     TenantAuth(privileged).throttle("checkout:" + str(identity["id"]), 20)
     return create_order(db, privileged, str(company["id"]), str(identity["id"]), payload)
 

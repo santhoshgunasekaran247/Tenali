@@ -16,7 +16,7 @@ from app.services.purchase_ledger import purchase_payment_totals, sync_purchase_
 from app.services.period_lock_service import assert_period_open
 from app.services.masters_service import MastersService
 from app.services.documents_service import DocumentsService
-from app.services.commerce_stock import resolve_product_lines, book_stock
+from app.services.commerce_stock import create_draft_products, resolve_product_lines, book_stock
 from app.services.document_numbers import next_document_number
 from app.services.financial_amounts import line_amounts
 from app.services.access import allowed_stores
@@ -292,7 +292,8 @@ class PurchasesService:
 
         line_items = []
         if payload.lines:
-            resolve_product_lines(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id))
+            create_draft_products(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id))
+            resolve_product_lines(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id),allow_drafts=True)
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             subtotal = Decimal("0")
             gst_total = Decimal("0")
@@ -300,7 +301,7 @@ class PurchasesService:
                 # Vendor bills quote exclusive rates unless the line says otherwise.
                 inclusive = bool(line.price_includes_gst)
                 taxable, gst = line_amounts(line.quantity, line.rate, line.gst_rate, inclusive)
-                line_items.append({**line.model_dump(mode="json"), "price_includes_gst": inclusive, "taxable": str(taxable), "gst_amount": str(gst), "total": str(taxable + gst)})
+                line_items.append({**line.model_dump(mode="json", exclude={"new_product"}), "price_includes_gst": inclusive, "taxable": str(taxable), "gst_amount": str(gst), "total": str(taxable + gst)})
                 subtotal += taxable
                 gst_total += gst
             payload.subtotal = subtotal
@@ -429,6 +430,13 @@ class PurchasesService:
             raise HTTPException(status_code=500, detail="Failed to create purchase")
 
         purchase = dict(row)
+
+        if payload.received_now and receipt_type != "SERVICE":
+            book_stock(self.db,resolved_company_id,line_items,"IN","purchase_receipt",str(purchase["id"]),str(store["id"]))
+            received = self.db.execute(text("""update purchases set receipt_status='RECEIVED', received_at=now()
+                where id=:id and company_id=:company returning receipt_status, received_at"""),
+                {"id": str(purchase["id"]), "company": resolved_company_id}).mappings().one()
+            purchase.update(received)
 
         if amount_paid > Decimal("0"):
             payment_mode = (payload.payment_mode or "").strip()

@@ -4,6 +4,7 @@ import { calculateLineTotals } from "../features/taxTotals";
 import type { HsnMaster, InvoiceLineInput, InventoryProduct } from "../types";
 
 export const newTaxLine = (): InvoiceLineInput => ({ description: "", hsn: "", quantity: 1, rate: 0, gst_rate: 0 });
+const NEW_PRODUCT = "__new__";
 
 export function TaxLinesEditor({ lines, masters, onChange, disabled = false, products = [], vendorId, pricesIncludeGst = false, gstRegistered = true }: {
   lines: InvoiceLineInput[];
@@ -23,7 +24,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
   const effectiveLines = gstRegistered ? lines : lines.map(line => ({ ...line, gst_rate: 0 }));
   const { subtotal, gstTotal, total } = calculateLineTotals(effectiveLines, pricesIncludeGst);
   const formatTotal = (value: number) => Number.isFinite(value) ? `INR ${value.toFixed(2)}` : "Invalid amount";
-  const availableProducts = products.filter(product => product.is_active && (!vendorId ||
+  const availableProducts = products.filter(product => product.is_active && (vendorId ? true : !product.is_draft) && (!vendorId ||
     (product.variants.some(variant => variant.is_active)
       ? product.variants.some(variant => variant.is_active && variant.offers.some(offer => offer.vendor_id === vendorId && offer.is_active))
       : product.offers.some(offer => offer.vendor_id === vendorId && offer.is_active))));
@@ -35,7 +36,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
         {availableProducts.length ? "Showing products mapped to the selected vendor." : "No active products are mapped to the selected vendor."}{" "}
         <Link to="/portal/inventory">Manage product / vendor mappings</Link>. Add an active vendor offer to the product or its active variants, then return here. Your purchase draft is kept.
       </p> : !products.some(product => product.is_active) ? <p className="ops-copy-note">No active inventory products available. <Link to="/portal/inventory">Open Product Inventory</Link> to add or activate products.</p> : null}
-      {lines.map((line, index) => <div className="invoice-line" key={index}>
+      {lines.map((line, index) => { const lineProduct = line.product_id ? products.find(item => item.id === line.product_id) : undefined; return <div className="invoice-line" key={index}>
         <div className="invoice-line-heading">
           <strong>Item {index + 1}</strong>
           <button className="ops-link-btn" type="button" title="Remove item" aria-label={`Remove item ${index + 1}`}
@@ -47,12 +48,15 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
           <input required maxLength={500} value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} />
         </label>
         <label>Product / Inventory
-          <select value={line.product_id||""} onChange={event=>{
+          <select value={line.new_product?NEW_PRODUCT:line.product_id||""} onChange={event=>{
+            if(event.target.value===NEW_PRODUCT){updateLine(index,{product_id:null,variant_id:null,new_product:true,price_includes_gst:undefined});return;}
             const product=products.find(item=>item.id===event.target.value);
             const offer=product?.offers.find(item=>item.vendor_id===vendorId&&item.is_active);
-            updateLine(index,product?{product_id:product.id,variant_id:null,description:product.name,hsn:product.hsn_code||"",gst_rate:Number(masters.find(item=>item.code===product.hsn_code)?.gst_rate||0),rate:Number(vendorId?offer?.buying_price||0:product.catalog_price||0)}:{product_id:null,variant_id:null,description:"",hsn:"",gst_rate:0,rate:0});
-          }}><option value="">Manual / service item</option>{availableProducts.map(product=><option key={product.id} value={product.id}>{product.name} ({product.portal_product_id})</option>)}</select>
+            updateLine(index,product?{product_id:product.id,variant_id:null,new_product:false,description:product.name,hsn:product.hsn_code||"",gst_rate:Number(masters.find(item=>item.code===product.hsn_code)?.gst_rate||0),rate:Number(vendorId?offer?.buying_price||0:product.catalog_price||0)}:{product_id:null,variant_id:null,new_product:false,description:"",hsn:"",gst_rate:0,rate:0});
+          }}><option value="">{vendorId?"Manual / service item (no stock)":"Manual / service item"}</option>{vendorId?<option value={NEW_PRODUCT}>New item - add to inventory as draft</option>:null}{availableProducts.map(product=><option key={product.id} value={product.id}>{product.name} ({product.portal_product_id}){product.is_draft?" - draft":""}</option>)}</select>
         </label>
+        {line.new_product?<p className="ops-copy-note">A draft product named after the description is added to Product Inventory, mapped to this vendor. Confirm it there before selling.</p>
+          :vendorId&&!line.product_id?<p className="ops-copy-note">Manual lines are not added to stock. Pick a product or a new item to receive stock.</p>:null}
         {line.product_id&&products.find(item=>item.id===line.product_id)?.variants.some(variant=>variant.is_active)?<label>Variant
           <select required value={line.variant_id||""} onChange={event=>{
             const product=products.find(item=>item.id===line.product_id)!;const variant=product.variants.find(item=>item.id===event.target.value);
@@ -61,7 +65,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
           }}><option value="">Select variant</option>{products.find(item=>item.id===line.product_id)!.variants.filter(variant=>variant.is_active&&(!vendorId||variant.offers.some(offer=>offer.vendor_id===vendorId&&offer.is_active))).map(variant=><option key={variant.id} value={variant.id}>{variant.variant_name}</option>)}</select>
         </label>:null}
         <label>HSN / SAC
-          <select required disabled={!!line.product_id} value={line.hsn} onChange={(event) => {
+          <select required disabled={!!lineProduct?.hsn_code} value={line.hsn} onChange={(event) => {
             const selected = masters.find((master) => master.code === event.target.value);
             updateLine(index, { hsn: selected?.code || "", gst_rate: selected ? Number(selected.gst_rate) : 0 });
           }}>
@@ -69,6 +73,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
             {line.hsn && !masters.some((master) => master.code === line.hsn) ? <option value={line.hsn} disabled>{line.hsn} (unavailable)</option> : null}
             {masters.map((master) => <option value={master.code} key={master.id}>{master.code} - {master.description} ({Number(master.gst_rate)}%)</option>)}
           </select>
+          {lineProduct && !lineProduct.hsn_code ? <small className="ops-copy-note">This product has no HSN yet. The code you choose is saved to the product.</small> : null}
         </label>
         <div className="invoice-line-values">
           <label>Quantity<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></label>
@@ -76,7 +81,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
           <label>GST %<input type="number" readOnly value={gstRegistered ? line.gst_rate : 0} /></label>
           {!line.product_id ? <label className="ops-toggle"><input type="checkbox" checked={line.price_includes_gst ?? pricesIncludeGst} onChange={(event) => updateLine(index, { price_includes_gst: event.target.checked })} />Incl. GST</label> : null}
         </div>
-      </div>)}
+      </div>; })}
       <button className="ops-link-btn" type="button" disabled={lines.length >= 200} onClick={() => onChange([...lines, newTaxLine()])}>
         <Plus size={16} aria-hidden="true" /> Add Item
       </button>

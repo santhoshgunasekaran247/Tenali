@@ -28,6 +28,8 @@ class PurchaseCreate(BaseModel):
     due_date: date | None = None
     notes: str | None = None
     receipt_type: str = "PRODUCT"
+    # True books the goods into stock as part of posting instead of waiting for a separate receipt.
+    received_now: bool = False
     lines: list[InvoiceLineCreate] = Field(default_factory=list, max_length=200)
     attachments: list[AttachmentCreate] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
 

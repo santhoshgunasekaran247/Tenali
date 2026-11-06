@@ -36,6 +36,7 @@ import { PoliciesPage } from "./pages/PoliciesPage";
 import { TenantPoliciesPage } from "./pages/TenantPoliciesPage";
 import { PolicyLinks } from "./components/PolicyLinks";
 import { RouteScroll } from "./components/RouteScroll";
+import { StorefrontGate } from "./components/StorefrontGate";
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -45,22 +46,22 @@ export default function App() {
       <RouteScroll />
       <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} />
       <Routes>
-        <Route path="/" element={<StorefrontRoot><HomePage /></StorefrontRoot>} />
+        <Route path="/" element={<StorefrontRoot><StorefrontGate><HomePage /></StorefrontGate></StorefrontRoot>} />
         <Route path="/login" element={<AccessPage />} />
         <Route path="/register" element={<AccessPage register />} />
         <Route path="/account" element={<ShopperAccountPage />} />
         <Route path="/account/register" element={<ShopperAccountPage register />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/cart" element={<CartPage />} />
+        <Route path="/checkout" element={<StorefrontGate><CheckoutPage /></StorefrontGate>} />
+        <Route path="/cart" element={<StorefrontGate><CartPage /></StorefrontGate>} />
         <Route path="/platform" element={<PlatformAdminPage />} />
         <Route path="/platform/authentication" element={<PlatformAdminPage />} />
         <Route path="/platform/policies" element={<PlatformAdminPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/policies/:scope" element={<PoliciesPage />} />
         <Route path="/policies/:scope/:kind" element={<PoliciesPage />} />
-        <Route path="/brand" element={<BrandPage />} />
-        <Route path="/brand.html" element={<BrandPage />} />
-        <Route path="/products/:productId" element={<ProductPage />} />
+        <Route path="/brand" element={<StorefrontGate><BrandPage /></StorefrontGate>} />
+        <Route path="/brand.html" element={<StorefrontGate><BrandPage /></StorefrontGate>} />
+        <Route path="/products/:productId" element={<StorefrontGate><ProductPage /></StorefrontGate>} />
         <Route element={<RequireWorkspace />}>
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/portal/dashboard" element={<OperationsDashboardPage />} />

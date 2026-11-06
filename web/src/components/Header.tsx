@@ -19,7 +19,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   const auth=useAuth();
   const cart=useCart();
   const location=useLocation();
-  const [company, setCompany] = useState<(Pick<Company,'company_name'|'logo_url'|'storefront_content'>&{site_theme?:SiteTheme}) | null>(null);
+  const [company, setCompany] = useState<(Pick<Company,'company_name'|'logo_url'|'storefront_content'|'storefront_enabled'>&{site_theme?:SiteTheme}) | null>(null);
   useEffect(() => {
     let active = true;
     const load = () => {
@@ -40,6 +40,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   const displayBrand=auth.storefront||company||{company_name:companyName||"Tenali",nickname:auth.user?.nickname};
   const navigation=company?.storefront_content?.navigation||auth.storefront?.storefront_content?.navigation||{};
   const storefrontCompany=company||auth.storefront;
+  const storefrontOpen=(auth.storefront||company)?.storefront_enabled!==false;
   const navText=(key:string,fallback:string)=>storefrontText(navigation[key]||fallback,displayBrand);
   const inPortal=location.pathname.startsWith("/portal");
   const storefrontHref=auth.user?(auth.storefront?.id===auth.user.company_id?(tenantBase()||"/"):`/c/${auth.user.tenant_slug}`):"/";
@@ -62,7 +63,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
           {inPortal ? <>
             <Link to="/portal">{navText("operations_portal","Operations Portal")}</Link>
             {auth.storefront?.id === auth.user.company_id ? <Link to="/">{navText("storefront","Storefront")}</Link> : <a href={storefrontHref}>{navText("storefront","Storefront")}</a>}
-          </> : storefrontCompany ? <>
+          </> : storefrontCompany&&storefrontOpen ? <>
             <Link to="/#collection-special">{navText("collection","Collection")}</Link>
             <Link to="/#categories">{navText("categories","Categories")}</Link>
             <Link to="/#best-sellers">{navText("best_sellers","Best Sellers")}</Link>
@@ -70,7 +71,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
             <Link to="/#brands">{navText("brands","Brands")}</Link>
             <Link to="/#contact">{navText("contact","Contact")}</Link>
           </> : null}
-        </div> : storefrontCompany ? <>
+        </div> : storefrontCompany&&storefrontOpen ? <>
           <Link to="/#collection-special">{navText("collection","Collection")}</Link>
           <Link to="/#categories">{navText("categories","Categories")}</Link>
           <Link to="/#best-sellers">{navText("best_sellers","Best Sellers")}</Link>
@@ -78,7 +79,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
           <Link to="/#brands">{navText("brands","Brands")}</Link>
           <Link to="/#contact">{navText("contact","Contact")}</Link>
         </> : null}
-        {auth.storefront&&!inPortal?<Link to="/cart">Cart ({cart.items.reduce((total,item)=>total+item.quantity,0)})</Link>:null}
+        {auth.storefront&&storefrontOpen&&!inPortal?<Link to="/cart">Cart ({cart.items.reduce((total,item)=>total+item.quantity,0)})</Link>:null}
         {storefrontCompany&&!inPortal?<Link to="/account">{navText("shopper_account","Shopper Account")}</Link>:null}
         {!auth.user?<Link to="/login" onClick={()=>menuOpen&&onMenuToggle()}>{navText("sign_in","Workspace Staff Sign In")}</Link>:null}
         <WorkspaceBar/>

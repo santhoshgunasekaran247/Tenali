@@ -140,6 +140,7 @@ export function CompanySetupPage() {
         invoice_settings: company.invoice_settings,
         site_theme: company.site_theme,
         storefront_content: company.storefront_content,
+        storefront_enabled: company.storefront_enabled !== false,
       });
       setSavedSiteTheme(result.site_theme);
       setCompany(result);
@@ -227,6 +228,8 @@ export function CompanySetupPage() {
             <label>Company Name<input required maxLength={200} value={company.company_name} onChange={(event) => update({ company_name: event.target.value })} /></label>
             <label>Display Name<input maxLength={100} value={company.nickname || ""} onChange={(event) => update({ nickname: event.target.value })} /></label>
             <label>Storefront Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" value={company.tenant_slug} onChange={(event) => update({ tenant_slug: event.target.value.toLowerCase() })} /><span className="access-workspace-url">/c/{company.tenant_slug}</span></label>
+            <label id="storefront-visibility" className="ops-toggle company-field-wide"><input type="checkbox" checked={company.storefront_enabled !== false} onChange={(event) => update({ storefront_enabled: event.target.checked })} />Storefront open to the public</label>
+            {company.storefront_enabled === false ? <p className="ops-copy-note company-field-wide">Storefront is off: visitors see an &quot;unavailable&quot; page and cannot browse products, add to cart, check out or send enquiries. Store policies, shopper order tracking and this Operations Portal keep working. Save to apply.</p> : null}
             <label className="company-field-wide">Registered Address<textarea rows={4} maxLength={2000} value={company.address || ""} onChange={(event) => update({ address: event.target.value })} /></label>
             <label className="ops-toggle"><input type="checkbox" checked={company.gst_registered !== false} onChange={(event) => update({ gst_registered: event.target.checked })} />GST registered (turnover above the threshold)</label>
             {company.gst_registered === false ? <p className="ops-copy-note">Not registered: invoices are issued as Bills of Supply with no GST and no GSTIN is required. Purchase bills still record the GST your vendors charge.</p> : null}
