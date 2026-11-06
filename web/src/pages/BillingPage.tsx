@@ -11,6 +11,7 @@ import { calculateLineTotals } from "../features/taxTotals";
 import { StoreSelect, useStores } from "../features/stores";
 import { BillingCustomer } from "../components/BillingCustomer";
 import { reissueInvoice } from "../features/invoiceReissue";
+import { CancelDocumentDialog } from "../components/CancelDocumentDialog";
 import type { InventoryProduct } from "../types";
 import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
 
@@ -60,6 +61,7 @@ const SUPPLY_STATES = [
 ];
 
 export function BillingPage() {
+  const [cancelTarget, setCancelTarget] = useState<Invoice | null>(null);
   const reconcilePageSize = 10;
   const [parties, setParties] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -525,7 +527,9 @@ export function BillingPage() {
                           onClick={() => void exportInvoice(item)}>
                           <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}
                         </button>
-                        {item.status!=='CANCELLED'&&item.amount_received===0?<button type="button" className="ops-link-btn" onClick={()=>{const reason=window.prompt('Reason for cancellation (stock is returned; no refund is issued):');if(reason?.trim())void api.cancelInvoice(item.id,reason).then(()=>setRefreshVersion(previous => previous + 1)).catch(failure=>setError(String(failure)));}}>Cancel Invoice</button>:null}
+                        {item.status!=='CANCELLED'?<button type="button" className="ops-link-btn"
+                          title={item.amount_received>0?"Cancel this invoice; its receipts become pending refunds":"Cancel this unpaid invoice"}
+                          onClick={()=>setCancelTarget(item)}>Cancel Invoice</button>:null}
                         {item.status==='CANCELLED'&&item.document_data?<button type="button" className="ops-link-btn" title="Start a new invoice with the same customer and items" onClick={()=>{
                           const draft=reissueInvoice(item);
                           setForm({...EMPTY_FORM,...draft.form});setLines(draft.lines.length?draft.lines:[newLine()]);setSameShipping(draft.sameShipping);setRequestKey(postingKey());
@@ -547,6 +551,9 @@ export function BillingPage() {
               </tbody>
             </table>
           </div>
+          {cancelTarget ? <CancelDocumentDialog kind="invoice" id={cancelTarget.id} number={cancelTarget.invoice_number} paid={Number(cancelTarget.amount_received || 0)}
+            onClose={() => setCancelTarget(null)}
+            onDone={result => { const refunds = result.refunds?.length || 0; setMessage(`${cancelTarget.invoice_number} was cancelled. Its PDF now shows CANCELLED${refunds ? `; ${refunds} refund(s) are pending in Settlements ? Refunds` : ""}. Use Reissue for a corrected invoice.`); setCancelTarget(null); setRefreshVersion(previous => previous + 1); }} /> : null}
         </article>
 
         <article className="ops-card ops-list-card">

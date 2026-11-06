@@ -529,6 +529,8 @@ class BillingService:
                 i.reminder_date,
                 i.bad_debt_reason,
                 i.document_data,
+                i.cancelled_at,
+                i.cancellation_reason,
                 i.created_at
             from invoices i
             join parties p on p.id = i.customer_party_id

@@ -1,8 +1,9 @@
-import { jsPDF } from "jspdf";
+import { GState, jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Invoice } from "../types";
 import { toAssetUrl } from "./catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "./invoiceSettings";
+import { cancellationStamp } from "./invoiceReissue";
 
 function colorRgb(value: string): [number, number, number] {
   return [1, 3, 5].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) as [number, number, number];
@@ -55,7 +56,8 @@ export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
     settings.signature_image ? loadInvoiceImage(toAssetUrl(settings.signature_image), "signature") : null,
   ]);
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
-  pdf.setProperties({ title: `${settings.title} ${invoice.invoice_number}`, author: data.seller.company_name });
+  const stamp = cancellationStamp(invoice);
+  pdf.setProperties({ title: `${settings.title} ${invoice.invoice_number}${stamp ? " (CANCELLED)" : ""}`, author: data.seller.company_name });
   const money = (value: string | number) => Number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let endY = 42;
   const table = (options: Parameters<typeof autoTable>[1]) => {
@@ -167,11 +169,24 @@ export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
     pdf.setTextColor(...NAVY);
     pdf.setFontSize(7);
     pdf.text(`${invoice.invoice_number}  |  Page ${page} of ${pages}`, 105, 290, { align: "center" });
+    if (stamp) {
+      pdf.setTextColor(200, 30, 30);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.text(stamp.detail, 195, 33, { align: "right" });
+      pdf.saveGraphicsState();
+      pdf.setGState(new GState({ opacity: 0.16 }));
+      pdf.setFontSize(80);
+      pdf.text(stamp.watermark, 105, 165, { align: "center", angle: 35 });
+      pdf.restoreGraphicsState();
+      pdf.setFont("helvetica", "normal");
+    }
   }
   return pdf;
 }
 
 export async function downloadInvoicePdf(invoice: Invoice): Promise<void> {
   const pdf = await createInvoicePdf(invoice);
-  pdf.save(`${invoice.invoice_number.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
+  const cancelled = invoice.status === "CANCELLED" ? "_CANCELLED" : "";
+  pdf.save(`${invoice.invoice_number.replace(/[^a-zA-Z0-9_-]/g, "_")}${cancelled}.pdf`);
 }

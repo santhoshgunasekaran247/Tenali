@@ -15,7 +15,43 @@ function load(file) {
 }
 
 const deletions = load("deletions.ts");
-const { reissueInvoice } = load("invoiceReissue.ts");
+const { reissueInvoice, cancellationStamp } = load("invoiceReissue.ts");
+
+test("cancelled invoices get a PDF stamp with date and reason; active ones do not", () => {
+  assert.equal(cancellationStamp({ status: "ISSUED", cancelled_at: null, cancellation_reason: null }), null);
+  const stamp = cancellationStamp({ status: "CANCELLED", cancelled_at: "2026-11-06", cancellation_reason: "Wrong customer" });
+  assert.equal(stamp.watermark, "CANCELLED");
+  assert.match(stamp.detail, /^Cancelled on 06 Nov 2026 - Wrong customer$/);
+  assert.equal(cancellationStamp({ status: "CANCELLED", cancelled_at: null, cancellation_reason: "x".repeat(200) }).detail.length, "Cancelled - ".length + 90);
+});
+
+const cancellation = load("cancellation.ts");
+
+test("deletion wording is generic delete for every kind", () => {
+  assert.equal(deletions.deletionWording("purchase").submit, "Delete permanently");
+  assert.equal(deletions.deletionWording("invoice").submit, "Delete permanently");
+});
+
+test("cancelling a paid document explains reversal and refund settlement; unpaid does not", () => {
+  const unpaid = cancellation.cancellationEffects("invoice", 0);
+  assert.equal(unpaid.length, 1);
+  assert.match(unpaid[0], /CANCELLED/);
+  const paid = cancellation.cancellationEffects("invoice", 1500);
+  assert.equal(paid.length, 3);
+  assert.match(paid[1], /reversed \(nothing is deleted\).*pay back to the customer/);
+  assert.match(cancellation.cancellationEffects("purchase", 10)[1], /vendor must return/);
+  assert.equal(cancellation.refundDirectionLabel("PAY_CUSTOMER"), "Pay back to customer");
+  assert.equal(cancellation.refundDirectionLabel("RECEIVE_VENDOR"), "Receive back from vendor");
+});
+
+test("cancel needs a reason, refund acknowledgement when paid, and the document number typed back", () => {
+  const base = { reason: "Wrong customer", paid: 0, acknowledged: false, typed: "INV20261106001", number: "INV20261106001" };
+  assert.equal(cancellation.canConfirmCancel(base), true);
+  assert.equal(cancellation.canConfirmCancel({ ...base, reason: "  " }), false);
+  assert.equal(cancellation.canConfirmCancel({ ...base, typed: "INV2026" }), false);
+  assert.equal(cancellation.canConfirmCancel({ ...base, paid: 100 }), false);
+  assert.equal(cancellation.canConfirmCancel({ ...base, paid: 100, acknowledged: true }), true);
+});
 
 const preview = (overrides = {}) => ({
   kind: "purchase", record_id: "p1", label: "Purchase B-1", cascade: false, can_delete: true, confirm_text: "DELETE B-1", token: "t",

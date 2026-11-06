@@ -32,21 +32,18 @@ export function AuthProvider({children}:{children:ReactNode}){
     if(!response.ok)throw new Error('Unable to connect to the workspace service.');
     const identity=await response.json() as Session;
     setSession(identity);
-    let company=await publicCompanyRequest;
-    if(company?.id!==identity.user.company_id){
-      const publicResponse=await tenantFetch('/api/catalog/company',{headers:{'X-Tenant-Slug':identity.user.tenant_slug}});
-      company=publicResponse.ok?await publicResponse.json() as PublicCompany:null;
-    }
-    setStorefront(company);
+    // The storefront comes only from the URL (/c/<slug>) or a verified tenant domain. Never infer it from the
+    // signed-in user, or platform URLs would render workspace pages without the workspace path.
+    setStorefront(await publicCompanyRequest);
   }catch(failure){setSession(null);setError(failure instanceof Error?failure.message:'Unable to connect.');}finally{setLoading(false);}};
   useEffect(()=>{void refresh();},[]);
   useEffect(()=>{
-    const updateCompany=()=>{void tenantFetch('/api/catalog/company',{headers:session?.user?{'X-Tenant-Slug':session.user.tenant_slug}:{}}).then(async response=>{
+    const updateCompany=()=>{void tenantFetch('/api/catalog/company').then(async response=>{
       if(response.ok)setStorefront(await response.json() as PublicCompany);
     }).catch(()=>{});};
     window.addEventListener('company-updated',updateCompany);
     return ()=>window.removeEventListener('company-updated',updateCompany);
-  },[session?.user?.tenant_slug]);
+  },[]);
   const accept=(result:Session)=>{setSession(result);setError('');window.dispatchEvent(new Event('auth-updated'));};
   return <Context.Provider value={{user:session?.user||null,workspaces:session?.workspaces||[],storefront,loading,error,refresh,
     login:async(email,password,workspace)=>{const result=await authRequest<Session>('/login',{method:'POST',headers:workspace?{'X-Tenant-Slug':workspace}:{},body:JSON.stringify({email,password})});accept(result);return result.user;},
@@ -68,6 +65,7 @@ export function RequireWorkspace(){
   if(auth.loading)return <main className="loading">Loading workspace...</main>;
   if(!auth.user)return <Navigate to="/login" replace state={{next:location.pathname+location.search}}/>;
   if(!auth.storefront&&!tenantBase()&&location.pathname!=="/portal/new-workspace")return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
+  if(auth.storefront&&auth.storefront.id!==auth.user.company_id&&tenantBase())return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
   return <Outlet/>;
 }
 

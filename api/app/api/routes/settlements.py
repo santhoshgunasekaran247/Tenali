@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -8,9 +10,20 @@ from app.schemas.settlements import (
     BorrowingListResponse,
     BorrowingSummaryResponse,
 )
+from app.services.refund_settlements import RefundSettle, RefundSettlementsService
 from app.services.settlements_service import SettlementsService
 
 router = APIRouter()
+
+
+@router.get("/refunds")
+def list_refunds(status: str | None = None, db: Session = Depends(get_db)):
+    return RefundSettlementsService(db).list(status)
+
+
+@router.post("/refunds/{settlement_id}/settle")
+def settle_refund(settlement_id: UUID, payload: RefundSettle, db: Session = Depends(get_db)):
+    return RefundSettlementsService(db).settle(str(settlement_id), payload)
 
 
 @router.get("/borrowings", response_model=BorrowingListResponse)

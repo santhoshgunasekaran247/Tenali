@@ -31,6 +31,7 @@ import { PurchasesPage } from "./pages/PurchasesPage";
 import { ReceivablesPage } from "./pages/ReceivablesPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SettlementsPage } from "./pages/SettlementsPage";
+import { RefundSettlementsPage } from "./pages/RefundSettlementsPage";
 import { StoresPage } from "./pages/StoresPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
 import { TenantPoliciesPage } from "./pages/TenantPoliciesPage";
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="/portal/online-customers" element={<OnlineCustomersPage />} />
         <Route path="/portal/accounts" element={<AccountsPage />} />
         <Route path="/portal/settlements" element={<SettlementsPage />} />
+        <Route path="/portal/settlements/refunds" element={<RefundSettlementsPage />} />
         <Route path="/portal/business-payments" element={<BusinessPaymentsPage />} />
         <Route path="/portal/receivables" element={<ReceivablesPage />} />
         <Route path="/portal/purchases" element={<PurchasesPage />} />

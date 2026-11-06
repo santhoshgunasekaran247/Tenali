@@ -16,9 +16,9 @@ class TransactionDeletionTests(unittest.TestCase):
 
     def setUp(self):
         test_multi_store.MultiStoreTests.setUp(self)
-        from schema_support import apply_transaction_deletion_migration
+        from schema_support import apply_refund_settlement_migration
         from app.services.transaction_deletion import TransactionDeletionService
-        apply_transaction_deletion_migration(self.connection)
+        apply_refund_settlement_migration(self.connection)
         self.service = TransactionDeletionService(self.db, self.company)
 
     def as_role(self, role):

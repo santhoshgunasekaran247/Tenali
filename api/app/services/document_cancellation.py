@@ -8,15 +8,17 @@ from app.services.collection_ledger import lock_invoice_receivables, receipt_tot
 from app.services.commerce_stock import book_stock, booked_store
 from app.services.purchase_ledger import purchase_payment_totals
 from app.services.period_lock_service import assert_period_open
+from app.services.refund_settlements import reverse_document_payments
 
 
 class Cancellation(BaseModel):
     model_config=ConfigDict(str_strip_whitespace=True)
     reason: str=Field(min_length=1,max_length=1000)
     cancellation_date: date | None=None
+    reverse_payments: bool=False
 
 
-def cancel_document(db, company_id: str, kind: str, document_id: str, payload: Cancellation):
+def cancel_document(db, company_id: str, kind: str, document_id: str, payload: Cancellation, commit: bool = True):
     table="invoices" if kind=="invoice" else "purchases"
     row=db.execute(text(f"select * from {table} where id=:id and company_id=:company for update"),{"id":document_id,"company":company_id}).mappings().first()
     if not row:
@@ -28,13 +30,16 @@ def cancel_document(db, company_id: str, kind: str, document_id: str, payload: C
         paid, _ = receipt_totals(db, company_id, receivable, invoice)
     else:
         paid, _ = purchase_payment_totals(db, company_id, dict(row))
-    if paid:
-        raise HTTPException(422,"Reverse the document's payment transactions before cancellation; cancellation does not issue a refund")
     effective=payload.cancellation_date or date.today()
     source_date=row["invoice_date"] if kind=="invoice" else row["purchase_date"]
     if effective<source_date:
         raise HTTPException(422,"Cancellation cannot precede the document date")
     assert_period_open(db,company_id,effective,"Cancelling document")
+    refunds=[]
+    if paid:
+        if not payload.reverse_payments:
+            raise HTTPException(422,"This document has payments. Choose to reverse them; each becomes a pending refund to settle.")
+        refunds=reverse_document_payments(db,company_id,kind,dict(row),payload.reason,effective)
     if kind=="invoice":
         lines=(row["document_data"] or {}).get("lines",[])
         store=booked_store(db,company_id,"invoice",document_id) or str(row["store_id"])
@@ -44,5 +49,6 @@ def cancel_document(db, company_id: str, kind: str, document_id: str, payload: C
         store=booked_store(db,company_id,"purchase_receipt",document_id) or str(row["store_id"])
         book_stock(db,company_id,row["line_items"],"OUT","purchase_cancellation",document_id,store)
     db.execute(text(f"update {table} set status='CANCELLED',cancelled_at=:date,cancellation_reason=:reason where id=:id"),{"date":effective,"reason":payload.reason,"id":document_id})
-    db.commit()
-    return {"id":document_id,"status":"CANCELLED"}
+    if commit:
+        db.commit()
+    return {"id":document_id,"status":"CANCELLED","refunds":[{"id":str(item["id"]),"amount":item["amount"]} for item in refunds]}

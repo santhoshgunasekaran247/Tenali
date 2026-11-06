@@ -1,5 +1,15 @@
 import type { Invoice, InvoiceLineInput } from "../types";
 
+/** Text stamped on a cancelled invoice's PDF, or null while the invoice is active. */
+export function cancellationStamp(invoice: Pick<Invoice, "status" | "cancelled_at" | "cancellation_reason">) {
+  if (invoice.status !== "CANCELLED") return null;
+  const when = invoice.cancelled_at
+    ? new Date(`${invoice.cancelled_at.slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+  const reason = (invoice.cancellation_reason || "").trim();
+  return { watermark: "CANCELLED", detail: `Cancelled${when ? ` on ${when}` : ""}${reason ? ` - ${reason.length > 90 ? `${reason.slice(0, 87)}...` : reason}` : ""}` };
+}
+
 /** Form values for a corrected invoice copied from a cancelled one. The new invoice gets a fresh number. */
 export function reissueInvoice(invoice: Invoice) {
   const document = invoice.document_data;

@@ -428,16 +428,36 @@ text and a reason. A stale token (data changed since review) is rejected with 40
 Supported kinds: purchases, purchase payments, customer receipts, borrowings,
 account transactions, stock adjustments, stock transfers, COD settlements and
 `all` (erase every transaction of the workspace; products, parties, accounts,
-stores and settings are kept). Issued sales invoices cannot be deleted. Cancel the
-invoice and use **Reissue** to create a corrected copy with a new number. For GST,
-cancelling adds no tax. Before GSTR-1 filing it is reported as cancelled. After
-filing, issue a credit note.
+stores and settings are kept). Issued sales invoices cannot be deleted; cancel
+them instead (see below). Use **Reissue** to create a corrected copy with a new
+number. For GST, cancelling adds no tax. Before GSTR-1 filing it is reported as
+cancelled. After filing, issue a credit note.
 
 Linked payments, reversals and transfers are critical children. The deletion is
 refused until they are deleted first or **Delete everything together** is chosen.
 Deletions that would make stock negative, or remove stock that was already sold,
 are blocked. Paid bills and invoices become unpaid again when their payments are
 deleted.
+
+## Cancellation & refund settlements
+
+**Cancel Invoice** and **Cancel Bill** need a reason, the document number typed
+back and, when anything was paid, an explicit acknowledgement of the refund. The
+invoice stays in the GST series as CANCELLED (stock back to the billing store, PDF
+stamped CANCELLED); a cancelled bill removes its received stock. Payments are not
+deleted: each active receipt or bill payment is reversed through the ledger
+(`reverse_payments=true`; requires owner/admin or the Accounts module) and a
+PENDING row is added to `refund_settlements` (migration 039) — `PAY_CUSTOMER` for
+invoices, `RECEIVE_VENDOR` for bills.
+
+**Refund Settlements** (`/portal/settlements/refunds`, Settlements module;
+API `GET /settlements/refunds?status=`, `POST /settlements/refunds/{id}/settle`)
+lists pending and settled refunds. Confirming a refund records the account, mode,
+date and reference actually used; the reversal entry is corrected in place (audit
+logged) and the row becomes SETTLED, which is final. The settle date cannot be
+before the original payment or in the future, and both dates must be in open
+periods. The operations dashboard shows receivables outstanding and pending
+customer/vendor refunds.
 
 Migration `038_transaction_deletions` adds a database guard. Deleting from ledger
 tables outside a reviewed deletion batch raises an error, and every deleted row is

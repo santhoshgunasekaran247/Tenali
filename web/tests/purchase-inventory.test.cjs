@@ -49,6 +49,7 @@ test("purchase inventory displays before other requests finish and survives a hi
     "../components/PartySelect": { PartySelect: component },
     "../components/Attachments": { AttachmentPicker: component, AttachmentManager: component },
     "../components/DeleteTransactionDialog": { DeleteTransactionDialog: component },
+    "../components/CancelDocumentDialog": { CancelDocumentDialog: component },
     "../features/auth": { useAuth: () => ({ user: { role: "owner" } }) },
     "../features/deletions": { canDeleteTransactions: () => true },
   });

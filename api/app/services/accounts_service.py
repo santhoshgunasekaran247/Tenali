@@ -1142,6 +1142,7 @@ class AccountsService:
         transaction_id: str,
         company_id: str | None,
         payload: TransactionReverseCreate,
+        commit: bool = True,
     ) -> dict:
         self._ensure_transaction_extensions()
         self._ensure_borrowings_table()
@@ -1302,7 +1303,8 @@ class AccountsService:
                 reversal_transaction_id=str(reversal["id"]),
                 original_transaction=dict(original),
             )
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not reversal:
             raise HTTPException(status_code=500, detail="Failed to create reversal transaction")

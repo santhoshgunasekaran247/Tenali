@@ -1,4 +1,4 @@
-import type { DeletionPreview } from "../types";
+import type { DeletionKind, DeletionPreview } from "../types";
 
 export const canDeleteTransactions = (role?: string | null) => role === "owner" || role === "admin";
 
@@ -15,3 +15,12 @@ export function reviewState(preview: DeletionPreview, acknowledged: boolean) {
 }
 
 export const signed = (value: number) => `${value > 0 ? "+" : ""}${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 3 })}`;
+
+/** Labels for the shared deletion dialog. */
+export function deletionWording(_kind: DeletionKind) {
+  return {
+    heading: "Delete", submit: "Delete permanently", busy: "Deleting...", keep: "Keep records",
+    summary: (count: number) => `${count} record(s) will be permanently removed from your books.`,
+    critical: "Linked records that must go first", cascade: "Delete everything together",
+  };
+}

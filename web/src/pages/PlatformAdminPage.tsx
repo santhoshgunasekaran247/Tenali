@@ -1,12 +1,12 @@
 import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Building2, ShieldCheck, LogOut } from "lucide-react";
 import { accountRequest } from "../features/shop";
 import { tenantBase, tenantFetch } from "../features/tenantTransport";
 import { SocialLoginSettings } from "../components/SocialLoginSettings";
 import { PolicyEditor } from "../components/PolicyEditor";
-import { useAuth } from "../features/auth";
+import { TenantRedirect, useAuth } from "../features/auth";
 
 type Admin = { id: string; email: string; display_name: string };
 type Workspace = { id: string; company_name: string; tenant_slug: string; is_active: boolean };
@@ -48,6 +48,8 @@ export function PlatformAdminPage() {
     try { setAdmin(await accountRequest<Admin>("/login", { method: "POST", body: JSON.stringify(form) }, "platform")); setForm({ email: "", password: "" }); }
     catch (failure) { setError(String(failure)); } finally { setBusy(false); }
   };
+  if (!auth.loading && auth.user) return tenantBase() ? <Navigate to="/portal" replace /> : <TenantRedirect to={`/c/${auth.user.tenant_slug}/portal`} />;
+  if (!auth.loading && (tenantBase() || auth.storefront)) return <Navigate to="/" replace />;
   return <main className="platform-console"><header className="platform-console-header"><div><span className="platform-eyebrow">TENALI PLATFORM</span><h1>{policies ? "Public policies" : authentication ? "Authentication" : "Client administration"}</h1><p>{policies ? "Review and publish Tenali platform policies." : authentication ? "One secure sign-in configuration for every workspace and storefront." : "Manage client workspaces and their availability."}</p></div><Link to="/">Back to platform</Link></header><div className="platform-console-body">
     {auth.loading ? <p>Checking access...</p> : unavailable ? <section className="settings-card" role="alert"><h2>Platform access restricted</h2><p>Tenant and shopper accounts cannot access platform administration. Use your Operations Portal for workspace tasks.</p>{auth.user ? <Link className="btn" to="/portal">Go to Operations Portal</Link> : <Link to="/login">Back to workspace sign-in</Link>}</section> : checking ? <p>Checking platform session...</p> : <>
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}

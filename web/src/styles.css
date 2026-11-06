@@ -988,7 +988,7 @@ body {
 .deletion-block summary { cursor: pointer; font-weight: 600; }
 .deletion-blockers, .deletion-critical { border-color: #b42318; background: color-mix(in srgb, #b42318 7%, var(--site-surface)); }
 .deletion-check { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-weight: 600; }
-.deletion-check input { width: auto; margin-top: 3px; }
+.deletion-check input[type="checkbox"] { width: auto; margin-top: 3px; }
 .deletion-phrase { font-family: ui-monospace, monospace; padding: 0 4px; background: color-mix(in srgb, #b42318 10%, var(--site-surface)); }
 .deletion-negative td { color: #b42318; font-weight: 600; }
 .btn.deletion-danger { background: #b42318; border-color: #b42318; color: #fff; }
@@ -1205,6 +1205,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--site-primary);
   font-size: 12px;
   color: var(--site-muted);
 }
+
+/* `.ops-form label` is a grid; checkbox labels must stay on one row with the box at the start.
+   :where() keeps this at the same specificity, so component-specific checkbox layouts still win. */
+.ops-form label:where(.ops-toggle, .inventory-check, :has(> input[type="checkbox"]), :has(> input[type="radio"])) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  text-align: left;
+}
+.ops-form input:where([type="checkbox"], [type="radio"]) { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; flex-shrink: 0; }
+.invoice-line-values > .ops-toggle { align-self: end; min-height: 38px; }
 
 .ops-table-wrap {
   overflow: auto;

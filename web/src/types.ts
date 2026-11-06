@@ -69,9 +69,21 @@ export type OperationsDashboard = {
   } | null;
   purchases: { bills: number; total: number; pending_receipts: number; quantity_to_receive: number } | null;
   sales: { invoices: number; total: number; top_items: { product_id: string; name: string; image_url: string | null; uom: string; quantity: number }[] } | null;
-  receivables: { open: number; bad_debt: number; reminders_due: number } | null;
+  receivables: { open: number; outstanding?: number; bad_debt: number; reminders_due: number } | null;
   borrowing_outstanding: number | null;
+  refunds_pending?: RefundSummary | null;
 };
+export type RefundSummary = { customer_count: number; customer_amount: number; vendor_count: number; vendor_amount: number };
+export type RefundSettlement = {
+  id: string; direction: "PAY_CUSTOMER" | "RECEIVE_VENDOR"; document_type: "invoice" | "purchase"; document_id: string;
+  document_number: string | null; amount: number; status: "PENDING" | "SETTLED"; reason: string | null;
+  party_id: string | null; party_name: string | null; paid_on: string; original_payment_mode: string | null;
+  original_account_id: string | null; original_account_name: string | null;
+  account_id: string | null; account_name: string | null; reversal_date: string; reversal_payment_mode: string | null;
+  settled_on: string | null; payment_mode: string | null; reference: string | null; notes: string | null; settled_at: string | null; created_at: string;
+};
+export type RefundSettleInput = { account_id: string; settled_on?: string; payment_mode?: string; reference?: string; notes?: string };
+export type CancellationResult = { id: string; status: "CANCELLED"; refunds?: { id: string; amount: number }[] };
 export type AttachmentInput = {
   file_name: string;
   mime_type: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
@@ -666,6 +678,8 @@ export type Invoice = {
   bad_debt_reason?: string;
   created_at: string;
   document_data?: InvoiceDocument | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
 };
 
 export type InvoiceListResponse = {

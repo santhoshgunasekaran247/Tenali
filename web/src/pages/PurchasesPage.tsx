@@ -12,6 +12,7 @@ import { PartySelect } from "../components/PartySelect";
 import type { InventoryProduct } from "../types";
 import { TaxLinesEditor, newTaxLine } from "../components/TaxLinesEditor";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
+import { CancelDocumentDialog } from "../components/CancelDocumentDialog";
 import { useAuth } from "../features/auth";
 import { canDeleteTransactions } from "../features/deletions";
 import type { Account, AttachmentInput, DeletionKind, HsnMaster, InvoiceLineInput, Party, Purchase, PurchasePayment } from "../types";
@@ -96,6 +97,7 @@ export function PurchasesPage() {
   const [attachmentTarget, setAttachmentTarget] = useState<Purchase | null>(null);
   const { user } = useAuth();
   const canDelete = canDeleteTransactions(user?.role);
+  const [cancelTarget, setCancelTarget] = useState<Purchase | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: DeletionKind; id: string; title: string } | null>(null);
   const [lines, setLines] = useDraftState<InvoiceLineInput[]>("PurchasesPage.lines", [newTaxLine()]);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
@@ -559,7 +561,7 @@ export function PurchasesPage() {
                         <div className="ops-list-tools">
                           <button className="ops-link-btn" type="button" title="Receipts and bills" aria-label={`Attachments for purchase ${item.bill_number || item.id}`}
                             onClick={() => setAttachmentTarget(item)}><Paperclip size={16} aria-hidden="true" /> Files</button>
-                          {item.status!=='CANCELLED'&&item.amount_paid===0?<button className="ops-link-btn" type="button" onClick={()=>{const reason=window.prompt('Reason for cancellation (received stock is removed; no refund is issued):');if(reason?.trim())void api.cancelPurchase(item.id,reason).then(()=>load()).catch(failure=>setError(String(failure)));}}>Cancel Bill</button>:null}
+                          {item.status!=='CANCELLED'?<button className="ops-link-btn" type="button" title={item.amount_paid>0?"Cancel this bill; its payments become refunds the vendor owes":"Cancel this unpaid bill"} onClick={()=>setCancelTarget(item)}>Cancel Bill</button>:null}
                           {item.status!=='CANCELLED'&&item.balance_amount > 0 ? (
                             <button
                               className="ops-link-btn"
@@ -588,6 +590,12 @@ export function PurchasesPage() {
               </tbody>
             </table>
           </div>
+
+          {cancelTarget ? <CancelDocumentDialog kind="purchase" id={cancelTarget.id} number={cancelTarget.bill_number || cancelTarget.voucher_number || cancelTarget.id.slice(0, 8)}
+            paid={Number(cancelTarget.amount_paid || 0)} onClose={() => setCancelTarget(null)} onDone={result => {
+              const refunds = result.refunds?.length || 0; setCancelTarget(null);
+              setMessage(`Bill cancelled.${refunds ? ` ${refunds} vendor refund(s) are pending in Settlements ? Refunds.` : ""}`); void load();
+            }} /> : null}
 
           {deleteTarget ? <DeleteTransactionDialog kind={deleteTarget.kind} id={deleteTarget.id} title={deleteTarget.title}
             onClose={() => setDeleteTarget(null)} onDone={async result => {

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services.access import allowed_stores, is_super
+from app.services.refund_settlements import RefundSettlementsService
 from app.services.settlements_service import SettlementsService
 from app.services.stores_service import get_store
 
@@ -34,7 +35,7 @@ class DashboardService:
             return dict(self.db.execute(text(query), params).mappings().one())
 
         result = {"month": start, "store_id": store_id, "inventory": None, "orders": None, "purchases": None,
-                  "sales": None, "receivables": None, "borrowing_outstanding": None}
+                  "sales": None, "receivables": None, "borrowing_outstanding": None, "refunds_pending": None}
         if permitted("inventory"):
             result["inventory"] = one(f"""
                 with quantities as (
@@ -119,6 +120,7 @@ class DashboardService:
         if permitted("receivables"):
             result["receivables"] = one(f"""
                 select count(*) filter(where status in ('UNPAID','PARTIAL')) open,
+                    coalesce(sum(amount_due-amount_received) filter(where status in ('UNPAID','PARTIAL')),0) outstanding,
                     count(*) filter(where status='BAD_DEBT') bad_debt,
                     count(*) filter(where status in ('UNPAID','PARTIAL') and coalesce(reminder_date,due_date)<=:today) reminders_due
                 from receivables where {scope}
@@ -126,4 +128,5 @@ class DashboardService:
         if permitted("settlements") and stores is None:
             result["borrowing_outstanding"] = sum(row["net_outstanding"] for row in
                 SettlementsService(self.db).summarize_borrowings(company)["items"])
+            result["refunds_pending"] = RefundSettlementsService(self.db).summary()
         return result

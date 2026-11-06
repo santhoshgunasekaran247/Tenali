@@ -54,6 +54,10 @@ function mountBilling() {
     "../components/Notifications": { FloatingAlert: component },
     "../features/drafts": { useDraftState: (_key, initial) => react.useState(initial) },
     "../features/invoiceReissue": { reissueInvoice: () => ({ form: {}, lines: [], sameShipping: true }) },
+    "../features/auth": { useAuth: () => ({ user: { role: "owner" } }) },
+    "../features/deletions": { canDeleteTransactions: () => true },
+    "../components/DeleteTransactionDialog": { DeleteTransactionDialog: component },
+    "../components/CancelDocumentDialog": { CancelDocumentDialog: component },
   };
   const source = readFileSync(path.join(__dirname, "..", "src", "pages", "BillingPage.tsx"), "utf8");
   const compiled = ts.transpileModule(source, {

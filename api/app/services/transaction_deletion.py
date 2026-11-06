@@ -37,13 +37,14 @@ TITLES = {
     "document_links": "Attachment links", "posting_requests": "Saved submission keys",
     "invoices": "Sales invoices", "invoice_items": "Sales invoice lines", "receivables": "Receivables",
     "receivable_reminders": "Receivable reminders", "shop_orders": "Online orders", "expenses": "Expenses",
+    "refund_settlements": "Refund settlements",
     "salary_transactions": "Salary payments", "settlements": "Settlements", "invoice_reconcile_runs": "Reconciliation runs",
     "stock_balances": "Store stock balances",
 }
 # Children before parents; reversals are removed before the rows they reverse.
 DELETE_ORDER = (
     "posting_requests", "document_links", "cod_settlement_items", "cod_settlements", "receivable_reminders",
-    "receivable_payments", "purchase_payments", "borrowings", "shop_orders", "account_transactions",
+    "receivable_payments", "purchase_payments", "borrowings", "shop_orders", "refund_settlements", "account_transactions",
     "stock_movements", "stock_transfers", "receivables", "invoice_items", "invoices", "purchase_items", "purchases",
     "expenses", "salary_transactions", "settlements", "invoice_reconcile_runs", "stock_balances",
 )
@@ -128,6 +129,10 @@ class TransactionDeletionService:
         if tx["to_account_id"]:
             plan.accounts[str(tx["to_account_id"])] -= Decimal(tx["amount"])
         self._period(plan, tx["transaction_date"], "Deleting an account transaction")
+        for refund in self._all("""select id, status, amount from refund_settlements where company_id=:company
+                and (original_transaction_id=:id or reversal_transaction_id=:id)""", id=str(tx["id"])):
+            plan.add("refund_settlements", refund["id"], f"{refund['status'].title()} refund settlement - {_money(refund['amount'])}",
+                     critical or "Refund settlement for this payment")
         for reversal in self._all("""select * from account_transactions
                 where company_id=:company and reversal_of_transaction_id=:id""", id=str(tx["id"])):
             self._transaction(plan, reversal, critical, via_parent=True)

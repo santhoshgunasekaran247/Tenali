@@ -72,6 +72,8 @@ class InvoiceOut(BaseModel):
     bad_debt_reason: str | None = None
     created_at: datetime
     document_data: dict | None = None
+    cancelled_at: date | None = None
+    cancellation_reason: str | None = None
 
 
 class InvoiceListResponse(BaseModel):
