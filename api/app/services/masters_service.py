@@ -23,14 +23,15 @@ class MastersService:
             raise HTTPException(status_code=404, detail="Company not found")
         return str(result)
 
-    def list_hsn(self, company_id: str | None, active_only: bool = True, search: str | None = None) -> dict:
+    def list_hsn(self, company_id: str | None, active_only: bool = True, search: str | None = None,
+                 *, limit: int | None = None) -> dict:
         rows = self.db.execute(text("""
             select * from hsn_masters where company_id = :company_id
             and (not :active_only or is_active = true)
             and (:search = '' or code ilike :pattern or description ilike :pattern)
-            order by code asc
+            order by code asc limit :limit
         """), {"company_id": self._company_id(company_id), "active_only": active_only,
-                "search": search or "", "pattern": f"%{search or ''}%"}).mappings().all()
+                "search": search or "", "pattern": f"%{search or ''}%", "limit": limit}).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
     def create_hsn(self, payload: HsnMasterCreate, company_id: str | None) -> dict:

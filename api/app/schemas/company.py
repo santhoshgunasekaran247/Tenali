@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.services.feature_controls import CompanyFeatures
 
 GSTIN_PATTERN = r"^\d{2}[A-Z0-9]{13}$"
 
@@ -279,5 +280,6 @@ class CompanySetupOut(CompanyUpdate):
     tenant_slug: str | None = None
     storefront_enabled: bool = True
     workflow_guidance_enabled: bool = True
+    features: CompanyFeatures
     id: UUID
     is_active: bool

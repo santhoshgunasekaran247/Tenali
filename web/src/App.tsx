@@ -17,6 +17,7 @@ import { CartPage } from "./pages/CartPage";
 import { CheckoutAdminPage } from "./pages/CheckoutAdminPage";
 import { ShopperAccountPage } from "./pages/ShopperAccountPage";
 import { PlatformAdminPage } from "./pages/PlatformAdminPage";
+import { TenaliAIPage } from "./pages/TenaliAIPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { InventoryMasterPage } from "./pages/InventoryMasterPage";
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="/platform" element={<PlatformAdminPage />} />
         <Route path="/platform/authentication" element={<PlatformAdminPage />} />
         <Route path="/platform/policies" element={<PlatformAdminPage />} />
+        <Route path="/platform/ai" element={<PlatformAdminPage />} />
         <Route path="/policies" element={<PoliciesPage />} />
         <Route path="/policies/:scope" element={<PoliciesPage />} />
         <Route path="/policies/:scope/:kind" element={<PoliciesPage />} />
@@ -65,6 +67,7 @@ export default function App() {
         <Route path="/products/:productId" element={<StorefrontGate><ProductPage /></StorefrontGate>} />
         <Route element={<RequireWorkspace />}>
         <Route path="/portal" element={<PortalPage />} />
+        <Route path="/portal/ai" element={<TenaliAIPage />} />
         <Route path="/portal/dashboard" element={<OperationsDashboardPage />} />
         <Route path="/portal/parties" element={<PartiesPage />} />
         <Route path="/portal/online-customers" element={<OnlineCustomersPage />} />

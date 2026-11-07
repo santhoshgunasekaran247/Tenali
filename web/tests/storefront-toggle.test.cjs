@@ -66,7 +66,7 @@ test("the workspace team gets a link to turn the storefront back on", () => {
 
 test("company setup saves the storefront switch and storefront routes are gated", () => {
   const setup = readFileSync(path.join(__dirname, "..", "src", "pages", "CompanySetupPage.tsx"), "utf8");
-  assert.match(setup, /storefront_enabled: company\.storefront_enabled !== false/);
+  assert.match(setup, /storefront_enabled: company\.features\?\.storefront\.platform_allowed \? company\.storefront_enabled !== false : undefined/);
   assert.match(setup, /id="storefront-visibility"/);
   const app = readFileSync(path.join(__dirname, "..", "src", "App.tsx"), "utf8");
   for (const page of ["HomePage", "CheckoutPage", "CartPage", "ProductPage"]) {

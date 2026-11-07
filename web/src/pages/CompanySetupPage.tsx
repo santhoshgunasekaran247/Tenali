@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { TransactionDeletionPanel } from "../components/TransactionDeletionPanel";
+import { TenantAISettings } from "../components/TenantAISettings";
 import { api } from "../api";
 import { toAssetUrl } from "../features/catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "../features/invoiceSettings";
@@ -84,7 +85,7 @@ export function CompanySetupPage() {
     api.company().then((result) => {
       if (!active) return;
       setSavedSiteTheme(result.site_theme);
-      setCompany(previous => previous ?? { ...result, invoice_settings: { ...DEFAULT_INVOICE_SETTINGS, ...result.invoice_settings }, site_theme: normalizeSiteTheme(result.site_theme) });
+      setCompany(previous => previous ? { ...previous, features: result.features } : { ...result, invoice_settings: { ...DEFAULT_INVOICE_SETTINGS, ...result.invoice_settings }, site_theme: normalizeSiteTheme(result.site_theme) });
       if (!company) setSocialLinks(JSON.stringify(result.social_links || {}, null, 2));
     }).catch((failure) => {
       if (active) setError(failure instanceof Error ? failure.message : "Unable to load company.");
@@ -141,7 +142,7 @@ export function CompanySetupPage() {
         invoice_settings: company.invoice_settings,
         site_theme: company.site_theme,
         storefront_content: company.storefront_content,
-        storefront_enabled: company.storefront_enabled !== false,
+        storefront_enabled: company.features?.storefront.platform_allowed ? company.storefront_enabled !== false : undefined,
         workflow_guidance_enabled: company.workflow_guidance_enabled !== false,
       });
       setSavedSiteTheme(result.site_theme);
@@ -231,7 +232,8 @@ export function CompanySetupPage() {
             <label>Company Name<input required maxLength={200} value={company.company_name} onChange={(event) => update({ company_name: event.target.value })} /></label>
             <label>Display Name<input maxLength={100} value={company.nickname || ""} onChange={(event) => update({ nickname: event.target.value })} /></label>
             <label>Storefront Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" value={company.tenant_slug} onChange={(event) => update({ tenant_slug: event.target.value.toLowerCase() })} /><span className="access-workspace-url">/c/{company.tenant_slug}</span></label>
-            <label id="storefront-visibility" className="ops-toggle company-field-wide"><input type="checkbox" checked={company.storefront_enabled !== false} onChange={(event) => update({ storefront_enabled: event.target.checked })} />Storefront open to the public</label>
+            <label id="storefront-visibility" className="ops-toggle company-field-wide"><input type="checkbox" disabled={!company.features?.storefront.platform_allowed} checked={!!company.features?.storefront.platform_allowed && company.storefront_enabled !== false} aria-describedby="storefront-policy-note" onChange={(event) => update({ storefront_enabled: event.target.checked })} />Storefront open to the public</label>
+            {!company.features?.storefront.platform_allowed ? <p className="ops-copy-note company-field-wide" id="storefront-policy-note"><span className="feature-contact-tag">Contact platform</span> Disabled by Tenali Platform. Contact the platform administrator.{company.features?.support_url ? <> <a href={company.features.support_url}>Contact platform administrator</a></> : null}</p> : null}
             {company.storefront_enabled === false ? <p className="ops-copy-note company-field-wide">Storefront is off: visitors see an &quot;unavailable&quot; page and cannot browse products, add to cart, check out or send enquiries. Store policies, shopper order tracking and this Operations Portal keep working. Save to apply.</p> : null}
             <label className="company-field-wide">Registered Address<textarea rows={4} maxLength={2000} value={company.address || ""} onChange={(event) => update({ address: event.target.value })} /></label>
             <label className="ops-toggle"><input type="checkbox" checked={company.gst_registered !== false} onChange={(event) => update({ gst_registered: event.target.checked })} />GST registered (turnover above the threshold)</label>
@@ -267,6 +269,7 @@ export function CompanySetupPage() {
         </section>
         <fieldset id="portal-settings" disabled={saving} className="company-setup-section">
           <legend>Operations Portal</legend>
+          <TenantAISettings />
           <label className="ops-toggle"><input type="checkbox" checked={company.workflow_guidance_enabled !== false} onChange={(event) => update({ workflow_guidance_enabled: event.target.checked })} />Show next-step workflow messages</label>
           <p className="ops-copy-note">After a record is created, cancelled or deleted, or a save fails, a separate &quot;Next step&quot; message suggests what to do next (for example settle a refund, record a payment or reopen a closed period). Applies to everyone in this workspace. Save to apply.</p>
         </fieldset>

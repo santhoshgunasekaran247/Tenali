@@ -79,3 +79,29 @@ def apply_inventory_deletion_migration(connection):
     migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "033_inventory_product_deletion.py"))
     with Operations.context(MigrationContext.configure(connection)):
         migration["upgrade"]()
+
+
+def apply_feature_controls_migration(connection):
+    if inspect(connection).has_table("tenant_feature_controls"):
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "041_ai_feature_controls.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
+def apply_ai_conversations_migration(connection):
+    apply_feature_controls_migration(connection)
+    if inspect(connection).has_table("ai_conversations"):
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "042_ai_conversations.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
+def apply_ai_read_migration(connection):
+    apply_ai_conversations_migration(connection)
+    if inspect(connection).has_table("ai_capabilities"):
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "043_ai_read_capabilities.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()

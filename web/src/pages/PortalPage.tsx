@@ -16,6 +16,7 @@ type WorkflowSection = {
 };
 
 const operationsLinks: (PortalLink & { module: string })[] = [
+  { label: "Tenali AI", path: "/portal/ai", status: "live", module: "" },
   { label: "Parties", path: "/portal/parties", status: "live", module: "parties" },
   { label: "Accounts", path: "/portal/accounts", status: "live", module: "accounts" },
   { label: "Reports & Exports", path: "/portal/reports", status: "live", module: "reports" },
@@ -278,7 +279,7 @@ export function PortalPage() {
             <span>Daily execution modules</span>
           </div>
           <div className="portal-grid">
-            {operationsLinks.filter((item) => !auth.user?.modules || ["owner", "admin"].includes(auth.user.role) || auth.user.modules.includes(item.module)).map((item) => (
+            {operationsLinks.filter((item) => !item.module || !auth.user?.modules || ["owner", "admin"].includes(auth.user.role) || auth.user.modules.includes(item.module)).map((item) => (
               <LinkTile key={item.label} item={item} />
             ))}
           </div>

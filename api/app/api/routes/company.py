@@ -10,6 +10,11 @@ from app.services.company_service import CompanyService
 router = APIRouter()
 
 
+@router.get("/features")
+def features(company_id: UUID | None = None, db: Session = Depends(get_db)):
+    return CompanyService(db).get(str(company_id) if company_id else None)["features"]
+
+
 @router.get("", response_model=CompanySetupOut)
 def get_company(company_id: UUID | None = None, db: Session = Depends(get_db)):
     return CompanyService(db).get(str(company_id) if company_id else None)

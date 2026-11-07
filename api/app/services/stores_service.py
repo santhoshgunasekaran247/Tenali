@@ -53,13 +53,15 @@ class StoresService:
         self.db = db
         self.company_id = resolve_company_id(db, company_id)
 
-    def list_stores(self, include_inactive: bool = True) -> dict:
+    def list_stores(self, include_inactive: bool = True, *, search: str = "", limit: int | None = None) -> dict:
         permitted = allowed_stores(self.db.info.get("tenant_context"))
         rows = self.db.execute(
             text(f"""select {STORE_COLUMNS} from stores where company_id = :company
                 and (:all or is_active) and (cast(:permitted as uuid[]) is null or id = any(cast(:permitted as uuid[])))
-                order by is_default desc, kind, code"""),
-            {"company": self.company_id, "all": include_inactive, "permitted": permitted},
+                and (:search='' or strpos(lower(name),lower(:search))>0 or strpos(lower(code),lower(:search))>0)
+                order by is_default desc, kind, code limit :limit"""),
+            {"company": self.company_id, "all": include_inactive, "permitted": permitted,
+             "search": search, "limit": limit},
         ).mappings().all()
         return {"items": [dict(row) for row in rows]}
 

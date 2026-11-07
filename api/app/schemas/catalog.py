@@ -18,6 +18,7 @@ class CompanyOut(BaseModel):
     tenant_slug: str | None = None
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
     storefront_enabled: bool = True
+    storefront_platform_allowed: bool = True
 
 
 class BrandOut(BaseModel):

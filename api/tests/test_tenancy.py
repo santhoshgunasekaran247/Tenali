@@ -54,6 +54,8 @@ class TenantDatabaseCase(unittest.TestCase):
         apply_product_minimum_migration(self.connection)
         apply_storefront_enabled_migration(self.connection)
         apply_product_draft_migration(self.connection)
+        from schema_support import apply_feature_controls_migration
+        apply_feature_controls_migration(self.connection)
         self.stack=ExitStack()
         self.addCleanup(self.stack.close)
         connection=self.connection

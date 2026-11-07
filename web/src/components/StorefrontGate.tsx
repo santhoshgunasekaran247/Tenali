@@ -25,7 +25,7 @@ export function StorefrontGate({ children }: { children: ReactNode }) {
         <p><Link to="/account">View an existing order</Link></p>
         {owner ? (
           <p className="ops-copy-note">
-            Only your team sees this note. The storefront is turned off in{" "}
+            Only your team sees this note. {store.storefront_platform_allowed === false ? "The storefront is disabled by Tenali Platform. Contact the platform administrator. View " : "The storefront is turned off in "}
             <Link to="/portal/company#storefront-visibility">Company Setup</Link>.
           </p>
         ) : null}

@@ -1,3 +1,17 @@
+export type FeatureStatus = {
+  platform_allowed: boolean;
+  tenant_enabled: boolean;
+  effective_enabled: boolean;
+  reason: string | null;
+  version: number;
+};
+export type CompanyFeatures = {
+  ai: FeatureStatus;
+  storefront: FeatureStatus;
+  ai_settings_version: number;
+  support_url: string;
+};
+
 export type Company = {
   id: string;
   company_name: string;
@@ -8,6 +22,7 @@ export type Company = {
   storefront_content?: StorefrontContent;
   storefront_enabled?: boolean;
   workflow_guidance_enabled?: boolean;
+  features?: CompanyFeatures;
   gst_number?: string;
   gst_registered?: boolean;
   whatsapp_number?: string | null;
@@ -57,7 +72,7 @@ export type SiteTheme = {
 };
 
 export type CompanySetup = Company & { tenant_slug: string; storefront_content: StorefrontContent; invoice_settings: InvoiceSettings; site_theme: SiteTheme };
-export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active">;
+export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active" | "features">;
 
 export type AttachmentEntity = "purchase" | "business_payment";
 export type OperationsDashboard = {

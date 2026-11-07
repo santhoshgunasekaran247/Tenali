@@ -99,6 +99,157 @@ While the storefront is off:
 
 Omitting `storefront_enabled` from a company update keeps the current setting.
 
+### Platform feature controls and AI settings (Phase 1A)
+
+Apply revision `041_ai_feature_controls` **before** deploying this API version.
+It adds platform AI settings, tenant limits/preferences, and independent AI/storefront
+entitlements; it does not change business transaction tables. Existing storefront
+preferences are preserved and platform storefront access starts allowed. AI starts
+globally off, platform-blocked for each tenant, and tenant opt-in off.
+New workspaces receive the same defaults through a database trigger.
+
+- **Platform -> Client administration -> AI / storefront controls** allows or blocks
+  each feature without suspending the workspace or revoking staff/shopper sessions.
+- **Platform -> Tenali AI** (`/platform/ai`) configures global policy, candidate model
+  names, request/token/estimated-cost ceilings, output/timeout/retention settings,
+  support contact, and per-tenant lower limits. Blank overrides inherit; clearing
+  and saving resets them. Stale settings saves return 409 and require reloading.
+- **Company Setup -> Operations Portal -> Tenali AI** saves the tenant preference
+  separately from company details. The storefront preference remains under Company
+  Details. Platform-blocked switches appear off/disabled with a **Contact platform**
+  tag; a configured HTTPS or mailto support link is available there.
+- Public `/catalog/company` reports effective storefront availability; authenticated
+  `/company` keeps the saved storefront preference and includes `features` status.
+  The company form omits a platform-locked storefront switch on unrelated saves.
+- Re-enabling platform permission restores the tenant's prior preference, not a
+  forced opt-in. Store policies, existing order tracking/payment reconciliation,
+  and Operations Portal access continue to work when only storefront is blocked.
+- Entitlement/global/limit changes use the existing platform audit; tenant AI
+  preference changes use operational audit. Tenant runtime cannot write platform
+  entitlements or ceilings; staff cannot change tenant AI preferences.
+
+Phase 1A is a control plane only: **no OpenAI calls, chat history, execution tools,
+usage enforcement, or retention cleanup are active yet**. The UI explicitly reports
+the runtime as not deployed. Saving model names does not validate provider support.
+Keep `OPENAI_API_KEY` solely in the backend environment; the page reports only whether
+it is configured. Actual model verification and budget enforcement are Phase 1B work.
+Initial editable ceilings are 50 requests/day, 1,000,000 tokens/month and an estimated
+USD 10/month; these are inactive starter policy values, not measured cost promises.
+See the [architecture and phased plan](TENALI_AI_ARCHITECTURE.md).
+
+Validation uses mocked provider-independent unit/UI tests and rollback-only
+configuration/database tests; no financial transactions or external AI calls are
+created. The migration is applied inside test rollbacks, not deployed by running tests.
+
+### Tenali AI conversational foundation (Phase 1B)
+
+Apply revision `042_ai_conversations` before deploying the conversational API.
+It adds private conversation/message/preferences tables, append-only audit/usage logs,
+and budget reservations. It does not enable AI or modify business transaction tables.
+The earlier Phase 1A description records that release's limitations; Phase 1B now
+implements chat, usage enforcement, and a retention maintenance command.
+
+**Operations Portal -> Tenali AI** (`/portal/ai`) provides each user's own persistent
+history, title search, rename, archive/restore, deletion, recent messages, and explicit
+private language/workflow preferences. Read-only members can view their own history
+but cannot send messages or change metadata. All users may see the AI entry; access
+to future business tools will still require their actual business-module permissions.
+Platform administration does not grant access to user transcripts.
+
+Activation checklist:
+
+1. Configure `OPENAI_API_KEY` privately on the backend. Do not put it in React,
+   Git, chat, logs, or the platform settings page.
+2. Independently approve/test model compatibility with OpenAI Responses structured
+   output. List approved model identifiers in backend `OPENAI_ALLOWED_MODELS`
+   (comma-separated). An identifier appearing in the UI is not a connectivity test.
+3. In **Platform -> Tenali AI**, select the routine model and enter its current
+   input/output USD prices per million tokens. Both must be positive; zero pricing
+   blocks chat. Prices are versioned with settings and snapshotted per request.
+   A document-model setting remains reserved for the later document phase.
+4. Review/publish the data-processing/retention notice, then enable global AI, allow
+   the pilot tenant, and opt in under that tenant's Company Setup. Nothing is enabled
+   by applying the migration.
+
+Calls use OpenAI Responses with `store=false`, strict structured output, configured
+timeouts/output limits, and no tools or automatic retries. Current context contains
+only company name/GST-registration state, INR/financial-year information, the user's
+explicit preferences, and a bounded recent-message window. There are no live business
+record lookups, document uploads, transaction drafts, approvals, or execution tools yet.
+Older messages persist but are not all sent to OpenAI; users may need to restate
+earlier details. The UI renders model output as text, not executable HTML.
+
+Before calling OpenAI, the backend serializes turns within a conversation and
+atomically reserves the tenant's daily-request, monthly-token and monthly-cost budget.
+Budget periods use UTC. Token reservation uses a conservative UTF-8-byte bound plus
+schema/protocol overhead and the configured output cap; cached input is conservatively
+charged at the full rate. Known usage settles the reservation; unknown/timeout/crash
+outcomes retain the full reservation for the original budget month. Consequently,
+budget availability may be more conservative than OpenAI's actual bill.
+The private usage view and platform tenant/model aggregates explicitly include
+unconfirmed reservations.
+
+The request's client UUID is persisted. Reusing the same UUID/content returns the
+saved outcome and never initiates another provider call, even after an unknown outcome.
+Different content with that UUID returns 409. Refreshing recovers saved messages;
+the client preserves the UUID across an explicit retry after a network failure.
+Pending turns become visibly unknown after their deadline. No business transactions
+are ever retried or written in this phase.
+
+Database transactions end before the external call. The backend rechecks membership,
+policy and settings version immediately before calling. An already-started external
+call cannot be recalled by disabling AI, but no new calls are authorized after the
+gate check. Deleting/expiring a conversation during processing prevents its reply
+from restoring deleted content. New AI calls are blocked when the feature is disabled;
+authorized users can still read their own retained history.
+
+Retention is measured from conversation/preference creation or preference update:
+expired content is excluded from APIs immediately. Schedule this server command
+with a maintenance database role to physically scrub expired content:
+
+```powershell
+Set-Location api
+python -m app.ai.maintenance          # read-only count
+python -m app.ai.maintenance --apply  # scrub expired chat/preferences
+```
+
+The command clears expired message bodies/titles and preferences, retaining
+ownership, usage and audit metadata. User-triggered conversation deletion clears its
+bodies immediately and also retains those records. Provider retention rules remain
+subject to the approved OpenAI account/data policy; `store=false` is not a promise
+of zero provider retention. No scheduler is installed automatically.
+
+### Tenali AI bounded business lookups (Phase 2A)
+
+Apply revision `043_ai_read_capabilities` before restarting the updated API.
+It adds read-capability policy tables and a narrowly scoped current-member function.
+It does not enable capabilities, change AI opt-in or modify financial tables.
+
+In **Platform -> Tenali AI -> Reviewed business lookups**:
+
+1. Review and enable the deployed stores/products/parties/HSN/brands/categories
+   contracts. A schema/projection/adapter-version change blocks only its capability
+   until reviewed again; disable then review/re-enable an outdated enabled contract.
+2. Select the pilot tenant and grant individual lookups. Missing grants deny access.
+3. Keep global/tenant AI permission, tenant opt-in, key/model/pricing and budgets
+   configured as for Phase 1B. Users only receive their permitted modules/stores;
+   viewers remain unable to send messages.
+
+The assistant makes one metered provider call proposing at most two bounded searches,
+then appends projected server-verified lookup results. Each lookup fetches at most
+11 rows and exposes at most 10, with explicit incomplete-result indicators and
+output-length limits. Product stock includes all variants across permitted stores,
+not vendor availability or effective selling prices. No contact details are included
+in party projections. Earlier lookup results can enter subsequent recent-message
+context sent to OpenAI; the assistant must not treat them as current stock.
+
+Financial history/totals, invoices, purchases, receivables, settlements,
+reorder/reconciliation and period locks remain the next read-adapter slice.
+No drafts, transaction writes, uploads or image generation are enabled by this release.
+Database/UI tests use mocked provider replies; model compatibility still needs a
+separately authorised paid test. Rollback fixtures do not certify independent-process
+crash/concurrency behaviour.
+
 ### Purchase bills, stock and draft products
 
 Apply revision `037_product_drafts` (`products.is_draft`, default false) before

@@ -20,10 +20,15 @@ from app.api.routes.stores import router as stores_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.deletions import router as deletions_router
 from app.api.routes.policies import public_router as public_policies_router, tenant_router as tenant_policies_router, platform_router as platform_policies_router
+from app.api.routes.ai_settings import platform_router as ai_platform_router, tenant_router as ai_tenant_router
+from app.ai.router import router as assistant_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router,prefix="/auth",tags=["authentication"])
 api_router.include_router(platform_router,prefix="/platform",tags=["platform administration"])
+api_router.include_router(ai_platform_router, prefix="/platform", tags=["AI platform settings"])
+api_router.include_router(ai_tenant_router, prefix="/ai", tags=["AI tenant settings"])
+api_router.include_router(assistant_router, prefix="/ai", tags=["AI conversations"])
 api_router.include_router(platform_policies_router, prefix="/platform/policies", tags=["platform policies"])
 api_router.include_router(tenant_policies_router, prefix="/company/policies", tags=["store policies"])
 api_router.include_router(deletions_router, prefix="/company/deletions", tags=["transaction deletion"])

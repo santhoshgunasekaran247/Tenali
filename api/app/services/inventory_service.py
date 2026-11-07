@@ -76,11 +76,33 @@ class InventoryService:
             where company_id=:company and is_active=true and party_type in ('vendor','customer_vendor') order by legal_name"""), {"company": self.company_id}).mappings()]
         return result
 
-    def master_entries(self,kind:str)->dict:
+    def master_entries(self,kind:str, *, search: str = "", limit: int | None = None)->dict:
         table={"brands":"brands","categories":"product_categories"}.get(kind)
         if not table:
             raise HTTPException(422,"Invalid master type")
-        return {"items":[dict(row) for row in self.db.execute(text(f"select id,name,code,description,is_active from {table} where company_id=:company order by name"),{"company":self.company_id}).mappings()]}
+        return {"items":[dict(row) for row in self.db.execute(text(f"""select id,name,code,description,is_active from {table}
+            where company_id=:company and (:search='' or strpos(lower(name),lower(:search))>0
+                or strpos(lower(code),lower(:search))>0) order by name,id limit :limit"""),
+            {"company":self.company_id, "search": search, "limit": limit}).mappings()]}
+
+    def search_stock(self, search: str, limit: int, store_id: str | None = None) -> dict:
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
+        if store_id:
+            from app.services.stores_service import get_store
+            get_store(self.db, self.company_id, store_id, require_active=False)
+        rows = self.db.execute(text("""
+            select p.id,p.name,p.sku,p.hsn_code,p.is_draft,
+                coalesce((select sum(b.quantity) from stock_balances b
+                    where b.company_id=p.company_id and b.product_id=p.id
+                    and (cast(:stores as uuid[]) is null or b.store_id=any(cast(:stores as uuid[])))
+                    and (cast(:store as uuid) is null or b.store_id=cast(:store as uuid))),0) as stock_qty
+            from products p where p.company_id=:company and p.is_active
+                and (strpos(lower(p.name),lower(:search))>0 or strpos(lower(coalesce(p.sku,'')),lower(:search))>0)
+            order by p.name,p.id limit :limit
+        """), {"company": self.company_id, "search": search, "limit": limit,
+               "stores": permitted, "store": store_id}).mappings()
+        return {"items": [dict(row) for row in rows],
+                "stock_scope": "Sum across permitted stores only, including all variants; not vendor availability."}
 
     def update_lookup(self,kind:str,record_id:str,payload)->dict:
         table={"brands":"brands","categories":"product_categories"}.get(kind)

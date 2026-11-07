@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.company import CompanyUpdate, SiteTheme, StorefrontContent
 from app.services.object_storage import FileStore
+from app.services.feature_controls import company_features, lock_policy
 
 
 class CompanyService:
@@ -25,10 +26,14 @@ class CompanyService:
         ).mappings().first()
         if not row:
             raise HTTPException(status_code=404, detail="Company not found")
-        return dict(row)
+        return {**dict(row), "features": company_features(self.db, row["id"])}
 
     def update(self, payload: CompanyUpdate, company_id: str | None = None) -> dict:
         company = self.get(company_id)
+        lock_policy(self.db)
+        status = company_features(self.db, company["id"])
+        if payload.storefront_enabled is True and not status["storefront"]["tenant_enabled"] and not status["storefront"]["platform_allowed"]:
+            raise HTTPException(403, "Storefront is disabled by Tenali Platform. Contact the platform administrator.")
         values = payload.model_dump()
         values["id"] = str(company["id"])
         files = FileStore(self.db)
@@ -73,7 +78,7 @@ class CompanyService:
             self.db.rollback()
             raise HTTPException(status_code=409, detail="Workspace address is already in use") from error
         self.db.commit()
-        return dict(row)
+        return {**dict(row), "features": company_features(self.db, row["id"])}
 
     def update_site_theme(self, theme: SiteTheme, company_id: str | None = None) -> dict:
         company = self.get(company_id)
@@ -82,4 +87,4 @@ class CompanyService:
             where id = :id returning *
         """), {"id": str(company["id"]), "theme": theme.model_dump_json()}).mappings().one()
         self.db.commit()
-        return dict(row)
+        return {**dict(row), "features": company_features(self.db, row["id"])}

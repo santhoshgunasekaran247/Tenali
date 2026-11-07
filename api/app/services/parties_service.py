@@ -31,7 +31,8 @@ class PartiesService:
             raise HTTPException(status_code=404, detail="No company configured")
         return str(first_company)
 
-    def list(self, company_id: str | None, search: str | None = None, active_only: bool = True) -> dict:
+    def list(self, company_id: str | None, search: str | None = None, active_only: bool = True,
+             *, limit: int | None = None) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         query = """
             select
@@ -58,7 +59,8 @@ class PartiesService:
             query += " and (legal_name ilike :search or coalesce(nickname, '') ilike :search or coalesce(phone, '') ilike :search)"
             params["search"] = f"%{search.strip()}%"
 
-        query += " order by legal_name asc"
+        query += " order by legal_name asc, id limit :limit"
+        params["limit"] = limit
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(r) for r in rows]}
 

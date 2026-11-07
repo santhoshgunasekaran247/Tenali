@@ -8,7 +8,7 @@ import { WorkflowGuide } from "../components/WorkflowGuide";
 
 export type Workspace={company_id:string;company_name:string;tenant_slug:string;role:'owner'|'admin'|'staff'|'viewer'};
 export type Identity=Workspace&{user_id:string;email:string;display_name:string;authentication_method?:'social'|'password';nickname?:string;logo_url?:string;store_ids?:string[]|null;modules?:string[]|null};
-export type PublicCompany={id:string;company_name:string;tenant_slug:string;logo_url?:string;nickname?:string;phone?:string;email?:string;site_theme:SiteTheme;storefront_content:StorefrontContent;storefront_enabled?:boolean};
+export type PublicCompany={id:string;company_name:string;tenant_slug:string;logo_url?:string;nickname?:string;phone?:string;email?:string;site_theme:SiteTheme;storefront_content:StorefrontContent;storefront_enabled?:boolean;storefront_platform_allowed?:boolean};
 type Session={user:Identity;workspaces:Workspace[]};
 
 export async function authRequest<T>(path:string,options?:RequestInit):Promise<T>{
