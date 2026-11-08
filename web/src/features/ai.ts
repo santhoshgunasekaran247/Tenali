@@ -13,6 +13,24 @@ export type Preference = { preference: "language" | "instructions"; value: strin
 export type UsageTotals = { requests: number; tokens: number | string; cost: number | string; unconfirmed?: number };
 export type AIUsage = { personal: UsageTotals; tenant: UsageTotals | null; period: string; currency: string; note: string };
 export type ReadCapability = { key: string; description: string; version: number; tenant_version: number };
+export type DraftAction = {
+  key: string; description: string; version: number; tenant_version: number; target_required: boolean;
+  enabled: boolean; compatible: boolean; tenant_allowed: boolean; safety: "approved_execution"; execution_enabled: boolean;
+  high_impact: boolean;
+  schema: Record<string, unknown>;
+};
+export type ActionDraft = {
+  id: string; action_key: string; target_id: string | null; payload: Record<string, unknown>;
+  payload_hash: string; status: "editing" | "validated" | "approved" | "executed"; version: number;
+  validation: { warning: string; checks: string; side_effects: string; preview: Record<string, unknown> | null } | null;
+  approved_at: string | null; expires_at: string;
+};
+export type AIExecution = { id: string; status: "succeeded" | "failed"; result: Record<string, unknown>; created_at: string;
+  validation_error?: unknown };
+export type AIAttachment = { id: string; file_name: string; mime_type: string; expires_at: string };
+export type VoiceLanguage = "auto" | "en" | "ta";
+export type VoiceOutcome = { id: string; status: "pending" | "completed" | "failed" | "unknown";
+  transcript: string | null; error_code: string | null; expires_at: string };
 
 export async function aiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await tenantFetch("/api/ai" + path, {
@@ -34,6 +52,29 @@ export async function aiRequest<T>(path: string, options?: RequestInit): Promise
 export const ai = {
   settings: () => aiRequest<CompanyFeatures>("/settings"),
   capabilities: () => aiRequest<{ items: ReadCapability[] }>("/capabilities"),
+  actions: () => aiRequest<{ items: DraftAction[] }>("/actions"),
+  drafts: (id: string, offset = 0) => aiRequest<{ items: ActionDraft[] }>(`/conversations/${id}/drafts?offset=${offset}`),
+  editDraft: (draft: ActionDraft, payload: Record<string, unknown>) =>
+    aiRequest<ActionDraft>(`/drafts/${draft.id}`, { method: "PATCH", body: JSON.stringify({ payload, expected_version: draft.version }) }),
+  validateDraft: (draft: ActionDraft) =>
+    aiRequest<ActionDraft>(`/drafts/${draft.id}/validate?expected_version=${draft.version}`, { method: "POST" }),
+  approveDraft: (draft: ActionDraft) =>
+    aiRequest<ActionDraft>(`/drafts/${draft.id}/approve`, { method: "POST",
+      body: JSON.stringify({ expected_version: draft.version, expected_hash: draft.payload_hash }) }),
+  executeDraft: (draft: ActionDraft, confirm_text?: string) =>
+    aiRequest<AIExecution>(`/drafts/${draft.id}/execute`, { method: "POST",
+      body: JSON.stringify({ expected_version: draft.version, expected_hash: draft.payload_hash, confirm_text }) }),
+  execution: (draft: ActionDraft) =>
+    aiRequest<{ execution: AIExecution | null }>(`/drafts/${draft.id}/execution?expected_version=${draft.version}`),
+  upload: (id: string, file_name: string, mime_type: string, data_base64: string) =>
+    aiRequest<AIAttachment>(`/conversations/${id}/attachments`, { method: "POST", body: JSON.stringify({ file_name, mime_type, data_base64 }) }),
+  removeAttachment: (id: string) => aiRequest(`/attachments/${id}`, { method: "DELETE" }),
+  transcribe: (id: string, client_key: string, language: VoiceLanguage, data_base64: string) =>
+    aiRequest<VoiceOutcome>(`/conversations/${id}/voice`, { method: "POST",
+      body: JSON.stringify({ client_key, language, data_base64 }) }),
+  voiceOutcome: (id: string, key: string) => aiRequest<VoiceOutcome>(`/conversations/${id}/voice/${key}`),
+  discardDraft: (draft: ActionDraft) =>
+    aiRequest(`/drafts/${draft.id}?expected_version=${draft.version}`, { method: "DELETE" }),
   conversations: (search: string, archived: boolean, offset: number) =>
     aiRequest<{ items: Conversation[] }>(`/conversations?${new URLSearchParams({ search, archived: String(archived), offset: String(offset) })}`),
   create: () => aiRequest<Conversation>("/conversations", { method: "POST", body: JSON.stringify({ title: "New conversation" }) }),
@@ -42,8 +83,9 @@ export const ai = {
     aiRequest<Conversation>(`/conversations/${conversation.id}`, { method: "PATCH", body: JSON.stringify({ ...changes, expected_version: conversation.version }) }),
   remove: (conversation: Conversation) => aiRequest(`/conversations/${conversation.id}?expected_version=${conversation.version}`, { method: "DELETE" }),
   messages: (id: string, offset = 0) => aiRequest<{ items: ChatMessage[] }>(`/conversations/${id}/messages?offset=${offset}`),
-  send: (id: string, content: string, client_key: string) =>
-    aiRequest<{ items: ChatMessage[] }>(`/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ content, client_key }) }),
+  send: (id: string, content: string, client_key: string, attachment_ids: string[] = []) =>
+    aiRequest<{ items: ChatMessage[] }>(`/conversations/${id}/messages`, { method: "POST",
+      body: JSON.stringify({ content, client_key, ...(attachment_ids.length ? { attachment_ids } : {}) }) }),
   preferences: () => aiRequest<{ items: Preference[] }>("/context"),
   preference: (key: Preference["preference"], value: string) =>
     aiRequest<{ items: Preference[] }>(`/context/preferences/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),

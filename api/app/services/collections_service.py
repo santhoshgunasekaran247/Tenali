@@ -233,7 +233,10 @@ class CollectionsService:
         self.db.commit()
         return self._get_receivable(company_id=resolved_company_id, receivable_id=str(row["id"]))
 
-    def list_receivables(self, company_id: str | None, status: str | None = None) -> dict:
+    def list_receivables(self, company_id: str | None, status: str | None = None,
+                         *, search: str = "", limit: int | None = None, store_id: str | None = None,
+                         from_date: date | None = None, to_date: date | None = None,
+                         permitted_stores: list[str] | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -256,6 +259,7 @@ class CollectionsService:
                 r.created_at
             from receivables r
             join parties p on p.id = r.party_id
+            left join invoices i on i.id=r.invoice_id and i.company_id=r.company_id
             where r.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
@@ -266,7 +270,15 @@ class CollectionsService:
             query += " and r.status = :status"
             params["status"] = normalized
 
-        query += " order by coalesce(r.reminder_date, r.due_date, r.created_at::date) asc, r.created_at desc"
+        query += """ and (:search='' or strpos(lower(p.legal_name),lower(:search))>0
+            or strpos(lower(coalesce(r.reference,'')),lower(:search))>0)
+            and (cast(:store as uuid) is null or i.store_id=cast(:store as uuid))
+            and (cast(:permitted as uuid[]) is null or i.store_id=any(cast(:permitted as uuid[])))
+            and (cast(:from_date as date) is null or r.due_date>=cast(:from_date as date))
+            and (cast(:to_date as date) is null or r.due_date<=cast(:to_date as date))
+            order by coalesce(r.reminder_date,r.due_date,r.created_at::date) asc,r.created_at desc,r.id limit :limit"""
+        params.update(search=search, limit=limit, store=store_id, permitted=permitted_stores,
+                      from_date=from_date, to_date=to_date)
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
@@ -364,7 +376,7 @@ class CollectionsService:
         return output.getvalue()
 
     def collect_receivable(
-        self, receivable_id: str, company_id: str | None, payload: ReceivablePaymentCreate
+        self, receivable_id: str, company_id: str | None, payload: ReceivablePaymentCreate, *, commit: bool = True
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -520,7 +532,8 @@ class CollectionsService:
 
         sync_receivable(self.db, resolved_company_id, receivable, invoice)
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return dict(payment)
 
     def update_receivable_status(

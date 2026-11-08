@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ConversationCreate(BaseModel):
@@ -31,6 +31,26 @@ class MessageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     content: str = Field(min_length=1, max_length=4000)
     client_key: UUID
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def unique_attachments(self):
+        if len(set(self.attachment_ids)) != len(self.attachment_ids):
+            raise ValueError("Do not attach the same file twice")
+        return self
+
+
+class AIUpload(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    file_name: str = Field(min_length=1, max_length=200)
+    mime_type: Literal["text/plain", "application/pdf", "image/png", "image/jpeg", "image/webp"]
+    data_base64: str = Field(min_length=1, max_length=4 * ((2 * 1024 * 1024 + 2) // 3))
+
+class VoiceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    client_key: UUID
+    language: Literal["auto", "en", "ta"] = "auto"
+    data_base64: str = Field(min_length=1, max_length=4 * ((12 * 1024 * 1024 + 2) // 3))
 
 
 class MessageOut(BaseModel):
@@ -54,7 +74,14 @@ class PreferenceUpdate(BaseModel):
     value: str = Field(min_length=1, max_length=500)
 
 
-CapabilityKey = Literal["stores", "products", "parties", "hsn", "brands", "categories"]
+CapabilityKey = Literal[
+    "stores", "products", "parties", "hsn", "brands", "categories",
+    "accounts", "transactions", "invoices", "purchases", "receivables",
+    "refunds", "borrowings", "reorder", "reconciliation", "period_locks",
+]
+CATALOGUE_KEYS = {"stores", "products", "parties", "hsn", "brands", "categories"}
+STORE_READ_KEYS = {"products", "invoices", "purchases", "receivables", "refunds", "reorder", "reconciliation"}
+COMPANY_LEDGER_KEYS = {"accounts", "transactions", "borrowings"}
 
 
 class LookupArguments(BaseModel):
@@ -64,10 +91,52 @@ class LookupArguments(BaseModel):
     limit: int = Field(ge=1, le=10)
 
 
+class BusinessLookupArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    query: str = Field(max_length=80)
+    store_id: UUID | None
+    limit: int = Field(ge=1, le=10)
+    from_date: date | None
+    to_date: date | None
+    as_of: date | None
+    status: str | None = Field(max_length=20)
+
+    @model_validator(mode="after")
+    def date_range(self):
+        if self.from_date and self.to_date and self.from_date > self.to_date:
+            raise ValueError("from_date cannot be after to_date")
+        if self.query and len(self.query) < 2:
+            raise ValueError("Use at least two characters for a search")
+        return self
+
+
 class ReadLookup(BaseModel):
     model_config = ConfigDict(extra="forbid")
     capability: CapabilityKey
-    arguments: LookupArguments
+    arguments: LookupArguments | BusinessLookupArguments
+
+    @model_validator(mode="after")
+    def capability_arguments(self):
+        args = self.arguments
+        if (self.capability in CATALOGUE_KEYS) != isinstance(args, LookupArguments):
+            raise ValueError("Use the argument schema for this capability")
+        if args.store_id and self.capability not in STORE_READ_KEYS:
+            raise ValueError("This capability does not accept a store filter")
+        if isinstance(args, BusinessLookupArguments):
+            dated = {"transactions", "invoices", "purchases", "receivables", "refunds", "period_locks"}
+            if (args.from_date or args.to_date) and self.capability not in dated:
+                raise ValueError("This capability does not accept date-range filters")
+            if args.as_of and self.capability not in {"accounts", "period_locks"}:
+                raise ValueError("This capability does not support historical as_of values")
+            statuses = {
+                "invoices": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT", "CANCELLED"},
+                "purchases": {"UNPAID", "PARTIAL", "PAID", "CANCELLED"},
+                "receivables": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"},
+                "refunds": {"PENDING", "SETTLED"},
+            }
+            if args.status is not None and args.status not in statuses.get(self.capability, set()):
+                raise ValueError("Invalid status for this capability")
+        return self
 
 
 class ReadAssistantOutput(AssistantOutput):

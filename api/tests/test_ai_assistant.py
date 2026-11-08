@@ -157,7 +157,8 @@ class AssistantDatabaseTests(TenantDatabaseCase):
             self.assertIn("Use short explanations", contexts[0])
             self.assertLessEqual(len(contexts[0].encode()), MAX_CONTEXT_BYTES)
             self.assertIn('"available_read_capabilities": []', contexts[0])
-            self.assertIn("No draft, payment, SQL or execution tools exist", contexts[0])
+            self.assertIn('"available_draft_actions": []', contexts[0])
+            self.assertIn("No SQL or business execution tools exist", contexts[0])
             self.assertEqual(service.usage()["personal"]["requests"], 1)
             self.assertEqual(service.usage()["personal"]["tokens"], 120)
             with self.assertRaises(HTTPException) as error:

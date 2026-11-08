@@ -107,7 +107,7 @@ class SettlementsService:
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def summarize_borrowings(self, company_id: str | None) -> dict:
+    def summarize_borrowings(self, company_id: str | None, *, search: str = "", limit: int | None = None) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         self._ensure_table()
 
@@ -123,11 +123,12 @@ class SettlementsService:
                 from borrowings b
                 join parties p on p.id = b.party_id
                 where b.company_id = :company_id and {ACTIVE_BORROWING}
+                    and (:search='' or strpos(lower(p.legal_name),lower(:search))>0)
                 group by b.party_id, p.legal_name
-                order by net_outstanding desc, p.legal_name asc
+                order by net_outstanding desc,p.legal_name asc,b.party_id limit :limit
                 """
             ),
-            {"company_id": resolved_company_id},
+            {"company_id": resolved_company_id, "search": search, "limit": limit},
         ).mappings().all()
         return {"items": [dict(row) for row in rows]}
 

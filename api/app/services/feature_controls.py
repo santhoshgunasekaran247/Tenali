@@ -16,6 +16,12 @@ class AIConfig(BaseModel):
     global_enabled: bool = False
     routine_model: str = Field(default="", max_length=100)
     document_model: str = Field(default="", max_length=100)
+    document_inputs_enabled: bool = False
+    voice_inputs_enabled: bool = False
+    transcription_model: str = Field(default="", max_length=100)
+    transcription_cost_per_minute: Decimal = Field(default=Decimal("0"), ge=0, le=10, max_digits=10, decimal_places=6)
+    document_input_cost_per_million: Decimal = Field(default=Decimal("0"), ge=0, le=1000, max_digits=10, decimal_places=6)
+    document_output_cost_per_million: Decimal = Field(default=Decimal("0"), ge=0, le=1000, max_digits=10, decimal_places=6)
     daily_request_limit: int = Field(default=50, ge=1, le=10000)
     monthly_token_limit: int = Field(default=1000000, ge=1, le=1000000000)
     monthly_cost_limit: int = Field(default=10, ge=1, le=10000)
@@ -26,7 +32,7 @@ class AIConfig(BaseModel):
     input_cost_per_million: Decimal = Field(default=Decimal("0"), ge=0, le=1000, max_digits=10, decimal_places=6)
     output_cost_per_million: Decimal = Field(default=Decimal("0"), ge=0, le=1000, max_digits=10, decimal_places=6)
 
-    @field_validator("routine_model", "document_model")
+    @field_validator("routine_model", "document_model", "transcription_model")
     @classmethod
     def model_identifier(cls, value: str) -> str:
         if value and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", value):
@@ -49,6 +55,8 @@ class AIConfig(BaseModel):
     def enabled_models(self):
         if self.global_enabled and (not self.routine_model or not self.document_model):
             raise ValueError("Configure both models before enabling the global AI switch")
+        if self.voice_inputs_enabled and (self.transcription_model != "gpt-transcribe" or self.transcription_cost_per_minute <= 0):
+            raise ValueError("Voice requires the duration-billed gpt-transcribe model and a positive USD per-minute price")
         return self
 
 
@@ -93,6 +101,8 @@ class CompanyFeatures(BaseModel):
     storefront: FeatureStatus
     ai_settings_version: int
     support_url: str
+    document_inputs_enabled: bool = False
+    voice_inputs_enabled: bool = False
 
 
 def platform_settings(db) -> dict:
@@ -143,7 +153,14 @@ def company_features(db, company_id) -> dict:
             reason = "model_not_configured"
         result[key] = {"platform_allowed": control["platform_allowed"], "tenant_enabled": enabled,
                        "effective_enabled": reason is None, "reason": reason, "version": control["version"]}
-    return {**result, "ai_settings_version": preference["version"], "support_url": config["support_url"]}
+    return {**result, "ai_settings_version": preference["version"], "support_url": config["support_url"],
+            "document_inputs_enabled": config["document_inputs_enabled"]
+                and config["document_model"] in {value.strip() for value in os.getenv("OPENAI_ALLOWED_MODELS", "").split(",")}
+                and config["document_input_cost_per_million"] > 0 and config["document_output_cost_per_million"] > 0,
+            "voice_inputs_enabled": config["voice_inputs_enabled"]
+                and config["transcription_model"] == "gpt-transcribe"
+                and config["transcription_model"] in {value.strip() for value in os.getenv("OPENAI_ALLOWED_MODELS", "").split(",")}
+                and config["transcription_cost_per_minute"] > 0}
 
 
 def audit_platform(db, admin_id, action, company_id=None):

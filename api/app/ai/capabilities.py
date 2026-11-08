@@ -5,8 +5,12 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
-from app.ai.schemas import CapabilityKey, LookupArguments, ReadLookup, CapabilityUpdate, TenantCapabilityUpdate
-from app.services.access import check_module
+from app.ai.schemas import (
+    BusinessLookupArguments, CATALOGUE_KEYS, COMPANY_LEDGER_KEYS, STORE_READ_KEYS,
+    CapabilityKey, LookupArguments, ReadLookup, CapabilityUpdate, TenantCapabilityUpdate,
+)
+from app.ai.business_reads import business_lookup
+from app.services.access import allowed_stores, check_module
 from app.services.feature_controls import audit_platform, lock_policy
 from app.services.inventory_service import InventoryService
 from app.services.masters_service import MastersService
@@ -27,7 +31,7 @@ class ReadCapability:
     def fingerprint(self) -> str:
         contract = {"key": self.key, "path": self.module_path, "safety": "read",
                     "adapter_version": self.adapter_version, "fields": self.fields,
-                    "input": LookupArguments.model_json_schema()}
+                    "input": (LookupArguments if self.key in CATALOGUE_KEYS else BusinessLookupArguments).model_json_schema()}
         return hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()
 
 
@@ -45,6 +49,33 @@ REGISTRY = {
                        ("id", "name", "code", "is_active")),
         ReadCapability("categories", "/inventory", "Find product category names and codes.",
                        ("id", "name", "code", "is_active")),
+        ReadCapability("accounts", "/accounts", "Search active account names and balances as_of a date (null=today). Company-wide ledger requires unrestricted store access. No bank/contact details. Empty query lists a bounded subset.",
+                       ("account_id", "account_name", "account_type", "is_company_account", "opening_balance",
+                        "total_inflow", "total_outflow", "current_balance", "transaction_count", "last_transaction_date")),
+        ReadCapability("transactions", "/accounts", "Search posted transactions by account nickname/reference/category and transaction date range. Includes reversals; requires unrestricted store access. No descriptions or account credentials.",
+                       ("id", "from_account_name", "to_account_name", "direction", "amount", "payment_mode",
+                        "category", "transaction_date", "source_type", "is_reversed", "reversal_of_transaction_id")),
+        ReadCapability("invoices", "/billing", "Search invoices by number/customer, invoice date range and current collection status UNPAID/PARTIAL/SETTLED/BAD_DEBT, or CANCELLED document status. Optional verified store_id. Empty query returns recent bounded records, not totals.",
+                       ("id", "invoice_number", "customer_name", "store_code", "invoice_date", "total",
+                        "amount_received", "status", "collection_status", "due_date")),
+        ReadCapability("purchases", "/purchases", "Search purchase bills by bill/voucher/vendor, purchase date range, current payment status UNPAID/PARTIAL/PAID or CANCELLED document status. Optional verified store_id. Includes receipt state, no line items.",
+                       ("id", "voucher_number", "bill_number", "vendor_name", "store_code", "purchase_date",
+                        "total", "amount_paid", "balance_amount", "payment_status", "receipt_status", "status", "due_date")),
+        ReadCapability("receivables", "/collections", "Search current receivables by party/reference, due-date range and UNPAID/PARTIAL/SETTLED/BAD_DEBT. Optional verified store_id. Store-limited users cannot see standalone receivables without an invoice store.",
+                       ("id", "party_name", "amount_due", "amount_received", "balance_amount", "status", "due_date")),
+        ReadCapability("refunds", "/settlements", "Search refunds by document/party, creation-date range and PENDING/SETTLED. Optional verified store_id. PAY_CUSTOMER versus RECEIVE_VENDOR denotes refund direction. No global totals.",
+                       ("id", "direction", "document_type", "document_number", "party_name", "amount",
+                        "status", "settled_on", "payment_mode", "created_at")),
+        ReadCapability("borrowings", "/settlements", "Search current borrowing balances by party name. Excludes reversals, requires unrestricted stores. Positive outstanding means money owed to party. No historical or date/status/store filters.",
+                       ("party_id", "party_name", "borrowed_amount", "repaid_amount", "net_outstanding")),
+        ReadCapability("reorder", "/inventory", "Search reorder reminders by product name/SKU; optional verified store_id. Empty query lists bounded reminders. Quantities include only permitted stores compared with configured thresholds, not company totals.",
+                       ("product_id", "variant_id", "product_name", "variant_name", "stock_qty", "reorder_level",
+                        "reorder_quantity", "reminder_date", "reminder_due", "low_stock")),
+        ReadCapability("reconciliation", "/inventory", "Search per-store stock reconciliation by product name/SKU; optional verified store_id. Balance minus movements and missing document count. Empty query lists bounded records including zero differences; no date/status filters.",
+                       ("store_code", "product_name", "variant_name", "balance_quantity", "movement_quantity",
+                        "difference", "movement_count", "missing_document_references")),
+        ReadCapability("period_locks", "/accounts", "Search currently active accounting locks by reason or overlapping date range. as_of checks a date against currently active locks, NOT historical state. Empty query lists bounded locks. No matches do not guarantee posting is allowed.",
+                       ("id", "period_start", "period_end", "is_active")),
     )
 }
 
@@ -118,6 +149,8 @@ def available_capabilities(db, identity):
     for item in items:
         if not item["enabled"] or not item["compatible"] or not item["tenant_allowed"]:
             continue
+        if item["key"] in COMPANY_LEDGER_KEYS and allowed_stores(identity) is not None:
+            continue
         try:
             check_module(identity, REGISTRY[item["key"]].module_path)
         except HTTPException as error:
@@ -132,12 +165,14 @@ def available_capabilities(db, identity):
 def execute_lookup(db, identity, lookup: ReadLookup):
     key, args = lookup.capability, lookup.arguments
     check_module(identity, REGISTRY[key].module_path)
-    if args.store_id is not None and key != "products":
-        raise HTTPException(422, "Only product stock lookups accept a store filter.")
+    if args.store_id is not None and key not in STORE_READ_KEYS:
+        raise HTTPException(422, "This lookup does not accept a store filter.")
     company = str(identity["company_id"])
     # One extra row detects incomplete results without loading a full catalogue.
     limit = args.limit + 1
-    if key == "products":
+    if isinstance(args, BusinessLookupArguments):
+        result = business_lookup(db, identity, key, args)
+    elif key == "products":
         result = InventoryService(db, company).search_stock(args.query, limit, str(args.store_id) if args.store_id else None)
     elif key == "stores":
         result = StoresService(db, company).list_stores(False, search=args.query, limit=limit)
@@ -150,7 +185,7 @@ def execute_lookup(db, identity, lookup: ReadLookup):
     fields = REGISTRY[key].fields
     rows = [{field: row.get(field) for field in fields} for row in result["items"][:args.limit]]
     return {"capability": key, "items": rows, "more_matches": len(result["items"]) > args.limit,
-            "note": result.get("stock_scope", "Partial name/code matches; clarify ambiguous matches. No company-wide totals.")}
+            "note": result.get("note", result.get("stock_scope", "Partial name/code matches; clarify ambiguous matches. No company-wide totals."))}
 
 
 def format_lookup(result, budget: int) -> str:

@@ -117,7 +117,10 @@ class RefundSettlementsService:
         self.db = db
         self.company_id = str(db.info["tenant_context"]["company_id"])
 
-    def list(self, status: str | None = None) -> dict:
+    def list(self, status: str | None = None, *, search: str = "", limit: int = 300,
+             store_id: str | None = None, permitted_stores: list[str] | None = None,
+             from_date: date | None = None, to_date: date | None = None,
+             include_summary: bool = True) -> dict:
         if status and status not in {"PENDING", "SETTLED"}:
             raise HTTPException(422, "Status must be PENDING or SETTLED")
         rows = self.db.execute(text("""
@@ -134,9 +137,22 @@ class RefundSettlementsService:
             left join parties p on p.id=s.party_id
             left join accounts oa on oa.id=coalesce(o.to_account_id, o.from_account_id)
             left join accounts ra on ra.id=coalesce(r.from_account_id, r.to_account_id)
+            left join invoices i on s.document_type='invoice' and i.id=s.document_id and i.company_id=s.company_id
+            left join purchases purchase on s.document_type='purchase' and purchase.id=s.document_id and purchase.company_id=s.company_id
             where s.company_id=:company and (cast(:status as text) is null or s.status=:status)
-            order by s.status, s.created_at desc limit 300"""), {"company": self.company_id, "status": status}).mappings().all()
-        return {"items": jsonable_encoder([dict(row) for row in rows]), "summary": self.summary()}
+                and (:search='' or strpos(lower(coalesce(s.document_number,'')),lower(:search))>0
+                    or strpos(lower(coalesce(p.legal_name,'')),lower(:search))>0)
+                and (cast(:store as uuid) is null or coalesce(i.store_id,purchase.store_id)=cast(:store as uuid))
+                and (cast(:permitted as uuid[]) is null or coalesce(i.store_id,purchase.store_id)=any(cast(:permitted as uuid[])))
+                and (cast(:from_date as date) is null or s.created_at::date>=cast(:from_date as date))
+                and (cast(:to_date as date) is null or s.created_at::date<=cast(:to_date as date))
+            order by s.status,s.created_at desc,s.id limit :limit"""),
+            {"company": self.company_id, "status": status, "search": search, "limit": limit,
+             "store": store_id, "permitted": permitted_stores, "from_date": from_date, "to_date": to_date}).mappings().all()
+        result = {"items": jsonable_encoder([dict(row) for row in rows])}
+        if include_summary:
+            result["summary"] = self.summary()
+        return result
 
     def summary(self) -> dict:
         row = self.db.execute(text("""

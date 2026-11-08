@@ -45,7 +45,8 @@ def create_draft_products(db, company_id: str, lines, vendor_id: str) -> None:
         line.new_product = False
 
 
-def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = None, allow_drafts: bool = False):
+def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = None, allow_drafts: bool = False,
+                          *, persist_hsn: bool = True):
     for line in lines:
         if line.variant_id and not line.product_id:
             raise HTTPException(422, "A variant requires its parent product")
@@ -70,16 +71,35 @@ def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = No
             # Products without an HSN take the code chosen on the line, and keep it for future bills.
             if not active_hsn(db, company_id, line.hsn):
                 raise HTTPException(422, f"Choose an HSN/SAC code for {product['name']}")
-            db.execute(text("""update products set hsn_code=:hsn, updated_at=now()
-                where id=:id and company_id=:company and coalesce(hsn_code,'')=''"""),
-                {"hsn": line.hsn, "id": str(line.product_id), "company": company_id})
-            hsn = db.execute(text("select hsn_code from products where id=:id"), {"id": str(line.product_id)}).scalar_one()
+            if persist_hsn:
+                db.execute(text("""update products set hsn_code=:hsn, updated_at=now()
+                    where id=:id and company_id=:company and coalesce(hsn_code,'')=''"""),
+                    {"hsn": line.hsn, "id": str(line.product_id), "company": company_id})
+                hsn = db.execute(text("select hsn_code from products where id=:id"), {"id": str(line.product_id)}).scalar_one()
+            else:
+                hsn = line.hsn
         if vendor_id and not db.execute(text("""select id from vendor_contributions where product_id=:product
             and variant_id is not distinct from cast(:variant as uuid) and vendor_id=:vendor and is_active=true limit 1"""),
             {"product": str(line.product_id), "variant": str(line.variant_id) if line.variant_id else None, "vendor": vendor_id}).scalar_one_or_none():
             raise HTTPException(422, "The selected vendor is not mapped to this product/variant")
         line.hsn = hsn
         line.description = product["name"] + (f" - {variant['variant_name']}" if variant else "")
+
+
+def purchase_line_totals(payload):
+    from app.services.financial_amounts import line_amounts
+    subtotal, gst_total = Decimal("0"), Decimal("0")
+    items = []
+    for line in payload.lines:
+        inclusive = bool(line.price_includes_gst)
+        taxable, gst = line_amounts(line.quantity, line.rate, line.gst_rate, inclusive)
+        items.append({**line.model_dump(mode="json", exclude={"new_product"}),
+                      "price_includes_gst": inclusive, "taxable": str(taxable),
+                      "gst_amount": str(gst), "total": str(taxable + gst)})
+        subtotal += taxable
+        gst_total += gst
+    payload.subtotal, payload.gst_total, payload.total = subtotal, gst_total, subtotal + gst_total
+    return items
 
 
 def book_stock(db, company_id: str, lines: list[dict], direction: str, source: str, source_id: str, store_id: str):

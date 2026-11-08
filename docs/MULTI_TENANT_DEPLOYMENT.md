@@ -243,12 +243,184 @@ not vendor availability or effective selling prices. No contact details are incl
 in party projections. Earlier lookup results can enter subsequent recent-message
 context sent to OpenAI; the assistant must not treat them as current stock.
 
-Financial history/totals, invoices, purchases, receivables, settlements,
-reorder/reconciliation and period locks remain the next read-adapter slice.
+Financial/business-state adapters are added by Phase 2B below, not by revision 043.
 No drafts, transaction writes, uploads or image generation are enabled by this release.
 Database/UI tests use mocked provider replies; model compatibility still needs a
 separately authorised paid test. Rollback fixtures do not certify independent-process
 crash/concurrency behaviour.
+
+### Tenali AI financial and business-state reads (Phase 2B)
+
+Revision `044_ai_business_reads` adds ten disabled, unreviewed capability entries:
+accounts, transactions, invoices, purchases, receivables, refunds, borrowings,
+reorder, reconciliation and period_locks. No business schema/data or existing
+capability grants are changed. Review/enable and grant each adapter in Platform ->
+Tenali AI as in Phase 2A. Existing catalogue contract fingerprints remain valid.
+
+Business lookups have a separate strict argument schema: query (empty means a
+bounded subset), limit 1-10, nullable store_id/from_date/to_date/as_of/status.
+Unsupported filters and malformed dates/statuses are errors, never silently ignored.
+At most two lookups use the same single provider call; there are no extra paid
+synthesis calls, arbitrary SQL or business writes. Full document bodies/line items,
+party contact details and global totals are excluded from the exposed projections.
+
+- Accounts, transactions and borrowing balances require unrestricted store access.
+  They are hidden/rejected for store-limited members, including an empty store list.
+  There is no reliable allocation of these company ledgers to individual stores.
+- Invoices/purchases respect permitted stores and optional explicit store selection.
+  Receivables/refunds use their linked document store; standalone/missing-document
+  records are excluded when store access is restricted. Empty permitted stores
+  return no document matches. Module checks remain mandatory for all adapters.
+- Date ranges filter invoice date, purchase date, transaction date, receivable due
+  date, refund creation date or overlapping lock periods respectively. Account
+  as_of is a historical balance date; lock as_of checks a date against currently
+  active locks, not historical lock state. Reorder/reconciliation/borrowings are current.
+- Reorder quantities use only permitted stores and configured thresholds, so scoped
+  reminders can differ from the normal company-wide inventory reminder. Base product
+  totals include variants. Reconciliation includes zero-difference rows and distinguishes
+  quantity differences from missing source-document references.
+- Results retain cancellation/reversal/settlement state. Bounded subsets must never be
+  presented as complete company totals. A missing period-lock match does not guarantee
+  that a proposed posting passes the business service's full validation.
+
+Synthetic finance validation requires a separate PostgreSQL database and
+`TENALI_AI_ISOLATED_DB` matching its name (prefix `tenali_ai_read_test_`), plus
+`TENALI_TEST_DB=1`. Tests refuse to seed financial records elsewhere. Do not copy
+production data; keep the test interpreter pointed at that database without a
+conflicting local environment override. Mock OpenAI for all automated verification.
+During isolated bootstrap, the existing migration 013 runtime-schema fallback
+already created `borrowings.source_transaction_id`, which migration 020 attempts
+to add again. Validation removed that empty column only in the disposable test
+database between revisions 019 and 020; historical migrations were not changed.
+This fresh-install issue is separate from the 043 -> 044 upgrade.
+This validates reads, not independent-process write/crash recovery.
+
+### Tenali AI operational drafts and approval (Phase 3)
+
+Revision 045's historical draft-only release is superseded by the execution/private
+input release below; do not deploy the updated API on a revision-045 database.
+
+Apply `045_ai_action_drafts` **before deploying this API and frontend**. It creates
+private draft/approval/control tables only; existing business rows, read grants, AI preferences,
+model configuration and quotas remain unchanged.
+
+1. In Platform -> Tenali AI, use **Operational add / update drafts**, independently
+   of **Reviewed business lookups**. Review each deployed contract, enable the desired
+   draft action and grant it to a selected tenant. All eleven actions start disabled
+   and unreviewed; new tenants have no grants.
+2. Tenant opt-in, global AI availability, current membership and original module/
+   store permissions still apply. Expense drafts require unrestricted store scope.
+   Administrative settings, deletion, cancellation and uploads are not exposed.
+3. Ask the private assistant to prepare a draft. The same provider call proposes
+   at most one incomplete draft; no business service is executed. Draft cards show
+   target, expiry, version and editable JSON fields. Saving edits invalidates approval.
+4. Validate fields, then review the normalised payload and warnings. Explicitly click
+   **Approve draft only (no posting)** to bind intent to the current version/hash.
+   A chat reply such as "yes" is never approval. Reference or policy changes require
+   renewed validation/approval. Full service validation, computed taxes, inventory
+   availability and recovery-safe posting remain the Phase 4 gate.
+
+This release has **no execution endpoint**. Do not advertise approved drafts as
+posted records or payments. Drafts expire within seven days (or earlier conversation
+expiry); deleting a conversation scrubs draft content without deleting business data.
+Schedule the existing `python -m app.ai.maintenance --apply` command with authorised
+maintenance credentials to scrub expired private drafts as well as chat content.
+Platform administrators see contract/control metadata, not users' private drafts.
+
+Draft database tests require `TENALI_TEST_DB=1` and `TENALI_AI_ISOLATED_DB` matching
+the actual database with prefix `tenali_ai_draft_test_`. The actual database is
+checked before fixture schema changes. These synthetic, mocked-provider tests
+validate draft/approval isolation and retry behavior, not certified financial
+execution or independent-process commit/crash recovery. Execution and private
+document/image uploads remain subsequent phases.
+
+### Tenali AI approved posting, private files and responsive assistant
+
+1. Back up the database. With explicit live-deployment approval, apply migrations
+   through `047_ai_private_media` and restart the API before updating the frontend.
+   Revision 046 preserves old stock-transfer profile attribution and adds narrowly
+   validated workspace-user attribution without exposing the credential table.
+2. In **Platform > AI**, review each current action contract. Draft preparation,
+   **Enable approved posting**, and each tenant grant are separate controls.
+   Posting defaults off; old contracts/intent approvals cannot silently authorize it.
+   Cancellation/deletion are separately marked high impact, require unrestricted
+   owner/admin access and exact typed confirmation, and retain existing dependencies.
+   Administrative changes, reopening periods, invoice deletion and reset-all are excluded.
+3. For files, set the document model to its exact server `OPENAI_ALLOWED_MODELS` ID,
+   set document input/output prices in USD per million tokens, and explicitly enable
+   **Allow private text/document/image inputs**. Zero pricing or missing allowlisting
+   blocks processing. Routine pricing is not reused for a different document model.
+   The existing daily/token/spend ceilings include file messages and unknown calls.
+4. Install backend requirements (Pillow and pypdf are added). Uploads are private
+   normalized database content, not public storage objects: 2 MB/file, up to two
+   selected files/message and ten retained files/conversation. PDFs must contain text
+   and have at most five unencrypted pages. Use page images for scans.
+   Images are resized to at most 512 x 512 for low-detail economical reading.
+   Uploading is free of provider calls; Send explicitly forwards selected normalized
+   inputs to OpenAI. Users must review extracted figures before posting.
+5. Schedule `python -m app.ai.maintenance --apply` under the schema-owner maintenance
+   account. Expiry/deletion scrubs attachment bytes/text/filename alongside chats.
+   AI files are not automatically retained as business receipt attachments.
+6. Recovery: use **Check saved outcome** or submit the **same** draft/version after
+   an ambiguous transport response. Never create a replacement draft to recover a
+   possibly committed operation. Successful/failed outcomes are immutable and replayed;
+   corrected failed drafts must be edited, reviewed and approved as a new version.
+   Detailed business-validation errors appear only on initial submission; the saved
+   failed outcome contains a generic reason/status without copied business details.
+   Downgrading to 045 discards executed drafts and removes private files/outcomes.
+   Re-upgrade does not restore those approvals and starts with posting disabled.
+
+The assistant now groups add/update separately from cancel/delete, uses structured
+fields/readable impact, autosaves titles with visible errors, and collapses history,
+settings and usage. Mobile controls use 16 px text to avoid focus zoom; pinch zoom
+remains available. Validate desktop/mobile and isolated synthetic committed-transaction
+tests before enabling posting. No paid connectivity test is implied by configuration.
+
+Platform AI administration has separate **Settings**, **Tools & permissions**,
+**Workspaces** and **Usage** views. Settings group availability, chat pricing and
+spending ceilings, with document/image and advanced settings collapsed. Tool rows
+expand individually; cancellation/deletion have a separate action group. Select a
+workspace in Tools or Workspaces to manage its grants. Switching views preserves
+unsaved settings; platform settings still require the explicit Save button.
+
+### Microphone voice input
+
+Apply `048_ai_voice` before restarting the updated API. Voice defaults off and does
+not alter existing chat, document, posting or workspace permissions. In **Platform >
+AI > Settings > Voice input**, configure `gpt-transcribe`, its current USD-per-minute
+price and **Allow microphone transcription**. Add the exact transcription model ID
+to backend `OPENAI_ALLOWED_MODELS`; the existing `OPENAI_API_KEY` stays server-side.
+The current supported voice contract is duration-billed `gpt-transcribe`, not the
+older token-priced transcription models. Check the provider's current pricing before
+enabling it; do not reuse chat/document token prices.
+
+Users select **Record voice**, allow microphone access, stop (maximum 60 seconds),
+review local audio, then explicitly **Transcribe recording**. Choose automatic
+English/Tamil hints or a single language. Review/correct the transcript and **Add to
+message**, then use the ordinary **Send** button separately. No automatic voice chat
+submission, action approval, audio-file uploads or spoken replies are included.
+Recording requires HTTPS or localhost, Web Audio/AudioWorklet support and browser
+microphone permission. Device/network transcription accuracy needs testing with real
+English/Tamil speech before making accuracy claims.
+
+The server verifies mono 16-bit PCM WAV duration from decoded frames, strips container
+metadata and accepts 0.5-60 seconds, at most 12 MB. Audio remains in memory only and is
+not written to database or public storage. Private recovery transcripts expire after
+10 minutes (or earlier chat expiry), and are scrubbed on chat deletion and maintenance.
+Once inserted and sent as a chat message, text follows normal chat retention.
+
+Voice reservations share the same atomic tenant budget lock and usage ledger as chat,
+so daily requests and monthly USD ceilings include voice. Audio is billed by seconds,
+not chat tokens. Reserve the duration rounded up to a second; settle provider-reported
+duration at the stored per-minute price. Missing/unconfirmed usage retains the
+conservative reservation. Stable recording/language/request references prevent paid
+replays. **Check saved transcription** recovers the same request without a provider
+call; no automatic resend occurs. Schedule existing AI maintenance for expiry scrubbing.
+Downgrade to 047 is refused once voice usage exists, rather than deleting metering
+history; disable voice instead if rollback is needed.
+
+Voice tests use mock providers and the explicitly authorized synthetic database only.
+Live migration, restart, voice activation and paid recording tests require approval.
 
 ### Purchase bills, stock and draft products
 

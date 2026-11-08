@@ -18,7 +18,6 @@ from app.services.masters_service import MastersService
 from app.services.documents_service import DocumentsService
 from app.services.commerce_stock import create_draft_products, resolve_product_lines, book_stock
 from app.services.document_numbers import next_document_number
-from app.services.financial_amounts import line_amounts
 from app.services.access import allowed_stores
 from app.services.stores_service import stock_store
 from app.services.posting_service import replay_posting, finish_posting, request_hash
@@ -204,11 +203,13 @@ class PurchasesService:
         vendor_party_id: str | None = None,
         payment_status: str | None = None,
         store_id: str | None = None,
+        *, search: str = "", limit: int = 500, from_date: date | None = None,
+        to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
-        query = """
+        query = f"""
             select
                 p.id,
                 p.company_id,
@@ -235,7 +236,7 @@ class PurchasesService:
                 p.received_at,
                 p.received_notes,
                 p.status,
-                p.line_items,
+                {"p.line_items," if not summary_only else ""}
                 p.created_at
             from purchases p
             join parties v on v.id = p.vendor_party_id
@@ -263,12 +264,19 @@ class PurchasesService:
             query += " and p.payment_status = :payment_status"
             params["payment_status"] = normalized_status
 
-        query += " order by p.purchase_date desc, p.created_at desc limit 500"
+        query += """ and (:search='' or strpos(lower(coalesce(p.bill_number,'')),lower(:search))>0
+            or strpos(lower(coalesce(p.voucher_number,'')),lower(:search))>0
+            or strpos(lower(v.legal_name),lower(:search))>0)
+            and (cast(:from_date as date) is null or p.purchase_date>=cast(:from_date as date))
+            and (cast(:to_date as date) is null or p.purchase_date<=cast(:to_date as date))
+            and (not :cancelled or p.status='CANCELLED')
+            order by p.purchase_date desc,p.created_at desc,p.id limit :limit"""
+        params.update(search=search, limit=limit, from_date=from_date, to_date=to_date, cancelled=cancelled_only)
 
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def create_purchase(self, company_id: str | None, payload: PurchaseCreate) -> dict:
+    def create_purchase(self, company_id: str | None, payload: PurchaseCreate, *, commit: bool = True) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
         original_hash=request_hash(payload)
@@ -295,18 +303,8 @@ class PurchasesService:
             create_draft_products(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id))
             resolve_product_lines(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id),allow_drafts=True)
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
-            subtotal = Decimal("0")
-            gst_total = Decimal("0")
-            for line in payload.lines:
-                # Vendor bills quote exclusive rates unless the line says otherwise.
-                inclusive = bool(line.price_includes_gst)
-                taxable, gst = line_amounts(line.quantity, line.rate, line.gst_rate, inclusive)
-                line_items.append({**line.model_dump(mode="json", exclude={"new_product"}), "price_includes_gst": inclusive, "taxable": str(taxable), "gst_amount": str(gst), "total": str(taxable + gst)})
-                subtotal += taxable
-                gst_total += gst
-            payload.subtotal = subtotal
-            payload.gst_total = gst_total
-            payload.total = subtotal + gst_total
+            from app.services.commerce_stock import purchase_line_totals
+            line_items = purchase_line_totals(payload)
 
         if payload.subtotal < 0 or payload.gst_total < 0:
             raise HTTPException(status_code=422, detail="subtotal and gst_total must be non-negative")
@@ -535,7 +533,8 @@ class PurchasesService:
             "purchase", str(purchase["id"]), resolved_company_id, payload.attachments
         )
         finish_posting(self.db,resolved_company_id,"purchase",payload,{**purchase,"vendor_name":vendor["legal_name"],"store_code":store["code"],"balance_amount":float(total_amount-amount_paid)},original_hash)
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         result = self.db.execute(
             text(
@@ -587,6 +586,8 @@ class PurchasesService:
         purchase_id: str,
         company_id: str | None,
         payload: PurchasePaymentCreate,
+        *,
+        commit: bool = True,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -772,7 +773,8 @@ class PurchasesService:
             },
         )
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         result = self.db.execute(
             text(

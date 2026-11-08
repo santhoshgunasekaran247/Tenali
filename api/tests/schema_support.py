@@ -100,8 +100,37 @@ def apply_ai_conversations_migration(connection):
 
 def apply_ai_read_migration(connection):
     apply_ai_conversations_migration(connection)
-    if inspect(connection).has_table("ai_capabilities"):
+    if not inspect(connection).has_table("ai_capabilities"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "043_ai_read_capabilities.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+    apply_ai_draft_migration(connection)
+
+
+def apply_ai_draft_migration(connection):
+    if not inspect(connection).has_table("ai_action_drafts"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "045_ai_action_drafts.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+    if not inspect(connection).has_table("ai_executions"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "046_ai_execution.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+    if not inspect(connection).has_table("ai_attachments"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "047_ai_private_media.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+    if not inspect(connection).has_table("ai_voice_requests"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "048_ai_voice.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+
+
+def apply_ai_business_read_migration(connection):
+    from sqlalchemy import text
+    apply_ai_read_migration(connection)
+    if connection.execute(text("select 1 from ai_capabilities where key='accounts'")).first():
         return
-    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "043_ai_read_capabilities.py"))
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "044_ai_business_reads.py"))
     with Operations.context(MigrationContext.configure(connection)):
         migration["upgrade"]()

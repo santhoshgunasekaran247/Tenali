@@ -64,7 +64,7 @@ class PartiesService:
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(r) for r in rows]}
 
-    def create(self, company_id: str | None, payload: PartyCreate) -> dict:
+    def create(self, company_id: str | None, payload: PartyCreate, *, commit: bool = True) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         party_type = payload.party_type.strip().lower()
         if party_type not in ALLOWED_PARTY_TYPES:
@@ -120,13 +120,14 @@ class PartiesService:
                 "gst_number": payload.gst_number,
             },
         ).mappings().first()
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create party")
         return dict(row)
 
-    def update(self, party_id: str, payload: PartyUpdate, company_id: str | None) -> dict:
+    def update(self, party_id: str, payload: PartyUpdate, company_id: str | None, *, commit: bool = True) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
 
         current = self.db.execute(
@@ -200,7 +201,8 @@ class PartiesService:
             },
         ).mappings().first()
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update party")
         return dict(updated)

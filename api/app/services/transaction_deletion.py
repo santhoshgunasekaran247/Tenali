@@ -446,7 +446,8 @@ class TransactionDeletionService:
         self._require_admin()
         return self._render(self._build(kind, record_id, lock=False), cascade)
 
-    def delete(self, kind: str, record_id: str | None, token: str, confirm_text: str, reason: str, cascade: bool = False) -> dict:
+    def delete(self, kind: str, record_id: str | None, token: str, confirm_text: str, reason: str, cascade: bool = False,
+               *, commit: bool = True) -> dict:
         identity = self._require_admin()
         self.db.execute(text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"{self.company_id}:transaction-deletion"})
         plan = self._build(kind, record_id, lock=True)
@@ -476,7 +477,8 @@ class TransactionDeletionService:
                 self._apply(plan, preview["stock_changes"])
         finally:
             self.db.execute(text("select set_config('app.deletion_batch', '', true)"))
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return {"deletion_id": str(batch), "label": plan.label,
                 "deleted": {row["table"]: row["count"] for row in preview["deletes"]}}
 

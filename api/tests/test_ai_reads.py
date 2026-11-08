@@ -91,7 +91,7 @@ class ReadUnitTests(unittest.TestCase):
         items[2]["compatible"] = False
         with patch("app.ai.capabilities.platform_capabilities", return_value={"items": items}):
             available = available_capabilities(Mock(), {"company_id": uuid4(), "role": "staff", "modules": ["inventory"]})
-        self.assertEqual({item["key"] for item in available}, {"products", "brands", "categories"})
+        self.assertEqual({item["key"] for item in available}, {"products", "brands", "categories", "reorder", "reconciliation"})
 
     def test_revoked_or_unoffered_lookup_is_not_executed_but_usage_is_preserved(self):
         service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})

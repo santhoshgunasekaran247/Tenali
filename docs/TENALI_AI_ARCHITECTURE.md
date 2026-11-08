@@ -605,3 +605,198 @@ Validation uses mocked provider responses and rollback-only read/configuration
 fixtures. Live migration, API restart and paid verification need separate approval.
 After this slice's deployment gate, continue Phase 2B before draft/approval (Phase 3),
 verified writes (Phase 4), private documents/images (Phase 5) and hardening (Phase 6).
+
+## 15. Phase 2B implementation: financial and business-state reads
+
+Revision `044_ai_business_reads` adds opt-in reviewed adapters for accounts, posted
+transactions, invoices, purchases, receivables, refunds, borrowing balances, reorder
+reminders, stock reconciliation and active period locks. It only inserts disabled
+registry metadata; the six existing catalogue contracts/grants are preserved.
+
+Strict business arguments are separate from catalogue arguments. Each capability
+documents its supported dates/status/store filters; unsupported combinations are
+rejected. Lookups return at most 10 projected records (11 fetched for truncation
+detection), and no complete company financial totals. Existing services provide
+balance/cancellation/reversal rules through optional bounded read filters while
+preserving ordinary API list defaults. Runtime schema fallback writes are refused
+by AI adapters; database migrations are mandatory.
+
+Company-wide account/transaction/borrowing ledgers require unrestricted stores.
+Store-limited members cannot discover or execute those adapters. Other documents
+are filtered by permitted stores; standalone receivables and refunds without a
+matching document store are excluded for restricted members. Module access and
+current membership are rechecked before reads as in Phase 2A.
+
+Account as_of returns historical ledger balances. Lock as_of checks the date against
+currently active locks, not historical lock state. Other date filters select document
+date/due date/creation date as documented, not historical payment snapshots. Scoped
+reorder uses permitted quantities versus configured thresholds and can differ from
+company-wide alerts. No matches/partial results must not be interpreted as certified
+posting eligibility or complete financial totals.
+
+Validation seeds finance records only in an explicitly authorised isolated PostgreSQL
+database, never the live database, and mocks provider calls. No live migration or paid
+test is implied. Phase 3 editable drafts/approvals is described below; business writes
+and private document/image processing remain gated on their later contracts and tests.
+
+## 16. Phase 3 implementation: private operational drafts (historical)
+
+This describes revision 045. The posting, private-file and interface changes in
+section 17 supersede its draft-only release restrictions.
+
+Revision `045_ai_action_drafts` adds separate platform/tenant draft controls and
+private versioned drafts. All eleven operational actions start disabled, unreviewed
+and without tenant grants: expense, purchase and invoice creation; party/product
+creation and update; stock adjustment/transfer; purchase payment and receivable
+collection. Administrative settings, deletion/cancellation and document uploads are
+excluded. Read grants never grant draft permission, and draft permission never
+grants execution. New tenants inherit denial through absent grants.
+
+The same metered provider call can propose at most one unvalidated private draft.
+Only deployed, reviewed and currently permitted actions are offered. JSON proposals
+are untrusted: the backend checks capability revisions, current membership/module/
+store scope, ownership, size and server-owned submission identity. Missing fields
+stay incomplete; they are not authorisation to invent values. Saving a draft and
+settling its originating message/usage occur in the same transaction. Stable client
+references replay saved outcomes instead of repeating provider calls or resetting
+edited/approved drafts.
+
+The tenant page displays private draft cards with an advanced JSON field editor,
+schema inspection, validation and an explicit **Approve draft only (no posting)**
+confirmation. Validation normalises fields against existing business schemas and
+checks selected references, current permissions and accounting locks. Its report
+explicitly states that full business-service validation, tax recalculation, stock
+and duplicate-safe execution are **not yet certified**. Defaulted fields are shown
+in the canonical draft and must be reviewed. Product update is a full replacement:
+every field must be supplied to avoid resetting omitted settings.
+
+Approval binds current version/hash, contract/policy revisions and hashed reference/
+permission snapshots. Any edit clears approval and increments the version. Approval
+also records append-only hash/version/contract/snapshot proof in `ai_draft_approvals`;
+old proof survives edits and content scrubbing, but never approves a later version.
+Tenant runtime cannot update or delete approval records. Approval
+rechecks these facts, rejects stale references, and cannot be granted by chat text,
+model output or another user's session. The ledger has no executing/executed status,
+and there is deliberately no `/execute` route. Phase 4 must establish certified
+service preflight and atomic/recoverable idempotent execution before posting can be
+introduced; a Phase 3 approval is not a promise of posting eligibility.
+Phase 4 must revalidate and obtain renewed approval on a certified full business
+preview; it must never automatically promote existing Phase 3 intent approvals.
+
+Drafts expire within seven days or the earlier conversation expiry. Conversation
+deletion scrubs draft payload/validation; explicit discard and maintenance scrub
+expired/deleted drafts while preserving audit event metadata. Own history remains
+readable when AI is disabled, but validation/edit/approval require effective AI and
+current action permissions. Runtime RLS and composite conversation ownership FKs
+isolate users and tenants; platform operators get contract/control metadata, not
+private content.
+
+Apply revision 045 before deploying this API/frontend. Live migration requires
+explicit approval. Validation uses a disposable, explicitly authorised synthetic
+database and mocked provider, never live financial fixtures or paid calls.
+
+## 17. Approved operational execution and private document inputs
+
+Apply revisions `046_ai_execution` and `047_ai_private_media` before deploying the
+updated API/frontend. Deployment and live migration still require explicit approval.
+Existing read settings, limits, user preferences and tenant grants are preserved.
+Execution switches and document inputs default off. All action fingerprints change,
+so older reviewed contracts cannot enable posting; old Phase 3 approvals must be
+validated and explicitly approved again.
+
+The eleven add/update actions dispatch existing business services with `commit=False`.
+Their default `commit=True` preserves ordinary API behavior. The gateway holds the
+conversation/draft, policy and relevant reference locks, recalculates the approved
+preview, verifies the matching immutable approval proof, and uses one database transaction for business mutations, audit and an
+append-only `ai_executions` result. Server-generated submission identity is stable
+for draft/version. Concurrent submissions serialize, and retries replay that exact
+outcome without calling OpenAI or posting again. Rejected business validation rolls
+back the complete savepoint and records a failed outcome. Edit/review/reapprove a new
+draft version to try corrected values. A transport/commit error returns 503 with
+same-draft recovery instructions, never a replacement key or automatic retry.
+Failed outcomes retain only a generic reason and status code; detailed business
+validation errors are returned only on the initial submission, not retained or replayed.
+An outcome-read failure after commit also requires same-draft/version recovery.
+Downgrading to 045 discards and scrubs executed drafts, rather than restoring approval;
+re-upgrade starts with posting disabled.
+
+Document previews reuse read-only product resolution, configured HSN rates, shared
+purchase line calculations and `build_invoice_document`; they never post and roll
+back a business document as validation. Approved impact includes authoritative totals,
+payment amounts, document identity, new products, missing product-HSN updates, stock before/change/after/reservations,
+and borrowing side effects. Changes require reapproval. Existing final business rules
+remain authoritative and can reject submission atomically.
+
+Separate high-impact actions cover invoice/purchase cancellation, unused-product
+deletion and one transaction deletion. Owners/admins need unrestricted store scope,
+the underlying module, reviewed action, tenant grant and separately enabled posting.
+They require an impact preview and exact typed business label. Existing cancellation
+and deletion dependency rules are reused: invoice deletion/reset-all/administrative
+settings are not offered, used products cannot be deleted, paid cancellations create
+pending refunds rather than immediate cash refunds, and reserved/consumed stock blocks
+invalid cancellation. Existing immutable deletion archives remain authoritative.
+Stock transfers record workspace-user attribution in a narrowly validated new column;
+legacy profile attribution is retained and tenant credentials receive no SELECT grant.
+
+Private uploads accept UTF-8 `.txt`, text PDF (one to five unencrypted pages), or a
+single PNG/JPEG/WebP image, at most 2 MB/file, ten retained files/conversation and two
+files/message. Text extraction is limited to 12,000 UTF-8 bytes. Scanned PDFs must
+be uploaded as page images. Images are decoded, orientation-corrected, stripped of metadata and normalized
+to a JPEG no larger than 512 x 512, sent at low detail for economical reading.
+Original binary PDFs/images are not forwarded to the provider or exposed through
+public URLs. Normalized private bytes/text are stored in `ai_attachments`, protected
+by company/user/conversation ownership, RLS and expiry. There is intentionally no
+download or public-storage endpoint in this initial extraction release.
+
+Upload alone does not call OpenAI. **Send** explicitly processes only selected files
+using the allowlisted document model, `store=False`, existing structured output and
+no executable provider tools. The model may propose an unvalidated draft, never
+approve it. File instructions are untrusted data. Message replay binds both text and
+attachment IDs; it cannot change attached files or repeat provider processing.
+The existing atomic tenant budget function reserves text byte bounds plus 16,000
+tokens per normalized image, then settles provider-reported usage at separately
+configured document prices. Failed/unknown calls retain conservative accounting.
+Images are not guaranteed accurate; users must review extracted figures and fields.
+
+Removing a private file or deleting/expiring a chat scrubs its normalized bytes,
+extracted text and filename. Maintenance scrubs expired attachments alongside chats
+and drafts. Private AI uploads are not automatically attached to posted business
+documents; business receipt retention remains the existing separate workflow.
+Platform operators see usage/control metadata, not private files/transcripts.
+
+The simplified assistant has collapsible conversations, tools/preferences/usage and
+operation review. Titles save after a 600 ms pause or blur, with expected versions,
+in-flight race protection and visible retry errors. Add/update and cancel/delete have
+separate review views; structured fields and readable impact replace default raw JSON
+(advanced JSON remains available). Message roles remain accessible without visible
+speaker-name clutter. Mobile inputs use at least 16 px to avoid iOS focus zoom, without
+disabling user pinch zoom.
+
+## 18. Private metered microphone transcription
+
+Revision `048_ai_voice` adds a separately enabled, duration-priced transcription
+contract (`gpt-transcribe`), using the backend key and model allowlist. English/Tamil
+microphone recordings become editable text, never an automatically sent message or
+an action approval. Users explicitly transcribe, review/correct, add text to the
+composer, then Send separately. Audio-file uploads and synthesized voice replies
+remain outside this release.
+
+Web Audio captures mono PCM using an AudioWorklet capped at 60 seconds; cancellation,
+navigation and completion stop microphone tracks and close the audio context. HTTPS
+or localhost and microphone permission are required. The server verifies WAV frames,
+duration (0.5-60 seconds), format and 12 MB maximum before any provider call, re-encodes
+without metadata, and never persists raw audio. Short-lived transcripts are private,
+limited to 4,000 characters, expire after ten minutes and are scrubbed with deleted
+or expired conversations. Only explicitly sent text enters ordinary chat history.
+
+`ai_voice_requests` binds an authenticated conversation, stable client key, normalized
+audio hash and language. Claim/reservation commits before calling the provider.
+Concurrent/replayed requests recover the same pending/completed/failed/unknown result;
+they never repeat transcription. Usage joins the existing reservation ledger and
+tenant budget lock. Request/spend ceilings include voice while chat tokens are not
+invented for duration billing. Reserve rounded-up seconds at versioned per-minute
+pricing; settle known provider duration, retaining conservative cost on missing usage
+or transport uncertainty. Permission/configuration is rechecked before processing;
+deleted/expired conversations never receive late transcript content. No tools,
+business context, previous messages or private preferences are sent for transcription.
+Downgrade cannot erase recorded voice usage; disable the feature for operational rollback.

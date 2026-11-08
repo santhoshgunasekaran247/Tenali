@@ -37,14 +37,19 @@ export function PlatformAICapabilities({ companyId }: { companyId: string }) {
     } catch (failure) { setError(String(failure)); }
     finally { setBusy(false); }
   };
-  return <section className="settings-card"><h3>Reviewed business lookups</h3>
-    <p>Only deployed read adapters can be enabled. A changed contract blocks its lookup until reviewed again.
-      New tenants have no lookup permission by default. No transaction execution or uploads are enabled here.</p>
+  return <section className="settings-card"><h3>Business lookups <span className="platform-ai-count">{items.filter(item => item.enabled && item.compatible).length} / {items.length} enabled</span></h3>
+    <p className="social-caption">Read-only access; no business writes. Expand a lookup to review its contract and permissions.</p>
+    <details className="platform-ai-help"><summary>How lookup permissions work</summary>
+      <p>Changed contracts require review again. New workspaces have no lookup grants by default.
+      Financial results are bounded records, not complete reports. Accounts, transactions and borrowing balances require
+      unrestricted store access; invoice-linked receivables and refunds respect store restrictions.</p>
+    </details>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     {!items.length && !error ? <p>Loading read capabilities...</p> : null}
-    {items.map(item => <article key={item.key} className="settings-card">
-      <h4>{item.key} · read only</h4><p>{item.description}</p>
+    <div className="platform-ai-tool-list">{items.map(item => <details key={item.key} className="platform-ai-tool">
+      <summary><span className="platform-ai-chevron" aria-hidden="true">&gt;</span><strong>{item.key.replace(/_/g, " ")}</strong><span>{!item.compatible ? "Review required" : item.enabled ? "Enabled" : "Off"}{companyId ? ` · Workspace ${item.tenant_allowed ? "allowed" : "blocked"}` : ""}</span></summary>
+      <div className="platform-ai-tool-body"><p>{item.description}</p>
       <p>Permission: {item.module_path} · Contract: {item.compatible ? "reviewed" : item.reason} · Platform: {item.enabled ? "enabled" : "disabled"}</p>
       <button type="button" className="btn light" disabled={busy} onClick={() => void update(item, false)}>
         {item.enabled ? "Disable lookup" : "Review & enable lookup"}
@@ -52,7 +57,7 @@ export function PlatformAICapabilities({ companyId }: { companyId: string }) {
       {companyId ? <label className="ops-toggle"><input type="checkbox" checked={item.tenant_allowed}
         disabled={busy || (!item.tenant_allowed && (!item.enabled || !item.compatible))}
         onChange={() => void update(item, true)} />Allow this lookup for the selected tenant</label> : null}
-    </article>)}
-    {!companyId ? <p>Select a tenant below to grant individual lookup permissions.</p> : null}
+      </div>
+    </details>)}</div>
   </section>;
 }

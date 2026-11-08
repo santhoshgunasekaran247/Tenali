@@ -227,7 +227,7 @@ class BillingService:
             "offset": safe_offset,
         }
 
-    def create_invoice(self, company_id: str | None, payload: InvoiceCreate) -> dict:
+    def create_invoice(self, company_id: str | None, payload: InvoiceCreate, *, commit: bool = True) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
         original_hash=request_hash(payload)
@@ -498,14 +498,17 @@ class BillingService:
             "document_data": document_data,
         }
         finish_posting(self.db,resolved_company_id,"invoice",payload,result,original_hash)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return result
 
-    def list_invoices(self, company_id: str | None, collection_status: str | None = None, store_id: str | None = None) -> dict:
+    def list_invoices(self, company_id: str | None, collection_status: str | None = None, store_id: str | None = None,
+                      *, search: str = "", limit: int | None = None, from_date: date | None = None,
+                      to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
-        query = """
+        query = f"""
             select
                 i.id,
                 i.company_id,
@@ -528,7 +531,7 @@ class BillingService:
                 i.due_date,
                 i.reminder_date,
                 i.bad_debt_reason,
-                i.document_data,
+                {"i.document_data," if not summary_only else ""}
                 i.cancelled_at,
                 i.cancellation_reason,
                 i.created_at
@@ -553,7 +556,13 @@ class BillingService:
             query += " and i.collection_status = :collection_status"
             params["collection_status"] = normalized
 
-        query += " order by i.invoice_date desc, i.created_at desc"
+        query += """ and (:search='' or strpos(lower(i.invoice_number),lower(:search))>0
+            or strpos(lower(p.legal_name),lower(:search))>0)
+            and (cast(:from_date as date) is null or i.invoice_date>=cast(:from_date as date))
+            and (cast(:to_date as date) is null or i.invoice_date<=cast(:to_date as date))
+            and (not :cancelled or i.status='CANCELLED')
+            order by i.invoice_date desc, i.created_at desc,i.id limit :limit"""
+        params.update(search=search, limit=limit, from_date=from_date, to_date=to_date, cancelled=cancelled_only)
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}
 

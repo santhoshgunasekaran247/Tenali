@@ -10,6 +10,8 @@ export type CompanyFeatures = {
   storefront: FeatureStatus;
   ai_settings_version: number;
   support_url: string;
+  document_inputs_enabled?: boolean;
+  voice_inputs_enabled?: boolean;
 };
 
 export type Company = {

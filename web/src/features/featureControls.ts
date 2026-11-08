@@ -19,6 +19,12 @@ export type PlatformAIConfig = AILimits & {
   global_enabled: boolean;
   routine_model: string;
   document_model: string;
+  document_inputs_enabled: boolean;
+  voice_inputs_enabled: boolean;
+  transcription_model: string;
+  transcription_cost_per_minute: number | string;
+  document_input_cost_per_million: number | string;
+  document_output_cost_per_million: number | string;
   max_output_tokens: number;
   timeout_seconds: number;
   retention_days: number;

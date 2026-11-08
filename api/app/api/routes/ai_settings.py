@@ -8,6 +8,8 @@ from app.api.routes.auth import identity_db
 from app.dependencies import get_db
 from app.ai.capabilities import platform_capabilities, save_capability, save_tenant_capability
 from app.ai.schemas import CapabilityKey, CapabilityUpdate, TenantCapabilityUpdate
+from app.ai.actions import ActionKey, ActionPolicyUpdate, TenantActionUpdate
+from app.ai.drafts import action_policies, save_action_policy, save_tenant_action
 from app.services.feature_controls import (
     FeatureUpdate, PlatformAIUpdate, TenantAIUpdate, TenantLimitUpdate,
     company_features, platform_settings, save_feature, save_platform_settings,
@@ -16,6 +18,22 @@ from app.services.feature_controls import (
 
 platform_router = APIRouter()
 tenant_router = APIRouter()
+
+
+@platform_router.get("/ai/actions")
+def actions(company_id: UUID | None = None, identity=Depends(admin_identity), db=Depends(identity_db)):
+    return action_policies(db, company_id)
+
+
+@platform_router.patch("/ai/actions/{key}")
+def update_action(key: ActionKey, payload: ActionPolicyUpdate, identity=Depends(admin_identity), db=Depends(identity_db)):
+    return save_action_policy(db, key, payload, identity["id"])
+
+
+@platform_router.patch("/ai/tenants/{company_id}/actions/{key}")
+def update_tenant_action(company_id: UUID, key: ActionKey, payload: TenantActionUpdate,
+                         identity=Depends(admin_identity), db=Depends(identity_db)):
+    return save_tenant_action(db, company_id, key, payload, identity["id"])
 
 
 @platform_router.get("/ai/capabilities")

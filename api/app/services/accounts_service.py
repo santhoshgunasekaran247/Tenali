@@ -498,6 +498,7 @@ class AccountsService:
         category: str | None = None,
         source_type: str | None = None,
         business_only: bool = False,
+        *, search: str = "",
     ) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         safe_limit = min(max(limit, 1), 5000)
@@ -561,7 +562,12 @@ class AccountsService:
             query += " and coalesce(t.source_type, '') ilike :source_type"
             params["source_type"] = f"%{source_type.strip()}%"
 
-        query += " order by t.transaction_date desc, t.created_at desc limit :limit"
+        query += """ and (:search='' or strpos(lower(coalesce(fa.nickname,'')),lower(:search))>0
+            or strpos(lower(coalesce(ta.nickname,'')),lower(:search))>0
+            or strpos(lower(coalesce(t.reference,'')),lower(:search))>0
+            or strpos(lower(coalesce(t.category,'')),lower(:search))>0)
+            order by t.transaction_date desc,t.created_at desc,t.id limit :limit"""
+        params["search"] = search
 
         rows = self.db.execute(
             text(query),
@@ -574,6 +580,7 @@ class AccountsService:
         company_id: str | None,
         as_of: str | None = None,
         include_inactive: bool = False,
+        *, search: str = "", limit: int | None = None,
     ) -> dict:
         self._ensure_account_extensions()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -633,13 +640,15 @@ class AccountsService:
         if not include_inactive:
             query += " and a.is_active = true"
 
-        query += " order by a.nickname asc"
+        query += """ and (:search='' or strpos(lower(a.nickname),lower(:search))>0)
+            order by a.nickname asc,a.id limit :limit"""
 
         rows = self.db.execute(
             text(query),
             {
                 "company_id": resolved_company_id,
                 "as_of_date": as_of_date,
+                "search": search, "limit": limit,
             },
         ).mappings().all()
 
@@ -890,7 +899,7 @@ class AccountsService:
             raise HTTPException(status_code=500, detail="Failed to create transaction")
         return dict(row)
 
-    def create_business_payment(self, company_id: str | None, payload: BusinessPaymentCreate) -> dict:
+    def create_business_payment(self, company_id: str | None, payload: BusinessPaymentCreate, *, commit: bool = True) -> dict:
         self._ensure_account_extensions()
         self._ensure_borrowings_table()
         self._ensure_transaction_extensions()
@@ -1071,7 +1080,8 @@ class AccountsService:
             "business_payment", str(tx["id"]), resolved_company_id, payload.attachments
         )
         finish_posting(self.db,resolved_company_id,"business_payment",payload,{"account_transaction":dict(tx),"borrowing_id":borrowing_id})
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return {
             "account_transaction": dict(tx),
             "borrowing_id": borrowing_id,
@@ -1330,7 +1340,9 @@ class AccountsService:
             "reversal_transaction": reversal_out,
         }
 
-    def list_period_locks(self, company_id: str | None, include_inactive: bool = False) -> dict:
+    def list_period_locks(self, company_id: str | None, include_inactive: bool = False,
+                          *, search: str = "", limit: int | None = None, as_of: date | None = None,
+                          from_date: date | None = None, to_date: date | None = None) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         ensure_period_locks_table(self.db)
 
@@ -1353,7 +1365,12 @@ class AccountsService:
         params: dict[str, object] = {"company_id": resolved_company_id}
         if not include_inactive:
             query += " and is_active = true"
-        query += " order by period_start desc, created_at desc"
+        query += """ and (:search='' or strpos(lower(coalesce(reason,'')),lower(:search))>0)
+            and (cast(:as_of as date) is null or cast(:as_of as date) between period_start and period_end)
+            and (cast(:from_date as date) is null or period_end>=cast(:from_date as date))
+            and (cast(:to_date as date) is null or period_start<=cast(:to_date as date))
+            order by period_start desc,created_at desc,id limit :limit"""
+        params.update(search=search, limit=limit, as_of=as_of, from_date=from_date, to_date=to_date)
 
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}

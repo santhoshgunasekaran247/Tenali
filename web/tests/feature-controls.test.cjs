@@ -37,3 +37,23 @@ test("platform AI route, separate client controls and disabled tenant switches a
   assert.match(src("components/TenantAISettings.tsx"), /expected_version: features\.ai_settings_version/);
   assert.match(src("components/PlatformWorkspaceFeatures.tsx"), /expected_version: status\.version/);
 });
+
+test("platform AI separates navigation, preserves mounted edits and collapses detailed controls", () => {
+  const settings = src("components/PlatformAISettings.tsx");
+  for (const section of ["settings", "tools", "workspaces", "usage"]) {
+    assert.match(settings, new RegExp(`id="platform-ai-${section}" hidden=\\{section !== "${section}"\\}`));
+  }
+  assert.match(settings, /aria-label="AI administration"/);
+  assert.match(settings, /Documents & images/);
+  assert.match(settings, /Advanced settings/);
+  assert.match(settings, /disclosure\.open = true/);
+  assert.match(settings, /expected_version: version/);
+  assert.match(settings, /expected_version: limits\.version/);
+  const reads = src("components/PlatformAICapabilities.tsx");
+  assert.match(reads, /<details key=\{item\.key\} className="platform-ai-tool"/);
+  assert.doesNotMatch(reads, /<PlatformAIActions/);
+  const actions = src("components/PlatformAIActions.tsx");
+  assert.match(actions, /Boolean\(item\.high_impact\) === highImpact/);
+  assert.match(actions, />Cancel & delete<\/button>/);
+  assert.match(src("styles.css"), /\.platform-ai-settings \[hidden\] \{ display: none !important; \}/);
+});

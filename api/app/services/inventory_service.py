@@ -228,7 +228,24 @@ class InventoryService:
                 if variant["is_active"] and variant["pricing_error"]:
                     raise HTTPException(422, f"{variant['variant_name']}: {variant['pricing_error']}")
 
-    def save_product(self, payload: ProductInput, product_id: str | None = None) -> dict:
+    def preview_product(self, payload: ProductInput, product_id: str | None = None) -> dict:
+        current = self.detail(product_id) if product_id else None
+        if current and current.get("is_draft") and payload.catalog_visible:
+            raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
+        values = payload.model_dump()
+        self._validate_item(values, product_id)
+        projected = self._enrich({**(current or {}), **values}, current["offers"] if current else [], Decimal("0"))
+        if projected["pricing_error"]:
+            raise HTTPException(422, projected["pricing_error"])
+        for variant in current["variants"] if current else []:
+            proposed_variant = self._enrich(variant, variant["offers"], Decimal("0"), values["preferred_vendor_id"], projected)
+            if variant["is_active"] and proposed_variant["pricing_error"]:
+                raise HTTPException(422, f"{variant['variant_name']}: {proposed_variant['pricing_error']}")
+        return {"name": payload.name, "catalog_price": projected["catalog_price"],
+                "effective_mrp": projected["effective_mrp"], "effective_discount": projected["effective_discount"],
+                "fields": payload.model_dump(mode="json"), "stock_added": "0"}
+
+    def save_product(self, payload: ProductInput, product_id: str | None = None, *, commit: bool = True) -> dict:
         if product_id and self._product(product_id, lock=True).get("is_draft") and payload.catalog_visible:
             raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
@@ -241,7 +258,8 @@ class InventoryService:
             values.update(company_id=self.company_id, portal_product_id=f"PRD-{uuid4().hex[:12].upper()}")
         product_id = self._write("products", values, product_id)
         self._check_price(product_id)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self.detail(product_id)
 
     def confirm_draft(self, product_id: str) -> dict:
@@ -328,7 +346,7 @@ class InventoryService:
         self.db.commit()
         return self.detail(target_id)
 
-    def delete_product(self, product_id: str) -> dict:
+    def preview_product_deletion(self, product_id: str) -> dict:
         identity = self.db.info.get("tenant_context", {})
         if identity.get("role") not in {"owner", "admin"}:
             raise HTTPException(403, "Only owners and administrators can delete products")
@@ -347,13 +365,20 @@ class InventoryService:
         """), params).scalar_one()
         if used:
             raise HTTPException(409, "This product has stock or business history. Make it inactive instead to preserve records.")
+        return {"id": product_id, "can_delete": True, "confirm_text": self._product(product_id)["name"]}
+
+    def delete_product(self, product_id: str, *, commit: bool = True) -> dict:
+        self.preview_product_deletion(product_id)
+        params = {"product": product_id, "company": self.company_id}
         try:
             self.db.execute(text("delete from stock_balances where product_id=:product and company_id=:company"), params)
             self.db.execute(text("delete from vendor_contributions where product_id=:product"), params)
             self.db.execute(text("delete from products where id=:product and company_id=:company"), params)
-            self.db.commit()
+            if commit:
+                self.db.commit()
         except IntegrityError as error:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
             raise HTTPException(409, "This product is linked to other records. Make it inactive instead.") from error
         return {"deleted": True, "id": product_id}
 
@@ -467,7 +492,7 @@ class InventoryService:
             {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id}).scalar_one()
         return Decimal(str(balance)) - reserved_stock(self.db, self.company_id, product_id, variant_id, store_id, exclude_order)
 
-    def transfer_stock(self, payload: StockTransferCreate) -> dict:
+    def transfer_stock(self, payload: StockTransferCreate, *, commit: bool = True) -> dict:
         from app.services.stores_service import stock_store
         cached = replay_posting(self.db, self.company_id, "stock_transfer", payload)
         if cached is not None:
@@ -478,7 +503,7 @@ class InventoryService:
             raise HTTPException(422, "Choose two different stores")
         transfer_date = payload.transfer_date or date.today()
         assert_period_open(self.db, self.company_id, transfer_date, "Transferring stock")
-        row = self.db.execute(text("""insert into stock_transfers(company_id,from_store_id,to_store_id,transfer_date,reference,notes,lines,created_by)
+        row = self.db.execute(text("""insert into stock_transfers(company_id,from_store_id,to_store_id,transfer_date,reference,notes,lines,created_by_user_id)
             values(:company,:from_store,:to_store,:date,:reference,:notes,cast(:lines as jsonb),cast(:actor as uuid)) returning id"""),
             {"company": self.company_id, "from_store": str(source["id"]), "to_store": str(target["id"]), "date": transfer_date,
              "reference": payload.reference, "notes": payload.notes,
@@ -495,7 +520,8 @@ class InventoryService:
                               reference_id=transfer_id, store_id=str(target["id"]), movement_type="TRANSFER_IN")
         result = self.transfer_detail(transfer_id)
         finish_posting(self.db, self.company_id, "stock_transfer", payload, result)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return result
 
     def reverse_transfer(self, transfer_id: str, notes: str) -> dict:
@@ -537,7 +563,7 @@ class InventoryService:
         self._product(product_id)
         return {"items": [dict(row) for row in self.db.execute(text("select * from stock_movements where company_id=:company and product_id=:product order by created_at desc,id desc limit 50"), {"company": self.company_id, "product": product_id}).mappings()]}
 
-    def stock_reconciliation(self) -> dict:
+    def stock_reconciliation(self, *, search: str = "", limit: int | None = None, store_id: str | None = None) -> dict:
         rows = self.db.execute(
             text(
                 """
@@ -583,11 +609,48 @@ class InventoryService:
                   and (cast(:permitted as uuid[]) is null or s.id = any(cast(:permitted as uuid[])))
                 join products p on p.id = coalesce(b.product_id, m.product_id) and p.company_id = :company
                 left join product_variants v on v.id = coalesce(b.variant_id, m.variant_id)
+                where (:search='' or strpos(lower(p.name),lower(:search))>0
+                    or strpos(lower(coalesce(p.sku,'')),lower(:search))>0)
+                    and (cast(:store as uuid) is null or s.id=cast(:store as uuid))
                 order by s.is_default desc, s.code, p.name, v.variant_name nulls first, p.id
+                limit :limit
                 """
             ),
-            {"company": self.company_id, "permitted": allowed_stores(self.db.info.get("tenant_context"))},
+            {"company": self.company_id, "permitted": allowed_stores(self.db.info.get("tenant_context")),
+             "search": search, "limit": limit, "store": store_id},
         ).mappings().all()
+        return {"items": [dict(row) for row in rows]}
+
+    def search_reorder_alerts(self, search: str, limit: int, store_id: str | None = None) -> dict:
+        rows = self.db.execute(text("""
+            with items as (
+                select p.id as product_id,null::uuid as variant_id,p.name as product_name,null::text as variant_name,
+                    p.sku,p.reorder_enabled,p.reorder_level,p.reorder_target,p.reorder_reminder_date
+                from products p where p.company_id=:company and p.is_active
+                union all
+                select p.id,v.id,p.name,v.variant_name,coalesce(v.sku,p.sku),v.reorder_enabled,
+                    v.reorder_level,v.reorder_target,v.reorder_reminder_date
+                from product_variants v join products p on p.id=v.product_id
+                where p.company_id=:company and p.is_active and v.is_active
+            ), quantities as (
+                select item.*,coalesce((select sum(b.quantity) from stock_balances b
+                    where b.company_id=:company and b.product_id=item.product_id
+                    and (item.variant_id is null or b.variant_id=item.variant_id)
+                    and (cast(:permitted as uuid[]) is null or b.store_id=any(cast(:permitted as uuid[])))
+                    and (cast(:store as uuid) is null or b.store_id=cast(:store as uuid))),0) as stock_qty
+                from items item where item.reorder_enabled
+                    and (:search='' or strpos(lower(item.product_name),lower(:search))>0
+                        or strpos(lower(coalesce(item.sku,'')),lower(:search))>0)
+            )
+            select product_id,variant_id,product_name,variant_name,stock_qty,reorder_level,
+                greatest(0,reorder_target-stock_qty) as reorder_quantity,
+                reorder_reminder_date as reminder_date,
+                coalesce(reorder_reminder_date<=current_date,false) as reminder_due,
+                stock_qty<=reorder_level as low_stock from quantities
+            where stock_qty<=reorder_level or reorder_reminder_date<=current_date
+            order by product_name,product_id,variant_id nulls first limit :limit
+        """), {"company": self.company_id, "search": search, "limit": limit, "store": store_id,
+               "permitted": allowed_stores(self.db.info.get("tenant_context"))}).mappings()
         return {"items": [dict(row) for row in rows]}
 
     def missing_movement_sources(self) -> dict:
