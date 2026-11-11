@@ -54,6 +54,6 @@ test("platform AI separates navigation, preserves mounted edits and collapses de
   assert.doesNotMatch(reads, /<PlatformAIActions/);
   const actions = src("components/PlatformAIActions.tsx");
   assert.match(actions, /Boolean\(item\.high_impact\) === highImpact/);
-  assert.match(actions, />Cancel & delete<\/button>/);
+  assert.match(actions, />High impact<\/button>/);
   assert.match(src("styles.css"), /\.platform-ai-settings \[hidden\] \{ display: none !important; \}/);
 });

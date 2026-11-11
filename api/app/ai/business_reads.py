@@ -27,18 +27,25 @@ def business_lookup(db, identity: dict, key: str, args: BusinessLookupArguments)
         get_store(db, company, store, require_active=False)
     if permitted == [] and key in {"reorder", "reconciliation"}:
         return {"items": [], "note": "No stores are permitted for this member; no inventory-state records are available."}
+    if key in {"borrowing_entries", "stock_transfers", "stock_movements", "movement_sources", "variants",
+               "vendor_offers", "collection_reminders", "reminder_history", "account_journal", "audit_events", "product_details"}:
+        from app.ai.operations_reads import lookup
+        return lookup(db, identity, key, args)
     limit = args.limit + 1
     status = None if args.status == "CANCELLED" else args.status
     if key == "accounts":
         result = AccountsService(db).account_tally(company, as_of=args.as_of.isoformat() if args.as_of else None,
                                                    search=args.query, limit=limit)
         note = f"Balances as of {result['as_of']}; all posted inflows/outflows including reversals. No company-wide total is supplied."
-    elif key == "transactions":
+    elif key in {"transactions", "business_payments"}:
         result = AccountsService(db).list_transactions(
             company, search=args.query, limit=limit,
             from_date=args.from_date.isoformat() if args.from_date else None,
-            to_date=args.to_date.isoformat() if args.to_date else None)
-        note = "Posted ledger entries by transaction date, including reversals. A reversed original is not an additional current payment."
+            to_date=args.to_date.isoformat() if args.to_date else None, business_only=key == "business_payments")
+        note = ("Original standalone outflows by transaction date; is_reversed marks reversed originals. "
+                "Reversal entries are in transactions; these rows are not current-payment totals."
+                if key == "business_payments" else
+                "Posted ledger entries by transaction date, including reversals. A reversed original is not an additional current payment.")
     elif key == "invoices":
         result = BillingService(db).list_invoices(company, collection_status=status, store_id=store,
             cancelled_only=args.status == "CANCELLED", summary_only=True, search=args.query, limit=limit,

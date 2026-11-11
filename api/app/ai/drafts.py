@@ -37,6 +37,7 @@ def action_policies(db, company=None):
                       "safety": "approved_execution", "execution_enabled": row["execution_enabled"],
                       "schema": action.schema.model_json_schema() if action else {},
                       "high_impact": bool(action and action.high_impact),
+                      "module_path": action.path if action else None,
                       "target_required": bool(action and action.target)})
     return {"items": items}
 
@@ -92,8 +93,15 @@ def available_actions(db, identity):
             if error.status_code != 403:
                 raise
             continue
-        if item["key"] == "expense_create" and allowed_stores(identity) is not None:
+        if (item["key"] == "expense_create" or ACTIONS[item["key"]].company_wide) and allowed_stores(identity) is not None:
             continue
+        if item["key"] == "refund_settle":
+            try:
+                check_module(identity, "/accounts")
+            except HTTPException as error:
+                if error.status_code != 403:
+                    raise
+                continue
         if allowed_stores(identity) == [] and item["key"] in {
             "purchase_create", "invoice_create", "stock_adjust", "stock_transfer", "purchase_payment", "collection_payment",
         }:
@@ -159,7 +167,7 @@ class DraftService:
         if not row:
             raise HTTPException(404, "Draft not found")
         self.assistant.conversation(row["conversation_id"])
-        return dict(row)
+        return {**dict(row), "high_impact": bool(ACTIONS.get(row["action_key"]) and ACTIONS[row["action_key"]].high_impact)}
 
     def list(self, conversation_id, offset=0):
         self.assistant.conversation(conversation_id)
@@ -167,7 +175,8 @@ class DraftService:
             and company_id=:company and user_id=:user and status<>'discarded' and expires_at>now()
             order by created_at desc,id limit 30 offset :offset"""),
             {**self.scope, "conversation": str(conversation_id), "offset": offset}).mappings()
-        return {"items": [dict(row) for row in rows]}
+        return {"items": [{**dict(row), "high_impact": bool(ACTIONS.get(row["action_key"]) and ACTIONS[row["action_key"]].high_impact)}
+                          for row in rows]}
 
     def create(self, conversation_id, payload: DraftCreate, *, commit=True):
         self.assistant.lock_conversation(conversation_id)
@@ -190,7 +199,8 @@ class DraftService:
         if bool(action.target) != bool(payload.target_id):
             raise HTTPException(422, "Select a target for updates/payments; creation must not have a target.")
         if payload.target_id:
-            self.reference(action.target, payload.target_id)
+            self.reference(action.target, payload.target_id, allow_inactive=payload.action in {
+                "account_update", "variant_update", "offer_update", "brand_update", "category_update"})
         expires = min(conversation["expires_at"], datetime.now(timezone.utc) + timedelta(days=7))
         row = self.db.execute(text("""insert into ai_action_drafts(company_id,user_id,conversation_id,client_key,
             action_key,target_id,payload,payload_hash,request_hash,expires_at)
@@ -230,28 +240,36 @@ class DraftService:
         self.db.commit()
         return self.get(draft_id)
 
-    def reference(self, table, record_id, *, lock=False):
-        if table not in {"parties", "products", "product_variants", "accounts", "stores", "purchases", "invoices", "receivables", "brands", "product_categories"}:
+    def reference(self, table, record_id, *, lock=False, allow_inactive=False):
+        if table not in {"parties", "products", "product_variants", "accounts", "stores", "purchases", "invoices", "receivables", "brands", "product_categories",
+                         "vendor_contributions", "account_transactions", "refund_settlements", "stock_movements", "stock_transfers"}:
             raise ValueError("Invalid reference table")
-        if table == "product_variants":
-            sql = "select v.* from product_variants v join products p on p.id=v.product_id where v.id=:id and p.company_id=:company"
+        if table in {"product_variants", "vendor_contributions"}:
+            sql = f"select v.* from {table} v join products p on p.id=v.product_id where v.id=:id and p.company_id=:company"
         else:
             sql = f"select * from {table} where id=:id and company_id=:company"
         if lock:
-            sql += " for update"
+            sql += " for update of v" if table in {"product_variants", "vendor_contributions"} else " for update"
         row = self.db.execute(text(sql), {**self.scope, "id": str(record_id)}).mappings().first()
         if not row:
             raise HTTPException(422, f"Referenced {table} record does not belong to this workspace.")
-        if row.get("is_active") is False:
+        if row.get("is_active") is False and not allow_inactive:
             raise HTTPException(422, f"Referenced {table} record is inactive.")
         if table == "stores":
             check_store(self.assistant.identity, dict(row))
             get_store(self.db, self.scope["company"], str(record_id))
-        if table in {"purchases", "invoices", "receivables"}:
+        if table == "stock_transfers":
+            self.reference("stores", row["from_store_id"])
+            self.reference("stores", row["to_store_id"])
+        if table in {"purchases", "invoices", "receivables", "refund_settlements", "stock_movements"}:
             store_id = row.get("store_id")
             if table == "receivables":
                 store_id = self.db.execute(text("select store_id from invoices where id=:id and company_id=:company"),
                     {**self.scope, "id": row["invoice_id"]}).scalar_one_or_none()
+            if table == "refund_settlements":
+                source = "invoices" if row["document_type"] == "invoice" else "purchases"
+                store_id = self.db.execute(text(f"select store_id from {source} where id=:id and company_id=:company"),
+                    {**self.scope, "id": row["document_id"]}).scalar_one_or_none()
             permitted = allowed_stores(self.assistant.identity)
             if permitted is not None and (not store_id or str(store_id) not in permitted):
                 raise HTTPException(403, "Target document is outside your permitted stores.")
@@ -273,7 +291,10 @@ class DraftService:
             model = action.schema.model_validate(supplied)
         except ValidationError as error:
             raise HTTPException(422, error.errors(include_context=False, include_input=False)) from error
-        normalized = model.model_dump(mode="json", exclude={"idempotency_key", "attachments"}, exclude_unset=action.key == "party_update")
+        normalized = model.model_dump(mode="json", exclude={"idempotency_key", "attachments"},
+                                      exclude_unset=action.key in {"party_update", "account_update"})
+        if action.key == "account_update" and not normalized:
+            raise HTTPException(422, "Provide at least one changed account field.")
         preview = None
         if action.key in {"purchase_create", "invoice_create"}:
             if not normalized["lines"] or not normalized.get("store_id"):
@@ -289,12 +310,18 @@ class DraftService:
                     raise HTTPException(422, "Upload product images through Inventory first and use their published URL; AI posting cannot perform external file writes.")
         snapshots = []
         if action.target:
-            target = self.reference(action.target, row["target_id"])
-            snapshots.append({"table": action.target, "id": str(row["target_id"]), "hash": digest(target)})
+            allow_inactive = action.key in {"account_update", "variant_update", "offer_update", "brand_update", "category_update"}
+            target = self.reference(action.target, row["target_id"], allow_inactive=allow_inactive)
+            snapshot = {"table": action.target, "id": str(row["target_id"]), "hash": digest(target)}
+            if allow_inactive:
+                snapshot["allow_inactive"] = True
+            snapshots.append(snapshot)
         mappings = {"vendor_party_id": "parties", "customer_party_id": "parties", "related_party_id": "parties",
                     "vendor_id": "parties", "preferred_vendor_id": "parties", "account_id": "accounts", "from_account_id": "accounts",
                     "store_id": "stores", "stock_store_id": "stores", "from_store_id": "stores", "to_store_id": "stores",
-                    "product_id": "products", "variant_id": "product_variants", "brand_id": "brands", "category_id": "product_categories"}
+                    "product_id": "products", "variant_id": "product_variants", "brand_id": "brands", "category_id": "product_categories",
+                    "party_id": "parties", "to_account_id": "accounts", "invoice_id": "invoices",
+                    "target_product_id": "products", "target_variant_id": "product_variants"}
         def visit(value):
             if isinstance(value, list):
                 for child in value:
@@ -304,6 +331,10 @@ class DraftService:
                     if key in mappings and child:
                         record = self.reference(mappings[key], child)
                         snapshots.append({"table": mappings[key], "id": str(child), "hash": digest(record)})
+                    elif key == "product_ids" and isinstance(child, list):
+                        for product_id in sorted(set(child)):
+                            record = self.reference("products", product_id)
+                            snapshots.append({"table": "products", "id": str(product_id), "hash": digest(record)})
                     elif isinstance(child, (dict, list)):
                         visit(child)
         visit(normalized)
@@ -340,13 +371,13 @@ class DraftService:
                        "stock_transfer": "transfer_date"}
         if action.key in date_fields and not normalized.get(date_fields[action.key]):
             raise HTTPException(422, f"Provide an explicit {date_fields[action.key]} before approving.")
-        if action.key in {"product_update"}:
+        if action.key in {"product_update", "variant_update", "offer_update", "brand_update", "category_update"}:
             missing = set(action.schema.model_fields) - set(values)
             if missing:
-                raise HTTPException(422, "Full product update requires every field to prevent accidental resets: " + ", ".join(sorted(missing)))
-        when = next((normalized.get(key) for key in ("transaction_date", "purchase_date", "invoice_date", "payment_date", "transfer_date", "cancellation_date")
+                raise HTTPException(422, "Full replacement requires every field to prevent accidental resets: " + ", ".join(sorted(missing)))
+        when = next((normalized.get(key) for key in ("transaction_date", "purchase_date", "invoice_date", "payment_date", "transfer_date", "cancellation_date", "settled_on")
                      if normalized.get(key)), None)
-        if action.key == "stock_adjust":
+        if action.key in {"stock_adjust", "stock_transfer_reverse", "receivable_status", "purchase_receive"}:
             from datetime import date
             when = date.today().isoformat()
         if when:

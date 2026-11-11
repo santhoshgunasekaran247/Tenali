@@ -336,7 +336,7 @@ document/image uploads remain subsequent phases.
 
 ### Tenali AI approved posting, private files and responsive assistant
 
-1. Back up the database. With explicit live-deployment approval, apply migrations
+1. Take the approved backup (schema-only when selected). With explicit live-deployment approval, apply migrations
    through `047_ai_private_media` and restart the API before updating the frontend.
    Revision 046 preserves old stock-transfer profile attribution and adds narrowly
    validated workspace-user attribution without exposing the credential table.
@@ -379,9 +379,41 @@ tests before enabling posting. No paid connectivity test is implied by configura
 Platform AI administration has separate **Settings**, **Tools & permissions**,
 **Workspaces** and **Usage** views. Settings group availability, chat pricing and
 spending ceilings, with document/image and advanced settings collapsed. Tool rows
-expand individually; cancellation/deletion have a separate action group. Select a
+expand individually; high-impact workflows have a separate action group. Select a
 workspace in Tools or Workspaces to manage its grants. Switching views preserves
 unsaved settings; platform settings still require the explicit Save button.
+
+### Operations-wide AI adapters (revision 049)
+
+Apply `049_ai_operations` before deploying the expanded API. It adds 27 actions and
+12 reads, bringing coverage to 42 actions/28 reads across Operations. New contracts
+remain disabled/unreviewed and workspace grants remain denied; migration never
+enables AI for a previously opted-out workspace. Review the current contracts and
+explicitly choose which workspaces receive read, draft and posting grants.
+
+In Tools & permissions, use the **Module** selector and expandable rows rather than
+reviewing all controls at once. **High impact** separates cancellation/deletion,
+transaction/transfer reversals, product-draft merge and receivable-status changes.
+They require unrestricted owner/admin access and exact typed confirmation.
+Account updates are patches; inventory replacements require every existing field.
+Borrowing and standalone Business Payments expose their account/borrowing side effects.
+`purpose=billing` in standalone Business Payments is an outflow, not a customer receipt.
+
+Reports need Reports permission plus the originating Accounts/Billing/Purchases/
+Collections permission and unrestricted stores. Ask for an explicit period or aging
+`as_of`, review the checksum/count preview, approve and submit, then choose
+**Download private CSV** under the saved outcome. Recovery reuses the same execution
+reference and never regenerates an approved file. Downloads expire after one hour
+or earlier conversation deletion/expiry and recheck current permissions. Source
+records are capped at 5,000 and content at 5 MB; larger reports stay in the ordinary
+Reports & Exports page. Export rows are not sent to OpenAI or saved in outcome JSON.
+Schedule `python -m app.ai.maintenance --apply` to scrub expired report bytes.
+
+GSTR-2B reconciliation takes up to 12,000 characters of the existing normalized CSV
+template in the editable draft, plus explicit dates. Its private CSV is only a
+working paper, not tax filing or ITC certification. Accounting-period close/reopen,
+reset-all, shopper identity linking and administrative tax/company settings stay manual.
+See [Operations coverage](TENALI_AI_ARCHITECTURE.md#19-operations-wide-capability-coverage).
 
 ### Microphone voice input
 

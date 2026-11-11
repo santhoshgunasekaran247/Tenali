@@ -124,6 +124,10 @@ def apply_ai_draft_migration(connection):
         migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "048_ai_voice.py"))
         with Operations.context(MigrationContext.configure(connection)):
             migration["upgrade"]()
+    if not inspect(connection).has_table("ai_report_files"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "049_ai_operations.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
 
 
 def apply_ai_business_read_migration(connection):

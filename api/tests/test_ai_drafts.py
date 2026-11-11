@@ -22,9 +22,10 @@ from test_ai_reads import ReadDatabaseTests
 
 class DraftUnitTests(unittest.TestCase):
     def test_operational_allowlist_separates_high_impact_and_excludes_admin(self):
-        self.assertEqual(len(ACTIONS), 15)
+        self.assertEqual(len(ACTIONS), 42)
         self.assertEqual({key for key, action in ACTIONS.items() if action.high_impact},
-                         {"invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete"})
+                         {"invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
+                          "account_transaction_reverse", "stock_transfer_reverse", "product_merge", "receivable_status"})
         self.assertTrue({"party_create", "party_update", "product_create", "product_update"} <= set(ACTIONS))
         for action in ("delete", "company_update", "period_reopen", "workspace_reset"):
             with self.assertRaises(ValidationError):

@@ -8,6 +8,7 @@ export function PlatformAIActions({ companyId }: { companyId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [highImpact, setHighImpact] = useState(false);
+  const [module, setModule] = useState("");
   const path = "/ai/actions" + (companyId ? `?company_id=${encodeURIComponent(companyId)}` : "");
   useEffect(() => {
     let active = true;
@@ -35,11 +36,15 @@ export function PlatformAIActions({ companyId }: { companyId: string }) {
     <p className="social-caption">Review drafts first. Posting and workspace grants are separate controls; enabling drafts alone never changes business records.</p>
     <nav className="platform-ai-nav platform-ai-subnav" aria-label="Operational action groups">
       <button type="button" aria-current={!highImpact ? "page" : undefined} onClick={() => setHighImpact(false)}>Add & update</button>
-      <button type="button" aria-current={highImpact ? "page" : undefined} onClick={() => setHighImpact(true)}>Cancel & delete</button>
+      <button type="button" aria-current={highImpact ? "page" : undefined} onClick={() => setHighImpact(true)}>High impact</button>
     </nav>
+    <label>Module<select value={module} onChange={event => setModule(event.target.value)}>
+      <option value="">All modules</option>{[...new Set(items.map(item => item.module_path?.split("/")[1]).filter(Boolean))].sort().map(path =>
+        <option key={path} value={path}>{path}</option>)}</select></label>
     {highImpact ? <p className="social-caption">High-impact operations require unrestricted owner/admin access and exact typed confirmation. Administrative settings and reset-all are excluded.</p> : null}
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
-    <div className="platform-ai-tool-list">{items.filter(item => Boolean(item.high_impact) === highImpact).map(item => <details key={item.key} className="platform-ai-tool">
+    <div className="platform-ai-tool-list">{items.filter(item => Boolean(item.high_impact) === highImpact &&
+      (!module || item.module_path?.split("/")[1] === module)).map(item => <details key={item.key} className="platform-ai-tool">
       <summary><span className="platform-ai-chevron" aria-hidden="true">&gt;</span><strong>{item.key.replace(/_/g, " ")}</strong><span>{!item.compatible && item.enabled ? "Review required" : item.execution_enabled ? "Posting on" : item.enabled ? "Drafts only" : "Off"}{companyId ? ` · Workspace ${item.tenant_allowed ? "allowed" : "blocked"}` : ""}</span></summary>
       <div className="platform-ai-tool-body"><p>{item.description}</p>
       <p>Platform: {item.enabled ? "enabled" : "disabled"} · Contract: {item.compatible ? "reviewed" : "review required"}</p>

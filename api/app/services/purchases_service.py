@@ -874,6 +874,8 @@ class PurchasesService:
         purchase_id: str,
         company_id: str | None,
         payload: PurchaseReceiptConfirm,
+        *,
+        commit: bool = True,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -919,7 +921,8 @@ class PurchasesService:
                 "company_id": resolved_company_id,
             },
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         result = self.db.execute(
             text(

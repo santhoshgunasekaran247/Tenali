@@ -1,6 +1,8 @@
 # Tenali AI: Phase 0 architecture and implementation plan
 
-Status: proposed design; implementation and live migrations require separate approval.
+Status: architecture and rollout history. Private chat, approved posting, files and
+voice are implemented. Revision 049 extends Operations coverage; its current scope
+and activation gates are documented in section 19. Live migrations require approval.
 
 Phase 1A implementation is now present: platform defaults/limits page, tenant
 entitlements, platform-aware storefront status, tenant AI opt-in, version checks,
@@ -800,3 +802,61 @@ or transport uncertainty. Permission/configuration is rechecked before processin
 deleted/expired conversations never receive late transcript content. No tools,
 business context, previous messages or private preferences are sent for transcription.
 Downgrade cannot erase recorded voice usage; disable the feature for operational rollback.
+
+## 19. Operations-wide capability coverage
+
+Revision `049_ai_operations` adds **27 actions and 12 bounded reads** to the existing
+15 actions/16 reads: **42 actions and 28 reads** in total. These are code adapters,
+not bulk policy activation. New controls remain off/unreviewed and have no workspace
+grants. Current feature consent, membership, module and store permissions still apply.
+
+| Operations module | Supported AI workflows |
+|---|---|
+| Parties | Existing customer/vendor create and supplied-field patch; no party-deletion API |
+| Accounts | Account create/patch, balances, transactions, bounded journal, manual inflow/outflow/transfer and linked transaction reversal |
+| Business Payments | Standalone purchase/billing/expense outflows with explicit borrowing choice; existing transaction deletion/reversal. Reads list original outflows with `is_reversed`; reversal entries are available through Transactions, not duplicated as payments. |
+| Borrowing & Settlements | Borrow/repay, individual entries and current balances; existing safe transaction-deletion workflows |
+| Refund Settlements | Pending-refund lookup and settlement through the existing reversal transaction; no duplicate money entry |
+| Receivables & Collections | Receivable create, ledger-derived/bad-debt status, reminder/history and customer collection payment |
+| Sales Billing | Existing invoice creation, lookups and cancellation/refund workflow; never delete an issued invoice |
+| Purchases | Existing create/pay/cancel plus one-time receipt confirmation |
+| Product Inventory | Product fields, variants, vendor offers/bulk mapping, brand/category create/update, draft confirm/merge, reorder reminders, stock movements/missing-source attribution, adjustments, transfers/reversal and unused-product deletion |
+| Reports & Exports | Private transactions/journal/sales/purchase/AR/AP CSV downloads, bounded audit metadata and normalized GSTR-2B reconciliation working papers |
+
+Account/party updates preserve supplied-field semantics. Product/variant/offer and
+brand/category replacements require every field, including explicit null/default
+values; read current detail fields first. Vendor availability is not owned stock.
+Reminder logging does not send a message or place an order. Standalone Business
+Payments always debit an account, even with `purpose=billing`; invoice collections
+and purchase-bill settlement use their distinct existing payment workflows.
+
+New previews do not persist business changes. Existing services accept caller-owned
+transactions while their ordinary API calls retain default commits. Execution repeats
+the approved preview, locks references and atomically commits business changes plus
+the immutable outcome. Reversals, draft merge and receivable-status changes belong
+to the separate **High impact** group, requiring unrestricted owner/admin access and
+exact typed confirmation. Transfer reversal records its immutable reversal link on
+insert; runtime only gains column-limited `UPDATE(lines)` for existing draft merges.
+
+Reports require the Reports module **and** the source business module, unrestricted
+stores, explicit dates, at most 5,000 source records and 5 MB. Aging uses explicit
+`as_of`, not a date range. A checksum/count preview is approved before generating a
+private download; exported business rows never enter provider context or the immutable
+execution result. Files expire after one hour or earlier conversation expiry/deletion,
+are private to the originating workspace/user, use no-store responses, and are scrubbed
+by maintenance. Download rechecks current feature/action/member/source-module access.
+Larger exports remain available through the ordinary Reports & Exports page.
+
+GSTR-2B accepts up to 12,000 characters of normalized CSV pasted into the draft's
+`csv_text`, with explicit dates and the existing template headers. It generates a
+private reconciliation CSV, not a filing, portal integration or ITC eligibility decision.
+Audit lookups exclude user/actor identities and all old/new private payloads.
+
+All-enabled provider context shares repeated action field contracts and supplies
+compact, schema-derived read filters. It retains the existing 20,000-byte conservative
+paid-input bound; it does not increase budgets or add a second synthesis call.
+Accounting-period close/reopen, reset-all, identity/shopper linking and administrative
+tax/company settings remain manual. No arbitrary delete APIs or SQL tools are added.
+Downgrade refuses to erase executed Operations outcomes; disable policies to roll back
+availability instead. Schema deployment/restart and workspace activation scope are
+separate operational approvals.

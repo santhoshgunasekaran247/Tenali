@@ -143,7 +143,7 @@ class CollectionsService:
             )
         )
 
-    def create_receivable(self, company_id: str | None, payload: ReceivableCreate) -> dict:
+    def create_receivable(self, company_id: str | None, payload: ReceivableCreate, *, commit: bool = True) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -230,7 +230,8 @@ class CollectionsService:
         if payload.invoice_id:
             receivable, invoice = lock_receivable(self.db, resolved_company_id, str(row["id"]))
             sync_receivable(self.db, resolved_company_id, receivable, invoice)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self._get_receivable(company_id=resolved_company_id, receivable_id=str(row["id"]))
 
     def list_receivables(self, company_id: str | None, status: str | None = None,
@@ -537,7 +538,7 @@ class CollectionsService:
         return dict(payment)
 
     def update_receivable_status(
-        self, receivable_id: str, company_id: str | None, payload: ReceivableStatusUpdate
+        self, receivable_id: str, company_id: str | None, payload: ReceivableStatusUpdate, *, commit: bool = True
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -591,7 +592,8 @@ class CollectionsService:
             receivable_id=receivable_id,
             company_id=resolved_company_id,
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self._get_receivable(company_id=resolved_company_id, receivable_id=receivable_id)
 
     def list_due_reminders(self, company_id: str | None, as_of: date | None = None) -> dict:
@@ -631,7 +633,7 @@ class CollectionsService:
         return {"items": [dict(row) for row in rows]}
 
     def mark_reminder(
-        self, receivable_id: str, company_id: str | None, payload: ReceivableReminderUpdate
+        self, receivable_id: str, company_id: str | None, payload: ReceivableReminderUpdate, *, commit: bool = True
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -701,7 +703,8 @@ class CollectionsService:
             receivable_id=receivable_id,
             company_id=resolved_company_id,
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not row:
             raise HTTPException(status_code=404, detail="Receivable not found or not collectible")

@@ -17,6 +17,7 @@ export type DraftAction = {
   key: string; description: string; version: number; tenant_version: number; target_required: boolean;
   enabled: boolean; compatible: boolean; tenant_allowed: boolean; safety: "approved_execution"; execution_enabled: boolean;
   high_impact: boolean;
+  module_path: string | null;
   schema: Record<string, unknown>;
 };
 export type ActionDraft = {
@@ -24,6 +25,7 @@ export type ActionDraft = {
   payload_hash: string; status: "editing" | "validated" | "approved" | "executed"; version: number;
   validation: { warning: string; checks: string; side_effects: string; preview: Record<string, unknown> | null } | null;
   approved_at: string | null; expires_at: string;
+  high_impact: boolean;
 };
 export type AIExecution = { id: string; status: "succeeded" | "failed"; result: Record<string, unknown>; created_at: string;
   validation_error?: unknown };
@@ -50,6 +52,19 @@ export async function aiRequest<T>(path: string, options?: RequestInit): Promise
 }
 
 export const ai = {
+  downloadReport: async (id: string) => {
+    const response = await tenantFetch(`/api/ai/executions/${id}/report`);
+    if (!response.ok) {
+      const body: unknown = await response.json();
+      throw new Error(body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+        ? body.detail : "Unable to download the private report.");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url; link.download = "tenali-report.csv";
+    document.body.appendChild(link);
+    try { link.click(); } finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  },
   settings: () => aiRequest<CompanyFeatures>("/settings"),
   capabilities: () => aiRequest<{ items: ReadCapability[] }>("/capabilities"),
   actions: () => aiRequest<{ items: DraftAction[] }>("/actions"),

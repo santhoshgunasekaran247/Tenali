@@ -19,6 +19,13 @@ router = APIRouter()
 def assistant(request: Request, db=Depends(get_db)):
     return AssistantService(db, request.state.tenant)
 
+
+@router.get("/executions/{execution_id}/report")
+def private_report(execution_id: UUID, service=Depends(assistant)):
+    from app.ai.reports import download
+    return download(service, execution_id)
+
+
 @router.post("/conversations/{conversation_id}/voice")
 def transcribe_voice(conversation_id: UUID, payload: VoiceInput, service=Depends(assistant)):
     return VoiceService(service).transcribe(conversation_id, payload)

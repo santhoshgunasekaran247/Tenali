@@ -7,13 +7,43 @@ const vm = require("node:vm");
 
 const src = file => readFileSync(path.join(__dirname, "..", "src", ...file.split("/")), "utf8");
 
-function loadClient(fetch) {
+function loadClient(fetch, globals = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(src("features/ai.ts"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText, { exports, require: () => ({ tenantFetch: fetch }), URLSearchParams });
+  }).outputText, { exports, require: () => ({ tenantFetch: fetch }), URLSearchParams, ...globals });
   return exports;
 }
+
+test("private report download uses tenant execution identity and releases the local URL", async () => {
+  const calls = [], cleanup = [];
+  const link = { click: () => cleanup.push("click"), remove: () => cleanup.push("remove") };
+  const callbacks = [];
+  const { ai } = loadClient(async path => {
+    calls.push(path);
+    return { ok: true, blob: async () => ({ private: true }) };
+  }, {
+    URL: { createObjectURL: blob => { assert.equal(blob.private, true); return "blob:private"; },
+      revokeObjectURL: url => cleanup.push(url) },
+    document: { createElement: tag => { assert.equal(tag, "a"); return link; }, body: { appendChild: node => assert.equal(node, link) } },
+    window: { setTimeout: callback => callbacks.push(callback) },
+  });
+  await ai.downloadReport("saved-execution");
+  assert.deepEqual(calls, ["/api/ai/executions/saved-execution/report"]);
+  assert.equal(link.href, "blob:private");
+  assert.equal(link.download, "tenali-report.csv");
+  assert.deepEqual(cleanup, ["click", "remove"]);
+  callbacks[0]();
+  assert.deepEqual(cleanup, ["click", "remove", "blob:private"]);
+  const denied = loadClient(async () => ({ ok: false, json: async () => ({ detail: "Private report expired" }) }));
+  await assert.rejects(denied.ai.downloadReport("expired"), /expired/);
+  assert.match(src("components/AIDrafts.tsx"), /draft\.high_impact/);
+  assert.match(src("components/AIDrafts.tsx"), /Generate private report/);
+  assert.match(src("components/AIDrafts.tsx"), /No business records will change/);
+  assert.match(src("components/AIDrafts.tsx"), /Private report generated/);
+  assert.match(src("components/PlatformAIActions.tsx"), /All modules/);
+  assert.match(src("components/PlatformAICapabilities.tsx"), /All modules/);
+});
 
 test("AI calls use tenant transport and preserve the exact client message reference", async () => {
   const calls = [];

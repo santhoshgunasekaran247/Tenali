@@ -78,10 +78,24 @@ CapabilityKey = Literal[
     "stores", "products", "parties", "hsn", "brands", "categories",
     "accounts", "transactions", "invoices", "purchases", "receivables",
     "refunds", "borrowings", "reorder", "reconciliation", "period_locks",
+    "borrowing_entries", "stock_transfers", "stock_movements", "movement_sources", "variants",
+    "vendor_offers", "collection_reminders", "reminder_history", "account_journal", "audit_events", "product_details",
+    "business_payments",
 ]
 CATALOGUE_KEYS = {"stores", "products", "parties", "hsn", "brands", "categories"}
-STORE_READ_KEYS = {"products", "invoices", "purchases", "receivables", "refunds", "reorder", "reconciliation"}
-COMPANY_LEDGER_KEYS = {"accounts", "transactions", "borrowings"}
+STORE_READ_KEYS = {"products", "invoices", "purchases", "receivables", "refunds", "reorder", "reconciliation",
+                   "stock_transfers", "stock_movements", "movement_sources", "collection_reminders", "reminder_history"}
+COMPANY_LEDGER_KEYS = {"accounts", "transactions", "borrowings", "borrowing_entries", "account_journal", "audit_events", "business_payments"}
+DATED_READ_KEYS = {"transactions", "invoices", "purchases", "receivables", "refunds", "period_locks",
+                  "borrowing_entries", "stock_transfers", "stock_movements", "movement_sources",
+                  "reminder_history", "account_journal", "audit_events", "business_payments"}
+AS_OF_READ_KEYS = {"accounts", "period_locks", "collection_reminders"}
+READ_STATUSES = {
+    "invoices": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT", "CANCELLED"},
+    "purchases": {"UNPAID", "PARTIAL", "PAID", "CANCELLED"},
+    "receivables": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"},
+    "refunds": {"PENDING", "SETTLED"},
+}
 
 
 class LookupArguments(BaseModel):
@@ -123,18 +137,11 @@ class ReadLookup(BaseModel):
         if args.store_id and self.capability not in STORE_READ_KEYS:
             raise ValueError("This capability does not accept a store filter")
         if isinstance(args, BusinessLookupArguments):
-            dated = {"transactions", "invoices", "purchases", "receivables", "refunds", "period_locks"}
-            if (args.from_date or args.to_date) and self.capability not in dated:
+            if (args.from_date or args.to_date) and self.capability not in DATED_READ_KEYS:
                 raise ValueError("This capability does not accept date-range filters")
-            if args.as_of and self.capability not in {"accounts", "period_locks"}:
+            if args.as_of and self.capability not in AS_OF_READ_KEYS:
                 raise ValueError("This capability does not support historical as_of values")
-            statuses = {
-                "invoices": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT", "CANCELLED"},
-                "purchases": {"UNPAID", "PARTIAL", "PAID", "CANCELLED"},
-                "receivables": {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"},
-                "refunds": {"PENDING", "SETTLED"},
-            }
-            if args.status is not None and args.status not in statuses.get(self.capability, set()):
+            if args.status is not None and args.status not in READ_STATUSES.get(self.capability, set()):
                 raise ValueError("Invalid status for this capability")
         return self
 

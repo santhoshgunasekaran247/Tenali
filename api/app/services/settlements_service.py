@@ -132,7 +132,7 @@ class SettlementsService:
         ).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def create_borrowing(self, company_id: str | None, payload: BorrowingEntryCreate) -> dict:
+    def create_borrowing(self, company_id: str | None, payload: BorrowingEntryCreate, *, commit: bool = True) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         self._ensure_table()
 
@@ -266,7 +266,8 @@ class SettlementsService:
                 {"transaction": transaction_id, "id": row["id"], "company": resolved_company_id},
             )
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         return {
             **dict(row),

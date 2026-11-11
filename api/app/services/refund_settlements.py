@@ -163,7 +163,7 @@ class RefundSettlementsService:
             from refund_settlements where company_id=:company and status='PENDING'"""), {"company": self.company_id}).mappings().one()
         return jsonable_encoder(dict(row))
 
-    def settle(self, settlement_id: str, payload: RefundSettle) -> dict:
+    def settle(self, settlement_id: str, payload: RefundSettle, *, commit: bool = True) -> dict:
         _require_accounts_access(self.db)
         settlement = self.db.execute(text("""select * from refund_settlements where id=cast(:id as uuid) and company_id=:company for update"""),
                                      {"id": settlement_id, "company": self.company_id}).mappings().first()
@@ -201,5 +201,6 @@ class RefundSettlementsService:
             where id=:id returning id, status"""), {
             "settled_on": settled_on, "account": payload.account_id, "mode": mode, "reference": reference, "notes": payload.notes,
             "actor": identity.get("user_id"), "id": settlement["id"]}).mappings().one()
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return jsonable_encoder(dict(row))

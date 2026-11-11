@@ -3,7 +3,7 @@ import { ai, type ActionDraft, type DraftAction, type AIExecution } from "../fea
 import { FloatingAlert } from "./Notifications";
 
 type FieldSchema = { type?: string; title?: string; format?: string; enum?: unknown[]; const?: unknown;
-  anyOf?: FieldSchema[]; $ref?: string; properties?: Record<string, FieldSchema>; items?: FieldSchema };
+  anyOf?: FieldSchema[]; $ref?: string; properties?: Record<string, FieldSchema>; items?: FieldSchema; maxLength?: number };
 const friendly = (value: string) => value.replace(/_/g, " ");
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -44,6 +44,8 @@ function Fields({ values, schema, root, disabled, onChange }: {
     return <label key={key}>{friendly(key)}{choices ? <select disabled={disabled} value={String(value ?? "")}
       onChange={event => set(event.target.value || null)}><option value="">Choose</option>
       {choices.map(choice => <option key={String(choice)} value={String(choice)}>{String(choice)}</option>)}</select>
+      : (field.maxLength || 0) >= 1000 ? <textarea disabled={disabled} rows={4} value={String(value ?? "")}
+        maxLength={field.maxLength} onChange={event => set(event.target.value)} />
       : <input disabled={disabled} type={field.format === "date" ? "date" : "text"} value={String(value ?? "")}
         inputMode={field.type === "number" || field.type === "integer" ? "decimal" : undefined}
         onChange={event => set(event.target.value === "" && raw.anyOf?.some(item => item.type === "null") ? null :
@@ -83,7 +85,9 @@ function DraftCard({ draft, action, writable, busy, onRun }: {
     await onRun(() => ai.approveDraft(draft));
   };
   const execute = async () => {
-    if (!window.confirm("Submit this approved operation? This changes business records. A rejected business rule rolls everything back.")) return;
+    const report = draft.action_key === "report_export" || draft.action_key === "gst_reconcile";
+    if (!window.confirm(report ? "Generate this approved private report? No business records will change. The download expires in one hour." :
+      "Submit this approved operation? This changes business records. A rejected business rule rolls everything back.")) return;
     await onRun(async () => { setOutcome(await ai.executeDraft(draft, confirmation || undefined)); });
   };
   let values: Record<string, unknown> | null = null;
@@ -108,15 +112,18 @@ function DraftCard({ draft, action, writable, busy, onRun }: {
       <button disabled={readonly || dirty} onClick={() => void onRun(() => ai.validateDraft(draft))}>Review calculated impact</button>
       <button disabled={readonly || dirty || draft.status !== "validated"} onClick={() => void approve()}>Approve reviewed values</button>
       <button disabled={readonly || dirty || draft.status !== "approved" || !action?.execution_enabled ||
-        (action.high_impact && confirmation !== draft.validation?.preview?.confirm_text)} onClick={() => void execute()}>Submit operation</button>
+        (action.high_impact && confirmation !== draft.validation?.preview?.confirm_text)} onClick={() => void execute()}>
+          {draft.action_key === "report_export" || draft.action_key === "gst_reconcile" ? "Generate private report" : "Submit operation"}</button>
       <button disabled={busy} onClick={() => void onRun(async () => setOutcome((await ai.execution(draft)).execution))}>Check saved outcome</button>
       <button disabled={readonly} onClick={() => {
         if (window.confirm("Discard this private draft? No business record is deleted.")) void onRun(() => ai.discardDraft(draft));
       }}>Discard</button>
     </div>
     {draft.status === "approved" && !action?.execution_enabled ? <p>Posting is disabled for this action. Contact the platform administrator.</p> : null}
-    {outcome ? <div role="status"><p>{outcome.status === "succeeded" ? "Saved business outcome" : "Operation rejected; no business changes saved"}</p>
+    {outcome ? <div role="status"><p>{outcome.status === "succeeded" ? outcome.result.report_id ? "Private report generated" : "Saved business outcome" : "Operation rejected; no business changes saved"}</p>
       <Impact value={outcome.result} />
+      {outcome.status === "succeeded" && typeof outcome.result.report_id === "string" ?
+        <button disabled={busy} onClick={() => void onRun(() => ai.downloadReport(outcome.id))}>Download private CSV (expires in one hour)</button> : null}
       {outcome.validation_error ? <Impact value={outcome.validation_error} /> : null}
       {outcome.status === "failed" ? <p>Edit this draft, then review and approve a new version before another submission.</p> : null}</div> : null}
     {dirty ? <p>Save edits and review again before approval.</p> : null}
@@ -144,17 +151,17 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
       setBusy(false);
     }
   };
-  const highImpact = (draft: ActionDraft) => ["invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete"].includes(draft.action_key);
+  const highImpact = (draft: ActionDraft) => draft.high_impact;
   return <section className="ai-drafts" aria-label="Private operational drafts">
     <div className="shop-actions"><button aria-pressed={!destructive} onClick={() => setDestructive(false)}>Add / update</button>
-      <button aria-pressed={destructive} onClick={() => setDestructive(true)}>Cancel / delete</button></div>
+      <button aria-pressed={destructive} onClick={() => setDestructive(true)}>High impact</button></div>
     <p>{destructive ? "Separate high-impact operations require reviewed dependencies and exact typed confirmation." :
       "Ask in chat to prepare an operation. Review, approve, then explicitly submit. Chat replies never authorize changes."}</p>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {drafts.filter(draft => highImpact(draft) === destructive).map(draft => <DraftCard key={draft.id} draft={draft}
       action={actions.find(action => action.key === draft.action_key)} busy={busy}
       writable={writable && actions.some(action => action.key === draft.action_key)} onRun={run} />)}
-    {!drafts.some(draft => highImpact(draft) === destructive) ? <p>No {destructive ? "cancellation / deletion" : "add / update"} drafts.</p> : null}
+    {!drafts.some(draft => highImpact(draft) === destructive) ? <p>No {destructive ? "high-impact" : "add / update"} drafts.</p> : null}
     {offset || drafts.length >= 30 ? <div className="shop-actions">
       <button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Newer drafts</button>
       <button disabled={busy || drafts.length < 30} onClick={() => setOffset(offset + 30)}>Older drafts</button>

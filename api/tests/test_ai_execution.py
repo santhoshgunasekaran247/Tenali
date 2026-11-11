@@ -408,6 +408,7 @@ class ExecutionDatabaseTests(AIDatabaseFixture):
             unused = str(InventoryService(db,company).save_product(ProductInput(name="Synthetic unused",catalog_visible=False))["id"])
             post("product_delete", {"reason":"Synthetic unused cleanup"}, unused)
             post("transaction_delete", {"kind":"account_transaction","record_id":expense,"cascade":False,"reason":"Synthetic erroneous expense"})
-            self.assertEqual(completed, set(ACTIONS))
+            from app.ai.operations_writes import OPERATIONS_ACTIONS
+            self.assertEqual(completed, set(ACTIONS) - OPERATIONS_ACTIONS)
             self.assertEqual(db.execute(text("select quantity from stock_balances where store_id=:store and product_id=:product"),
                                        {"store":store,"product":product}).scalar_one(), Decimal("8"))

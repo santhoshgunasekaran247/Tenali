@@ -26,16 +26,20 @@ from app.services.transaction_deletion import TransactionDeletionService
 
 
 def operational_preview(db, company, action, target, values):
+    from app.ai.operations_writes import OPERATIONS_ACTIONS, preview
+    if action in OPERATIONS_ACTIONS:
+        return preview(db, company, action, target, values)
     if action in {"product_create", "product_update"}:
         return InventoryService(db, company).preview_product(ProductInput.model_validate(values), str(target) if target else None)
-    if action == "expense_create":
+    if action in {"expense_create", "business_payment_create"}:
         account = db.execute(text("select nickname,party_id,is_company_account from accounts where id=:id and company_id=:company"),
                              {"id": values["from_account_id"], "company": company}).mappings().one()
         borrowing = not account["is_company_account"] and values["create_borrowing"]
         if borrowing and not account["party_id"]:
             raise HTTPException(422, "Automatic borrowing requires a party-linked non-company account.")
         return {"account_name": account["nickname"], "account_debit": values["amount"],
-                "creates_borrowing": borrowing, "borrowing_party_id": str(account["party_id"]) if borrowing else None}
+                "creates_borrowing": borrowing, "borrowing_party_id": str(account["party_id"]) if borrowing else None,
+                "settles_purchase_or_invoice": False}
     if action in {"purchase_payment", "collection_payment"}:
         table = "purchases" if action == "purchase_payment" else "receivables"
         row = db.execute(text(f"select * from {table} where id=:id and company_id=:company for update"),
@@ -85,6 +89,9 @@ def stock_preview(db, company, changes):
 
 
 def destructive_preview(db, company, action, target, values):
+    from app.ai.operations_writes import OPERATIONS_ACTIONS, preview
+    if action in OPERATIONS_ACTIONS:
+        return preview(db, company, action, target, values)
     if action == "product_delete":
         return InventoryService(db, company).preview_product_deletion(str(target))
     if action == "transaction_delete":
@@ -190,6 +197,14 @@ def document_preview(db, company, action, values):
 
 
 def apply_action(db, company: str, action: str, target: str | None, values: dict, key: str, preview=None, confirm_text=None):
+    if action == "business_payment_create":
+        return AccountsService(db).create_business_payment(company, BusinessPaymentCreate.model_validate({**values, "idempotency_key": key}), commit=False)
+    if action in {"report_export", "gst_reconcile"}:
+        from app.ai.reports import apply as apply_report
+        return apply_report(db, company, action, values, key, preview)
+    from app.ai.operations_writes import OPERATIONS_ACTIONS, apply
+    if action in OPERATIONS_ACTIONS:
+        return apply(db, company, action, target, values)
     payload = {**values, "idempotency_key": key}
     if action == "expense_create":
         return AccountsService(db).create_business_payment(company, BusinessPaymentCreate.model_validate(payload), commit=False)

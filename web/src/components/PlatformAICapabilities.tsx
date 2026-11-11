@@ -13,6 +13,7 @@ export function PlatformAICapabilities({ companyId }: { companyId: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [module, setModule] = useState("");
   const path = "/ai/capabilities" + (companyId ? `?company_id=${encodeURIComponent(companyId)}` : "");
   useEffect(() => {
     let active = true;
@@ -44,10 +45,13 @@ export function PlatformAICapabilities({ companyId }: { companyId: string }) {
       Financial results are bounded records, not complete reports. Accounts, transactions and borrowing balances require
       unrestricted store access; invoice-linked receivables and refunds respect store restrictions.</p>
     </details>
+    <label>Module<select value={module} onChange={event => setModule(event.target.value)}>
+      <option value="">All modules</option>{[...new Set(items.map(item => item.module_path?.split("/")[1]).filter(Boolean))].sort().map(path =>
+        <option key={path} value={path}>{path}</option>)}</select></label>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
     {!items.length && !error ? <p>Loading read capabilities...</p> : null}
-    <div className="platform-ai-tool-list">{items.map(item => <details key={item.key} className="platform-ai-tool">
+    <div className="platform-ai-tool-list">{items.filter(item => !module || item.module_path?.split("/")[1] === module).map(item => <details key={item.key} className="platform-ai-tool">
       <summary><span className="platform-ai-chevron" aria-hidden="true">&gt;</span><strong>{item.key.replace(/_/g, " ")}</strong><span>{!item.compatible ? "Review required" : item.enabled ? "Enabled" : "Off"}{companyId ? ` · Workspace ${item.tenant_allowed ? "allowed" : "blocked"}` : ""}</span></summary>
       <div className="platform-ai-tool-body"><p>{item.description}</p>
       <p>Permission: {item.module_path} · Contract: {item.compatible ? "reviewed" : item.reason} · Platform: {item.enabled ? "enabled" : "disabled"}</p>

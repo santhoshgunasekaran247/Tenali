@@ -18,6 +18,10 @@ def main():
             on c.id=d.conversation_id and c.company_id=d.company_id and c.user_id=d.user_id
             where d.status<>'discarded' and (d.expires_at<=now() or c.expires_at<=now() or c.status='deleted')""")).scalar_one()
         print(f"Expired/deleted private drafts to scrub: {drafts}")
+        reports = db.execute(text("""select count(*) from ai_report_files r join ai_executions e on e.id=r.id
+            join ai_conversations c on c.id=e.conversation_id and c.company_id=r.company_id and c.user_id=r.user_id
+            where r.content is not null and (r.expires_at<=now() or c.expires_at<=now() or c.status='deleted')""")).scalar_one()
+        print(f"Expired/deleted private reports to scrub: {reports}")
         if not args.apply:
             return
         db.execute(text("""update ai_messages m set content='' from ai_conversations c
@@ -36,6 +40,9 @@ def main():
         db.execute(text("""update ai_voice_requests v set transcript=null from ai_conversations c
             where c.id=v.conversation_id and c.company_id=v.company_id and c.user_id=v.user_id
             and (v.expires_at<=now() or c.expires_at<=now() or c.status='deleted')"""))
+        db.execute(text("""update ai_report_files r set content=null from ai_executions e,ai_conversations c
+            where r.id=e.id and c.id=e.conversation_id and c.company_id=r.company_id and c.user_id=r.user_id
+            and (r.expires_at<=now() or c.expires_at<=now() or c.status='deleted')"""))
         db.commit()
         print("Expired content scrubbed. Usage and audit metadata retained.")
 

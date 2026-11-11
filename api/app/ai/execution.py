@@ -69,7 +69,7 @@ class ExecutionService:
                 raise HTTPException(422, f"Type {expected} exactly to confirm this high-impact operation.")
         # Reference locks are held until business changes and the outcome commit together.
         for item in sorted(row["validation"]["snapshots"], key=lambda item: (item["table"], item["id"])):
-            self.drafts.reference(item["table"], item["id"], lock=True)
+            self.drafts.reference(item["table"], item["id"], lock=True, allow_inactive=item.get("allow_inactive", False))
         normalized, report = self.drafts.preflight(row)
         if report != row["validation"] or digest({"action": row["action_key"], "target": row["target_id"], "payload": normalized}) != row["payload_hash"]:
             raise HTTPException(409, "References, amounts or policy changed. Validate and approve again.")
@@ -93,7 +93,8 @@ class ExecutionService:
                         raise HTTPException(409, "Business totals changed from the approved preview. No changes saved.")
                 # Recovery only needs durable references, not copies of business/contact data.
                 outcome = {name: result[name] for name in ("id", "status", "deleted", "deletion_id", "borrowing_id",
-                    "subtotal", "gst_total", "total", "refunds") if name in result}
+                    "subtotal", "gst_total", "total", "refunds", "mapped_count", "reversal_of_transaction_id",
+                    "reversal_of_transfer_id", "report_id", "report_rows", "product_id") if name in result}
                 if "account_transaction" in result:
                     outcome["id"] = result["account_transaction"]["id"]
                 self.record(row, execution_id, key, "succeeded", outcome)

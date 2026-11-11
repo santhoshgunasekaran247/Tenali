@@ -337,7 +337,7 @@ class AccountsService:
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(r) for r in rows]}
 
-    def create_account(self, company_id: str | None, payload: AccountCreate) -> dict:
+    def create_account(self, company_id: str | None, payload: AccountCreate, *, commit: bool = True) -> dict:
         self._ensure_account_extensions()
         resolved_company_id = self._resolve_company_id(company_id)
         self._assert_company_account_uniqueness(
@@ -384,13 +384,14 @@ class AccountsService:
                 "is_company_account": payload.is_company_account,
             },
         ).mappings().first()
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create account")
         return dict(row)
 
-    def update_account(self, account_id: str, company_id: str | None, payload: AccountUpdate) -> dict:
+    def update_account(self, account_id: str, company_id: str | None, payload: AccountUpdate, *, commit: bool = True) -> dict:
         self._ensure_account_extensions()
         resolved_company_id = self._resolve_company_id(company_id)
         current = self.db.execute(
@@ -482,7 +483,8 @@ class AccountsService:
                 "is_active": values["is_active"],
             },
         ).mappings().first()
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not row:
             raise HTTPException(status_code=500, detail="Failed to update account")
@@ -789,7 +791,7 @@ class AccountsService:
             "buckets": buckets,
         }
 
-    def create_transaction(self, company_id: str | None, payload: AccountTransactionCreate) -> dict:
+    def create_transaction(self, company_id: str | None, payload: AccountTransactionCreate, *, commit: bool = True) -> dict:
         self._ensure_transaction_extensions()
         resolved_company_id = self._resolve_company_id(company_id)
         if not payload.from_account_id and not payload.to_account_id:
@@ -893,7 +895,8 @@ class AccountsService:
                 "transaction_date": transaction_date,
             },
         ).mappings().first()
-        self.db.commit()
+        if commit:
+            self.db.commit()
 
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create transaction")

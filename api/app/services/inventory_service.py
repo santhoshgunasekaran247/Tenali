@@ -104,7 +104,7 @@ class InventoryService:
         return {"items": [dict(row) for row in rows],
                 "stock_scope": "Sum across permitted stores only, including all variants; not vendor availability."}
 
-    def update_lookup(self,kind:str,record_id:str,payload)->dict:
+    def update_lookup(self,kind:str,record_id:str,payload, *, commit: bool = True)->dict:
         table={"brands":"brands","categories":"product_categories"}.get(kind)
         if not table:
             raise HTTPException(422,"Invalid master type")
@@ -113,13 +113,17 @@ class InventoryService:
                 {"id":record_id,"company":self.company_id,"name":payload.name,"description":payload.description,"active":payload.is_active}).mappings().first()
             if not row:
                 raise HTTPException(404,"Master entry not found")
-            self.db.commit()
+            if commit:
+                self.db.commit()
         except IntegrityError as error:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
+            else:
+                raise
             raise HTTPException(409,"This name already exists") from error
         return dict(row)
 
-    def create_lookup(self, kind: str, name: str, description: str = "", is_active: bool = True) -> dict:
+    def create_lookup(self, kind: str, name: str, description: str = "", is_active: bool = True, *, commit: bool = True) -> dict:
         table = {"brands": "brands", "categories": "product_categories"}.get(kind)
         if not table:
             raise HTTPException(422, "Invalid lookup type")
@@ -127,9 +131,13 @@ class InventoryService:
         try:
             row = self.db.execute(text(f"insert into {table}(company_id,name,code,description,is_active) values(:company,:name,:code,:description,:active) returning id,name,code,description,is_active"),
                                   {"company": self.company_id, "name": name, "code": code,"description":description,"active":is_active}).mappings().one()
-            self.db.commit()
+            if commit:
+                self.db.commit()
         except IntegrityError as error:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
+            else:
+                raise
             raise HTTPException(409, "This name already exists") from error
         return dict(row)
 
@@ -262,16 +270,17 @@ class InventoryService:
             self.db.commit()
         return self.detail(product_id)
 
-    def confirm_draft(self, product_id: str) -> dict:
+    def confirm_draft(self, product_id: str, *, commit: bool = True) -> dict:
         product = self._product(product_id, lock=True)
         if not product.get("hsn_code"):
             raise HTTPException(422, "Set an HSN/SAC code before confirming this product")
         self.db.execute(text("update products set is_draft=false, updated_at=now() where id=:id and company_id=:company"),
                         {"id": product_id, "company": self.company_id})
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self.detail(product_id)
 
-    def merge_draft(self, draft_id: str, payload: ProductMerge) -> dict:
+    def merge_draft(self, draft_id: str, payload: ProductMerge, *, commit: bool = True) -> dict:
         """Fold a draft from a purchase bill into an existing product: stock history, store balances,
         bill/transfer lines and vendor offers move to the target, then the draft is removed."""
         identity = self.db.info.get("tenant_context", {})
@@ -343,7 +352,8 @@ class InventoryService:
             self.db.execute(text("update products set hsn_code=:hsn, updated_at=now() where id=:target and coalesce(hsn_code,'')=''"),
                             {**params, "hsn": draft["hsn_code"]})
         self.db.execute(text("delete from products where id=:draft and company_id=:company"), params)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self.detail(target_id)
 
     def preview_product_deletion(self, product_id: str) -> dict:
@@ -382,7 +392,7 @@ class InventoryService:
             raise HTTPException(409, "This product is linked to other records. Make it inactive instead.") from error
         return {"deleted": True, "id": product_id}
 
-    def save_variant(self, product_id: str, payload: VariantInput, variant_id: str | None = None) -> dict:
+    def save_variant(self, product_id: str, payload: VariantInput, variant_id: str | None = None, *, commit: bool = True) -> dict:
         self._product(product_id, lock=True)
         if variant_id:
             self._variant(product_id, variant_id)
@@ -398,8 +408,9 @@ class InventoryService:
             values["product_id"] = product_id
         variant_id = self._write("product_variants", values, variant_id)
         self._check_price(product_id, variant_id)
-        self.db.commit()
-        return self.detail(product_id)
+        if commit:
+            self.db.commit()
+        return {**self.detail(product_id), "saved_variant_id": variant_id}
 
     def save_offer(self, product_id: str, payload: VendorOfferInput, offer_id: str | None = None, commit: bool = True) -> dict:
         product = self._product(product_id, lock=True)
@@ -420,16 +431,16 @@ class InventoryService:
         values = payload.model_dump()
         if not offer_id:
             values["product_id"] = product_id
-        self._write("vendor_contributions", values, offer_id)
+        offer_id = self._write("vendor_contributions", values, offer_id)
         target = variant or product
         if not target.get("preferred_vendor_id") and payload.is_active and not (variant and product.get("preferred_vendor_id")):
             self._write("product_variants" if variant else "products", {"preferred_vendor_id": payload.vendor_id}, variant_id or product_id)
         self._check_price(product_id, variant_id)
         if commit:
             self.db.commit()
-        return self.detail(product_id)
+        return {**self.detail(product_id), "saved_offer_id": offer_id}
 
-    def bulk_map(self, payload: BulkVendorMapping) -> dict:
+    def bulk_map(self, payload: BulkVendorMapping, *, commit: bool = True) -> dict:
         self._vendor(str(payload.vendor_id))
         product_ids = sorted({str(product_id) for product_id in payload.product_ids})
         for product_id in product_ids:
@@ -438,7 +449,8 @@ class InventoryService:
             exists = self.db.execute(text("select id from vendor_contributions where product_id=:product and vendor_id=:vendor and variant_id is null limit 1"), {"product": product_id, "vendor": str(payload.vendor_id)}).scalar_one_or_none()
             if not exists:
                 self.save_offer(product_id, VendorOfferInput(vendor_id=payload.vendor_id), commit=False)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return {"mapped_count": len(product_ids)}
 
     def adjust_stock(self, product_id: str, payload: StockAdjustment, commit: bool = True, reference_type: str = "manual_inventory",
@@ -492,7 +504,7 @@ class InventoryService:
             {"company": self.company_id, "store": store_id, "product": product_id, "variant": variant_id}).scalar_one()
         return Decimal(str(balance)) - reserved_stock(self.db, self.company_id, product_id, variant_id, store_id, exclude_order)
 
-    def transfer_stock(self, payload: StockTransferCreate, *, commit: bool = True) -> dict:
+    def transfer_stock(self, payload: StockTransferCreate, *, commit: bool = True, reversal_of_transfer_id: str | None = None) -> dict:
         from app.services.stores_service import stock_store
         cached = replay_posting(self.db, self.company_id, "stock_transfer", payload)
         if cached is not None:
@@ -503,12 +515,12 @@ class InventoryService:
             raise HTTPException(422, "Choose two different stores")
         transfer_date = payload.transfer_date or date.today()
         assert_period_open(self.db, self.company_id, transfer_date, "Transferring stock")
-        row = self.db.execute(text("""insert into stock_transfers(company_id,from_store_id,to_store_id,transfer_date,reference,notes,lines,created_by_user_id)
-            values(:company,:from_store,:to_store,:date,:reference,:notes,cast(:lines as jsonb),cast(:actor as uuid)) returning id"""),
+        row = self.db.execute(text("""insert into stock_transfers(company_id,from_store_id,to_store_id,transfer_date,reference,notes,lines,created_by_user_id,reversal_of_transfer_id)
+            values(:company,:from_store,:to_store,:date,:reference,:notes,cast(:lines as jsonb),cast(:actor as uuid),cast(:reversal as uuid)) returning id"""),
             {"company": self.company_id, "from_store": str(source["id"]), "to_store": str(target["id"]), "date": transfer_date,
              "reference": payload.reference, "notes": payload.notes,
              "lines": json.dumps([line.model_dump(mode="json") for line in payload.lines]),
-             "actor": (self.db.info.get("tenant_context") or {}).get("user_id")}).mappings().one()
+             "actor": (self.db.info.get("tenant_context") or {}).get("user_id"), "reversal": reversal_of_transfer_id}).mappings().one()
         transfer_id = str(row["id"])
         for line in sorted(payload.lines, key=lambda item: (str(item.product_id), str(item.variant_id or ""))):
             note = f"Transfer {source['code']} -> {target['code']}: {payload.notes}"
@@ -524,7 +536,7 @@ class InventoryService:
             self.db.commit()
         return result
 
-    def reverse_transfer(self, transfer_id: str, notes: str) -> dict:
+    def reverse_transfer(self, transfer_id: str, notes: str, *, commit: bool = True) -> dict:
         from app.schemas.inventory import StockTransferCreate, StockTransferLine
         original = self.transfer_detail(transfer_id)
         if original["reversal_of_transfer_id"]:
@@ -536,10 +548,9 @@ class InventoryService:
             notes=notes, reference=original["reference"], idempotency_key=f"reverse:{transfer_id}",
             lines=[StockTransferLine(**line) for line in original["lines"]],
         )
-        result = self.transfer_stock(payload)
-        self.db.execute(text("update stock_transfers set reversal_of_transfer_id=:original where id=:id and company_id=:company"),
-                        {"original": transfer_id, "id": str(result["id"]), "company": self.company_id})
-        self.db.commit()
+        result = self.transfer_stock(payload, commit=False, reversal_of_transfer_id=transfer_id)
+        if commit:
+            self.db.commit()
         return self.transfer_detail(str(result["id"]))
 
     def transfer_detail(self, transfer_id: str) -> dict:
@@ -653,7 +664,7 @@ class InventoryService:
                "permitted": allowed_stores(self.db.info.get("tenant_context"))}).mappings()
         return {"items": [dict(row) for row in rows]}
 
-    def missing_movement_sources(self) -> dict:
+    def missing_movement_sources(self, *, movement_id: str | None = None) -> dict:
         rows = self.db.execute(
             text(
                 """
@@ -664,6 +675,7 @@ class InventoryService:
                 join stores s on s.id = m.store_id and s.company_id = m.company_id
                 left join product_variants v on v.id = m.variant_id
                 where m.company_id = :company
+                  and (cast(:movement as uuid) is null or m.id=cast(:movement as uuid))
                   and (cast(:permitted as uuid[]) is null or m.store_id = any(cast(:permitted as uuid[])))
                   and ((m.reference_type in ('invoice', 'invoice_cancellation')
                         and not exists (select 1 from invoices i
@@ -674,17 +686,17 @@ class InventoryService:
                 order by m.created_at, m.id
                 """
             ),
-            {"company": self.company_id, "permitted": allowed_stores(self.db.info.get("tenant_context"))},
+            {"company": self.company_id, "movement": movement_id, "permitted": allowed_stores(self.db.info.get("tenant_context"))},
         ).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def attribute_external_source(self, movement_id: str, payload: ExternalMovementSource) -> dict:
+    def attribute_external_source(self, movement_id: str, payload: ExternalMovementSource, *, commit: bool = True) -> dict:
         """Re-attribute a movement whose in-system source document no longer exists to an external document.
 
         Quantities and balances are never changed; only the source attribution and notes are updated,
         and only when the referenced invoice/purchase is actually missing.
         """
-        missing = {str(row["id"]) for row in self.missing_movement_sources()["items"]}
+        missing = {str(row["id"]) for row in self.missing_movement_sources(movement_id=movement_id)["items"]}
         if movement_id not in missing:
             raise HTTPException(422, "Only movements whose source document is missing can be re-attributed")
         row = self.db.execute(
@@ -702,7 +714,8 @@ class InventoryService:
                 "notes": f"External document {payload.external_reference}: {payload.notes}",
             },
         ).mappings().one()
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return dict(row)
 
     def alerts(self) -> dict:
@@ -723,11 +736,12 @@ class InventoryService:
                                    "reminder_date": item["reorder_reminder_date"], "reminder_due": due, "low_stock": low})
         return {"items": result}
 
-    def remind(self, product_id: str, payload: ReorderReminder) -> dict:
+    def remind(self, product_id: str, payload: ReorderReminder, *, commit: bool = True) -> dict:
         self._product(product_id, lock=True)
         variant_id = str(payload.variant_id) if payload.variant_id else None
         if variant_id:
             self._variant(product_id, variant_id)
         self._write("product_variants" if variant_id else "products", {"reorder_reminder_date": payload.reminder_date}, variant_id or product_id)
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return self.alerts()

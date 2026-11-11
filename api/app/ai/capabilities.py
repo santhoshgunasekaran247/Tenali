@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.ai.schemas import (
     BusinessLookupArguments, CATALOGUE_KEYS, COMPANY_LEDGER_KEYS, STORE_READ_KEYS,
     CapabilityKey, LookupArguments, ReadLookup, CapabilityUpdate, TenantCapabilityUpdate,
+    DATED_READ_KEYS, AS_OF_READ_KEYS, READ_STATUSES,
 )
 from app.ai.business_reads import business_lookup
 from app.services.access import allowed_stores, check_module
@@ -16,6 +17,7 @@ from app.services.inventory_service import InventoryService
 from app.services.masters_service import MastersService
 from app.services.parties_service import PartiesService
 from app.services.stores_service import StoresService
+from app.schemas.inventory import ProductInput, VariantInput, VendorOfferInput
 from sqlalchemy import text
 
 
@@ -76,8 +78,77 @@ REGISTRY = {
                         "difference", "movement_count", "missing_document_references")),
         ReadCapability("period_locks", "/accounts", "Search currently active accounting locks by reason or overlapping date range. as_of checks a date against currently active locks, NOT historical state. Empty query lists bounded locks. No matches do not guarantee posting is allowed.",
                        ("id", "period_start", "period_end", "is_active")),
+        ReadCapability("product_details", "/inventory", "Product fields for full replacement; query by name/SKU or exact verified UUID. No stock totals.",
+                       ("id", "is_draft", *ProductInput.model_fields)),
+        ReadCapability("variants", "/inventory", "Variant fields for creation/update; query by product/variant name, SKU or verified UUID. No stock totals.",
+                       ("id", "product_id", "product_name", *VariantInput.model_fields)),
+        ReadCapability("vendor_offers", "/inventory", "Vendor offer fields/IDs; query by product/vendor name or verified UUID. Availability is not owned stock.",
+                       ("id", "product_id", "product_name", *VendorOfferInput.model_fields)),
+        ReadCapability("borrowing_entries", "/settlements", "Individual active borrowing/repayment entries by party/verified UUID and transaction date range. Unrestricted stores only.",
+                       ("id", "party_id", "party_name", "direction", "amount", "transaction_date", "account_id", "source_transaction_id")),
+        ReadCapability("stock_transfers", "/inventory", "Transfers by store/reference/verified UUID and date range, only where both stores are permitted. Optional store filter.",
+                       ("id", "from_store_id", "to_store_id", "from_store_code", "to_store_code", "transfer_date", "reference", "reversal_of_transfer_id", "reversed_by_transfer_id")),
+        ReadCapability("stock_movements", "/inventory", "Per-store movements by product/variant label or verified UUID and creation-date range. Optional permitted store filter.",
+                       ("id", "store_id", "store_code", "product_id", "product_name", "variant_id", "variant_name", "movement_type", "quantity", "reference_type", "reference_id", "created_at")),
+        ReadCapability("movement_sources", "/inventory", "Movements with missing invoice/purchase sources, by product/verified UUID, creation dates and permitted store.",
+                       ("id", "store_id", "store_code", "product_id", "product_name", "variant_id", "movement_type", "quantity", "reference_type", "reference_id")),
+        ReadCapability("collection_reminders", "/collections", "Due reminders by party/receivable UUID, as_of (null=today) and permitted store.",
+                       ("id", "party_id", "party_name", "invoice_id", "status", "amount_due", "amount_received", "due_date", "reminder_date")),
+        ReadCapability("reminder_history", "/collections", "Recorded reminders by party/receivable UUID, reminded-at date range and permitted store. No notes or actors.",
+                       ("id", "receivable_id", "party_name", "reminder_date", "next_reminder_date", "reminded_at")),
+        ReadCapability("account_journal", "/accounts", "Bounded daily journal entries with explicit optional dates, no text search or totals; use report_export for complete CSV. Unrestricted stores.",
+                       ("id", "period_key", "direction", "amount", "from_account_name", "to_account_name", "category", "transaction_date", "is_reversed")),
+        ReadCapability("audit_events", "/reports", "Audit identifiers/actions by action/entity text and creation date range. No actors or private old/new payloads. Unrestricted stores.",
+                       ("id", "action", "entity_type", "entity_id", "created_at")),
+        ReadCapability("business_payments", "/accounts", "Original standalone outflows by account/reference/category and transaction dates; is_reversed marks reversed originals. Reversal entries are in transactions. Not bill settlement. Unrestricted stores.",
+                       ("id", "from_account_name", "to_account_name", "direction", "amount", "payment_mode", "category",
+                        "transaction_date", "source_type", "is_reversed", "reversal_of_transaction_id")),
     )
 }
+
+READ_CONTEXT_NOTES = {
+    "stores": "active permitted name/code",
+    "products": "active name/SKU;stock sums all variants in permitted stores",
+    "parties": "active customer/vendor name;no contacts",
+    "hsn": "configured active code/description;never infer tax classification",
+    "brands": "inventory name/code",
+    "categories": "inventory name/code",
+    "accounts": "active names;balances at as_of;unrestricted stores",
+    "transactions": "nickname/reference/category;transaction dates;includes reversals",
+    "invoices": "number/customer;invoice dates;current collection status or CANCELLED",
+    "purchases": "bill/voucher/vendor;purchase dates;current payment status or CANCELLED",
+    "receivables": "party/reference;due dates;current balances",
+    "refunds": "document/party;creation dates;PAY_CUSTOMER owed,RECEIVE_VENDOR due back",
+    "borrowings": "party;current net outstanding excludes reversals;positive=owed",
+    "reorder": "product/SKU;permitted-store stock versus thresholds;not vendor availability",
+    "reconciliation": "product/SKU;per-store balance minus signed movements;missing sources separate",
+    "period_locks": "reason;overlapping dates;as_of tests CURRENT active locks",
+    "product_details": "product name/SKU/verified UUID;replacement fields;no stock totals",
+    "variants": "product/variant name/SKU/UUID;replacement fields;no stock totals",
+    "vendor_offers": "product/vendor name/UUID;offer fields;not owned stock",
+    "borrowing_entries": "party/entry UUID;transaction dates;active entries exclude reversals",
+    "stock_transfers": "store/reference/UUID;transfer dates;both stores must be permitted",
+    "stock_movements": "product/variant/UUID;creation dates;permitted-store movements",
+    "movement_sources": "product/UUID;creation dates;missing invoice/purchase sources",
+    "collection_reminders": "party/receivable UUID;reminders due by as_of",
+    "reminder_history": "party/receivable UUID;reminded-at dates;no notes/actors",
+    "account_journal": "EMPTY query only;daily entries;date window default=today;no totals",
+    "audit_events": "action/entity text;creation dates;no actors or private payloads",
+    "business_payments": "original outflows;is_reversed marks reversals;account/reference/category;dates;not settlement",
+}
+
+
+def read_context(key):
+    filters = ["q"]
+    if key in STORE_READ_KEYS:
+        filters.append("s")
+    if key in DATED_READ_KEYS:
+        filters.append("d")
+    if key in AS_OF_READ_KEYS:
+        filters.append("a")
+    if key in READ_STATUSES:
+        filters.append("status=" + "/".join(sorted(READ_STATUSES[key])))
+    return READ_CONTEXT_NOTES[key] + ";" + ",".join(filters)
 
 
 def platform_capabilities(db, company_id=None):
