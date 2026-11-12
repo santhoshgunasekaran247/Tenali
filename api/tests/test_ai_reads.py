@@ -107,7 +107,7 @@ class ReadUnitTests(unittest.TestCase):
             failed = service.read_results(uuid4(), uuid4(), result, [], {"version": 1})
             execute.assert_not_called()
             self.assertIsNone(failed.output)
-            self.assertEqual(failed.error, "lookup_rejected")
+            self.assertEqual(failed.error, "lookup_capability_changed")
             self.assertEqual(failed.input_tokens, 50)
             self.assertEqual(failed.output_tokens, 30)
 
@@ -131,6 +131,33 @@ class ReadUnitTests(unittest.TestCase):
         self.assertEqual(json.loads(resolved.draft.payload_json)["store_id"], store_id)
         self.assertIn("Verified Tenali lookup", resolved.output.reply)
 
+    def test_server_automatically_looks_up_named_draft_references(self):
+        service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
+        service.conversation = Mock(return_value={"status": "active"})
+        service.require_enabled = Mock(return_value={"version": 1})
+        service.audit = Mock()
+        store_id, account_id = str(uuid4()), str(uuid4())
+        proposal = DraftProposal(action="purchase_create", target_id=None, payload_json=json.dumps({
+            "store_id": "Main Store", "account_id": "Main Account"}))
+        result = ProviderResult(AssistantOutput(reply="Preparing the purchase.", clarification=None), 50, 0, 30, "mock",
+                                draft=proposal)
+        offered = [{"key": key} for key in ("stores", "accounts")]
+        def lookup(_db, _identity, request):
+            if request.capability == "stores":
+                return {"capability": "stores", "items": [{"id": store_id, "name": "Main Store", "code": "MAIN"}],
+                        "more_matches": False, "note": "Scoped results"}
+            return {"capability": "accounts", "items": [{"account_id": account_id, "account_name": "Main Account"}],
+                    "more_matches": False, "note": "Scoped results"}
+        with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
+             patch("app.ai.service.available_capabilities", return_value=offered), \
+             patch("app.ai.service.execute_lookup", side_effect=lookup) as execute:
+            resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
+        values = json.loads(resolved.draft.payload_json)
+        self.assertEqual(values["store_id"], store_id)
+        self.assertEqual(values["account_id"], account_id)
+        self.assertEqual(execute.call_count, 2)
+        self.assertNotIn("Verified Tenali lookup", resolved.output.reply)
+
     def test_ambiguous_named_target_does_not_produce_a_draft(self):
         service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
         service.conversation = Mock(return_value={"status": "active"})
@@ -148,7 +175,7 @@ class ReadUnitTests(unittest.TestCase):
              patch("app.ai.service.execute_lookup", return_value=facts):
             resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
         self.assertIsNone(resolved.draft)
-        self.assertIn("Could not uniquely match: target", resolved.output.reply)
+        self.assertIn("I couldn’t match target to a unique permitted record, so I didn’t save a draft", resolved.output.reply)
 
 
 @unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "Rollback-only read fixtures; provider always mocked")
@@ -255,7 +282,7 @@ class ReadDatabaseTests(TenantDatabaseCase):
                 sent = service.send(conversation["id"], MessageCreate(content="Find lamps", client_key=uuid4()))
                 execute.assert_not_called()
                 self.assertEqual(sent["items"][0]["status"], "failed")
-                self.assertEqual(sent["items"][0]["error_code"], "lookup_rejected")
+                self.assertEqual(sent["items"][0]["error_code"], "lookup_capability_changed")
                 self.assertEqual(service.usage()["personal"]["tokens"], 80)
 
     def test_changed_contract_blocks_only_that_capability_and_platform_routes_require_admin(self):

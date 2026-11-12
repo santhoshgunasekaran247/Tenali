@@ -91,6 +91,7 @@ test("history searches are encoded, edits use versions, and unknown calls remain
   await ai.update({ id: "one", version: 4 }, { title: "Renamed" });
   assert.equal(JSON.parse(calls[1].options.body).expected_version, 4);
   assert.match(messageStatus({ role: "user", status: "unknown" }), /will not be automatically resent/);
+  assert.match(messageStatus({ role: "user", status: "failed", error_code: "lookup_capability_changed" }), /lookup permission changed or is unavailable/);
   assert.equal(messageStatus({ role: "assistant", status: "completed" }), null);
 });
 

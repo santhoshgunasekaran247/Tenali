@@ -150,6 +150,15 @@ export function messageStatus(message: ChatMessage): string | null {
   if (message.role !== "user") return null;
   if (message.status === "pending") return "Reply processing. Refresh to recover the saved outcome.";
   if (message.status === "unknown") return "Provider outcome is unknown. The usage reservation remains counted; this request will not be automatically resent.";
-  if (message.status === "failed") return `No usable reply (${message.error_code || "provider error"}). No business records changed.`;
+  if (message.status === "failed") {
+    const reason: Record<string, string> = {
+      lookup_policy_changed: "AI policy changed while looking up a record. Retry the request.",
+      lookup_capability_changed: "A lookup permission changed or is unavailable. Ask an administrator to check AI lookup settings.",
+      lookup_permission_denied: "You do not have permission to look up one of these records.",
+      lookup_invalid: "A lookup request was invalid. Try a more specific name.",
+      lookup_failed: "A lookup failed unexpectedly. Retry the request.",
+    };
+    return `${reason[message.error_code || ""] || `No usable reply (${message.error_code || "provider error"})`}. No business records changed.`;
+  }
   return null;
 }

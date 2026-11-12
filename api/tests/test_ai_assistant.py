@@ -15,7 +15,8 @@ from sqlalchemy.exc import DBAPIError
 from app.ai.provider import OpenAIProvider, ProviderResult, estimated_cost
 from app.ai.actions import ACTIONS, DraftProposal
 from app.ai.schemas import AssistantOutput, ConversationCreate, ConversationUpdate, LookupArguments, MessageCreate, ReadLookup
-from app.ai.service import AssistantService, MAX_CONTEXT_BYTES, conversation_title, draft_status, resolve_draft_references
+from app.ai.service import (AssistantService, MAX_CONTEXT_BYTES, conversation_title, draft_status,
+                            reference_lookups, resolve_draft_references)
 from schema_support import apply_ai_read_migration
 from test_tenancy import TenantDatabaseCase
 
@@ -60,6 +61,20 @@ class AssistantUnitTests(unittest.TestCase):
         missing, unresolved = resolve_draft_references(proposal.model_copy(update={"target_id": None}), [])
         self.assertIsNone(missing.target_id)
         self.assertEqual(unresolved, ["target"])
+
+    def test_draft_names_trigger_only_permitted_reference_lookups(self):
+        proposal = DraftProposal(action="purchase_create", target_id=None, payload_json=json.dumps({
+            "vendor_party_id": "Tiger Bass", "account_id": "Main Account", "store_id": "Main Store",
+            "lines": [{"product_id": "Existing Tumbler"}],
+        }))
+        lookups = reference_lookups(proposal, [{"key": key} for key in ("parties", "accounts", "stores", "products")])
+        self.assertEqual({(item.capability, item.arguments.query) for item in lookups},
+                         {("parties", "Tiger Bass"), ("accounts", "Main Account"),
+                          ("stores", "Main Store"), ("products", "Existing Tumbler")})
+        targeted = DraftProposal(action="stock_adjust", target_id="Existing Tumbler", payload_json="{}")
+        self.assertEqual([(item.capability, item.arguments.query) for item in reference_lookups(
+            targeted, [{"key": "products"}])], [("products", "Existing Tumbler")])
+        self.assertEqual(reference_lookups(proposal, [{"key": "stores"}])[0].capability, "stores")
 
     def test_draft_status_distinguishes_saved_drafts_from_chat(self):
         self.assertEqual(draft_status(None), "No draft was saved in this reply.")
