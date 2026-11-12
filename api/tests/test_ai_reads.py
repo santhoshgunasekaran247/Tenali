@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 
 from app.ai.capabilities import REGISTRY, available_capabilities, current_identity, execute_lookup, format_lookup
+from app.ai.actions import DraftProposal
 from app.ai.provider import OpenAIProvider, ProviderResult
 from app.ai.schemas import AssistantOutput, ConversationCreate, LookupArguments, MessageCreate, ReadAssistantOutput, ReadLookup
 from app.ai.service import AssistantService
@@ -109,6 +110,45 @@ class ReadUnitTests(unittest.TestCase):
             self.assertEqual(failed.error, "lookup_rejected")
             self.assertEqual(failed.input_tokens, 50)
             self.assertEqual(failed.output_tokens, 30)
+
+    def test_scoped_lookup_resolves_named_reference_in_proposed_draft(self):
+        service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
+        service.conversation = Mock(return_value={"status": "active"})
+        service.require_enabled = Mock(return_value={"version": 1})
+        service.audit = Mock()
+        lookup = ReadLookup(capability="stores", arguments=LookupArguments(query="Main Store", store_id=None, limit=3))
+        store_id = str(uuid4())
+        facts = {"capability": "stores", "items": [{"id": store_id, "name": "Main store", "code": "MAIN"}],
+                 "more_matches": False, "note": "Scoped results"}
+        draft = DraftProposal(action="purchase_create", target_id=None, payload_json='{"store_id":"Main Store"}')
+        result = ProviderResult(AssistantOutput(reply="Checking the store.", clarification=None), 50, 0, 30, "mock",
+                                lookups=(lookup,), draft=draft)
+        offered = [{"key": "stores"}]
+        with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
+             patch("app.ai.service.available_capabilities", return_value=offered), \
+             patch("app.ai.service.execute_lookup", return_value=facts):
+            resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
+        self.assertEqual(json.loads(resolved.draft.payload_json)["store_id"], store_id)
+        self.assertIn("Verified Tenali lookup", resolved.output.reply)
+
+    def test_ambiguous_named_target_does_not_produce_a_draft(self):
+        service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
+        service.conversation = Mock(return_value={"status": "active"})
+        service.require_enabled = Mock(return_value={"version": 1})
+        service.audit = Mock()
+        lookup = product_lookup(query="Copper Tumbler")
+        facts = {"capability": "products", "items": [{"id": str(uuid4()), "name": "Copper Tumbler"}],
+                 "more_matches": True, "note": "More matches"}
+        draft = DraftProposal(action="stock_adjust", target_id="Copper Tumbler", payload_json="{}")
+        result = ProviderResult(AssistantOutput(reply="Checking the product.", clarification=None), 50, 0, 30, "mock",
+                                lookups=(lookup,), draft=draft)
+        offered = [{"key": "products"}]
+        with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
+             patch("app.ai.service.available_capabilities", return_value=offered), \
+             patch("app.ai.service.execute_lookup", return_value=facts):
+            resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
+        self.assertIsNone(resolved.draft)
+        self.assertIn("Could not uniquely match: target", resolved.output.reply)
 
 
 @unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "Rollback-only read fixtures; provider always mocked")

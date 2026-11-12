@@ -1,9 +1,10 @@
 import json
 import os
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -12,13 +13,80 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from app.ai.provider import OpenAIProvider, ProviderResult, estimated_cost
-from app.ai.schemas import AssistantOutput, ConversationCreate, ConversationUpdate, MessageCreate
-from app.ai.service import AssistantService, MAX_CONTEXT_BYTES
+from app.ai.actions import ACTIONS, DraftProposal
+from app.ai.schemas import AssistantOutput, ConversationCreate, ConversationUpdate, LookupArguments, MessageCreate, ReadLookup
+from app.ai.service import AssistantService, MAX_CONTEXT_BYTES, conversation_title, draft_status, resolve_draft_references
 from schema_support import apply_ai_read_migration
 from test_tenancy import TenantDatabaseCase
 
 
 class AssistantUnitTests(unittest.TestCase):
+    def test_conversation_title_is_short_and_collapses_whitespace(self):
+        self.assertEqual(conversation_title("  Create a\n purchase  "), "Create a purchase")
+        self.assertEqual(conversation_title("x" * 80), "x" * 57 + "...")
+
+    def test_named_draft_references_require_unique_exact_lookup(self):
+        store_id, other_id = str(uuid4()), str(uuid4())
+        proposal = DraftProposal(action="purchase_create", target_id=None,
+            payload_json=json.dumps({"store_id": "Main Store", "account_id": "Main Account", "lines": [{"product_id": "Copper Tumbler"}]}))
+        lookup = ReadLookup(capability="stores", arguments=LookupArguments(query="Main Store", store_id=None, limit=3))
+        facts = {"more_matches": False, "items": [{"id": store_id, "name": "Main store", "code": "MAIN"}]}
+        resolved, unresolved = resolve_draft_references(proposal, [(lookup, facts)])
+        values = json.loads(resolved.payload_json)
+        self.assertEqual(values["store_id"], store_id)
+        self.assertNotIn("account_id", values)
+        self.assertNotIn("product_id", values["lines"][0])
+        self.assertEqual(unresolved, ["account", "product"])
+        for ambiguous in ({**facts, "more_matches": True},
+                          {"more_matches": False, "items": [facts["items"][0], {"id": other_id, "name": "Main Store"}]}):
+            resolved, unresolved = resolve_draft_references(proposal, [(lookup, ambiguous)])
+            self.assertNotIn("store_id", json.loads(resolved.payload_json))
+            self.assertIn("store", unresolved)
+        different_query = lookup.model_copy(update={"arguments": lookup.arguments.model_copy(update={"query": "Main"})})
+        resolved, _ = resolve_draft_references(proposal, [(different_query, facts)])
+        self.assertNotIn("store_id", json.loads(resolved.payload_json))
+
+    def test_named_target_requires_unique_product_lookup(self):
+        product_id = uuid4()
+        proposal = DraftProposal(action="stock_adjust", target_id="Copper Tumbler", payload_json="{}")
+        lookup = ReadLookup(capability="products", arguments=LookupArguments(query="Copper Tumbler", store_id=None, limit=3))
+        facts = {"more_matches": False, "items": [{"id": str(product_id), "name": "Copper Tumbler", "sku": None}]}
+        resolved, unresolved = resolve_draft_references(proposal, [(lookup, facts)])
+        self.assertEqual(resolved.target_id, product_id)
+        self.assertEqual(unresolved, [])
+        unresolved_proposal, unresolved = resolve_draft_references(proposal, [(lookup, {**facts, "more_matches": True})])
+        self.assertIsNone(unresolved_proposal.target_id)
+        self.assertEqual(unresolved, ["target"])
+        missing, unresolved = resolve_draft_references(proposal.model_copy(update={"target_id": None}), [])
+        self.assertIsNone(missing.target_id)
+        self.assertEqual(unresolved, ["target"])
+
+    def test_draft_status_distinguishes_saved_drafts_from_chat(self):
+        self.assertEqual(draft_status(None), "No draft was saved in this reply.")
+        self.assertEqual(draft_status("party_create"),
+                         "Draft saved for review: party create. No business records have been changed.")
+
+    def test_finish_reports_only_successfully_saved_drafts(self):
+        for proposal in (None, DraftProposal(action="party_create", target_id=None, payload_json='{"legal_name":"Tiger Copper"}')):
+            db = MagicMock()
+            reservation = {"input_rate": Decimal("1"), "output_rate": Decimal("1"), "model": "fixture"}
+            conversation = {"status": "active", "expires_at": datetime.max.replace(tzinfo=timezone.utc)}
+            db.execute.return_value.mappings.return_value.one.side_effect = [reservation, conversation]
+            service = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()})
+            service.lock_conversation = Mock()
+            service.require_enabled = Mock(return_value={"version": 1})
+            service.audit = Mock()
+            action = {"key": "party_create"}
+            result = ProviderResult(AssistantOutput(reply="Ready.", clarification=None), 10, 0, 5, "fixture", draft=proposal)
+            with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
+                 patch("app.ai.service.available_actions", return_value=[action]), patch("app.ai.service.DraftService.create") as create:
+                service.finish(uuid4(), uuid4(), uuid4(), uuid4(), result, offered_actions=[action], reserved_version=1)
+            self.assertEqual(create.call_count, int(proposal is not None))
+            answers = [call.args[1]["answer"] for call in db.execute.call_args_list
+                       if len(call.args) > 1 and "answer" in call.args[1]]
+            self.assertEqual(len(answers), 1)
+            self.assertIn(draft_status(proposal.action if proposal else None), answers[0])
+
     def test_strict_inputs_reject_identity_injection_and_empty_messages(self):
         for values in ({"content": " ", "client_key": uuid4()}, {"content": "x", "client_key": uuid4(), "company_id": uuid4()},
                        {"content": "x" * 4001, "client_key": uuid4()}):
@@ -74,7 +142,71 @@ class AssistantUnitTests(unittest.TestCase):
         context = service.context(uuid4())
         self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
         self.assertIn("Most recent clarification", context)
-        self.assertNotIn("Oldest question", context)
+        self.assertIn("Oldest question", context)
+        self.assertNotIn("\\u0915" * 100, context)
+
+    def test_context_retains_older_lookup_and_user_facts_within_budget(self):
+        company, preferences, history = (Mock() for _ in range(3))
+        company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": False}
+        preferences.mappings.return_value.all.return_value = []
+        history.mappings.return_value.all.return_value = [
+            {"role": "user", "content": "Yes, create the draft"},
+            *[{"role": "assistant", "content": "Long reply " * 1000} for _ in range(15)],
+            {"role": "assistant", "content": 'Verified Tenali lookup (read only): {"capability":"stores","items":[{"name":"Main Store"}]}'},
+            {"role": "user", "content": "GST inclusive at 5 percent"},
+        ]
+        db = Mock()
+        db.execute.side_effect = [company, preferences, history]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4())
+        self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
+        self.assertIn("Main Store", context)
+        self.assertIn("GST inclusive at 5 percent", context)
+        self.assertIn("Yes, create the draft", context)
+
+    def test_context_prioritizes_user_facts_over_long_assistant_repetition(self):
+        company, preferences, history = (Mock() for _ in range(3))
+        company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": False}
+        preferences.mappings.return_value.all.return_value = []
+        history.mappings.return_value.all.return_value = [
+            {"role": "user", "content": "Yes, proceed"},
+            {"role": "assistant", "content": "Is this correct?"},
+            *[{"role": "assistant", "content": "Repeated clarification " * 100} for _ in range(15)],
+            {"role": "assistant", "content": 'Verified Tenali lookup (read only): {"capability":"stores","items":[{"name":"Main Store"}]}'},
+            {"role": "user", "content": "Tiger Copper, GST inclusive at 5 percent"},
+        ]
+        db = Mock()
+        db.execute.side_effect = [company, preferences, history]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4())
+        self.assertIn("Tiger Copper, GST inclusive at 5 percent", context)
+        self.assertIn("Main Store", context)
+        self.assertIn("Is this correct?", context)
+        self.assertIn("Yes, proceed", context)
+        self.assertLess(context.index("Tiger Copper, GST inclusive at 5 percent"), context.index("Is this correct?"))
+        self.assertLess(context.index("Is this correct?"), context.index("Yes, proceed"))
+        self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
+
+    def test_context_includes_only_offered_bounded_existing_drafts(self):
+        company, preferences, history, drafts = (Mock() for _ in range(4))
+        company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": False}
+        preferences.mappings.return_value.all.return_value = []
+        history.mappings.return_value.all.return_value = [{"role": "user", "content": "Create the vendor too"}]
+        drafts.mappings.return_value.all.return_value = [
+            {"action_key": "purchase_create", "status": "editing", "payload": {"lines": [{"description": "Copper Tumbler"}]}},
+            {"action_key": "purchase_create", "status": "executed", "payload": {}, "successful_execution": {"id": "saved-record-id"}},
+            {"action_key": "party_create", "status": "editing", "payload": {"legal_name": "Not offered"}},
+            {"action_key": "purchase_create", "status": "editing", "payload": {"notes": "x" * 5000}},
+        ]
+        db = Mock()
+        db.execute.side_effect = [company, preferences, history, drafts]
+        action = ACTIONS["purchase_create"]
+        actions = [{"key": action.key, "schema": action.schema.model_json_schema(), "target_required": False}]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4(), actions=actions)
+        self.assertIn("Copper Tumbler", context)
+        self.assertIn("saved-record-id", context)
+        self.assertIn("Create the vendor too", context)
+        self.assertNotIn("Not offered", context)
+        self.assertNotIn("x" * 5000, context)
+        self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
 
 
 @unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "Set TENALI_TEST_DB=1 for rollback-only chat tests; provider is always mocked")
@@ -98,6 +230,23 @@ class AssistantDatabaseTests(TenantDatabaseCase):
     def service(self, db, identity):
         db.info["tenant_context"] = identity
         return AssistantService(db, identity)
+
+    def test_first_message_titles_only_a_new_default_conversation(self):
+        first, _, _ = self.register("ai-title")
+        identity = first["user"]
+        self.enable(identity["company_id"])
+        with self.factory() as db:
+            service = self.service(db, identity)
+            default = service.create(ConversationCreate())
+            custom = service.create(ConversationCreate(title="My custom title"))
+            result = ProviderResult(AssistantOutput(reply="Ready.", clarification=None), 20, 0, 10, "fixture")
+            with patch("app.ai.service.OpenAIProvider.respond", return_value=result):
+                service.send(default["id"], MessageCreate(content="  Create a purchase\nfor Copper Tumbler  ", client_key=uuid4()))
+                self.assertEqual(service.conversation(default["id"])["title"], "Create a purchase for Copper Tumbler")
+                service.send(default["id"], MessageCreate(content="Another question", client_key=uuid4()))
+                self.assertEqual(service.conversation(default["id"])["title"], "Create a purchase for Copper Tumbler")
+                service.send(custom["id"], MessageCreate(content="Create a vendor", client_key=uuid4()))
+                self.assertEqual(service.conversation(custom["id"])["title"], "My custom title")
 
     def test_private_history_preferences_and_composite_ownership(self):
         first, cookies, _ = self.register("ai-history")

@@ -5,6 +5,10 @@ export type Conversation = {
   id: string; title: string; status: "active" | "archived"; version: number;
   created_at: string; updated_at: string; expires_at: string;
 };
+export function conversationLabel(conversation: Conversation): string {
+  if (conversation.title !== "New conversation" || Number.isNaN(Date.parse(conversation.created_at))) return conversation.title;
+  return `New conversation · ${new Date(conversation.created_at).toLocaleString()}`;
+}
 export type ChatMessage = {
   id: string; client_key: string; role: "user" | "assistant"; content: string;
   status: "pending" | "completed" | "failed" | "unknown"; error_code: string | null; created_at: string;
@@ -24,9 +28,42 @@ export type ActionDraft = {
   id: string; action_key: string; target_id: string | null; payload: Record<string, unknown>;
   payload_hash: string; status: "editing" | "validated" | "approved" | "executed"; version: number;
   validation: { warning: string; checks: string; side_effects: string; preview: Record<string, unknown> | null } | null;
-  approved_at: string | null; expires_at: string;
+  approved_at: string | null; expires_at: string; created_at?: string;
   high_impact: boolean;
 };
+
+export function draftDescription(draft: ActionDraft): string {
+  const payload = draft.payload;
+  if (draft.action_key === "purchase_create" || draft.action_key === "invoice_create") {
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    const first = lines[0] && typeof lines[0] === "object" && !Array.isArray(lines[0])
+      ? lines[0] as Record<string, unknown> : {};
+    const name = typeof first.description === "string" && first.description.trim() ? first.description.trim() : "Item not specified";
+    const quantity = first.quantity == null || first.quantity === "" ? "" : ` · Qty ${String(first.quantity)}`;
+    return `${name}${quantity}${lines.length > 1 ? ` · +${lines.length - 1} more` : ""}`;
+  }
+  for (const key of ["legal_name", "name", "description"]) {
+    if (typeof payload[key] === "string" && payload[key].trim()) return payload[key].trim();
+  }
+  return "Details not specified";
+}
+
+export function hasDuplicateDraft(draft: ActionDraft, drafts: ActionDraft[]): boolean {
+  return drafts.some(other => {
+    if (other.id === draft.id || other.action_key !== draft.action_key || other.target_id !== draft.target_id) return false;
+    if (other.payload_hash === draft.payload_hash) return true;
+    if (draft.action_key !== "purchase_create") return false;
+    const lines = draft.payload.lines, otherLines = other.payload.lines;
+    if (!Array.isArray(lines) || !Array.isArray(otherLines) || lines.length !== 1 || otherLines.length !== 1) return false;
+    const line = lines[0], otherLine = otherLines[0];
+    if (!line || !otherLine || typeof line !== "object" || typeof otherLine !== "object") return false;
+    const name = line.description, otherName = otherLine.description;
+    return typeof name === "string" && !!name.trim() && typeof otherName === "string" &&
+      name.trim().toLowerCase() === otherName.trim().toLowerCase() && line.quantity != null &&
+      String(line.quantity) === String(otherLine.quantity) &&
+      (!draft.payload.purchase_date || !other.payload.purchase_date || draft.payload.purchase_date === other.payload.purchase_date);
+  });
+}
 export type AIExecution = { id: string; status: "succeeded" | "failed"; result: Record<string, unknown>; created_at: string;
   validation_error?: unknown };
 export type AIAttachment = { id: string; file_name: string; mime_type: string; expires_at: string };

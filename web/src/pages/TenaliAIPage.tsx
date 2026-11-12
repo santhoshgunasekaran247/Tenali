@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ai, messageStatus, type AIUsage, type ChatMessage, type Conversation, type Preference, type ReadCapability, type AIAttachment } from "../features/ai";
+import { ArrowUp, ChevronDown, ChevronUp, History, Paperclip, SquarePen } from "lucide-react";
+import { ai, conversationLabel, messageStatus, type AIUsage, type ChatMessage, type Conversation, type Preference, type ReadCapability, type AIAttachment } from "../features/ai";
 import { featureExplanation } from "../features/featureControls";
 import { useAuth } from "../features/auth";
 import { FloatingAlert } from "../components/Notifications";
@@ -157,6 +158,7 @@ export function TenaliAIPage() {
       setSubmission(null); setText(""); setAttachments([]);
       const [updated, history, totals, settings] = await Promise.all([ai.conversation(request.id), ai.messages(request.id), ai.usage(), ai.settings()]);
       if (token !== generation.current) return;
+      if (currentTitle.current.trim() === selected.title) { currentTitle.current = updated.title; setTitle(updated.title); }
       setSelected(updated); setMessageOffset(0); setMessages(history.items); setUsage(totals); setFeatures(settings);
       setDraftRefresh(value => value + 1);
       await refreshHistory();
@@ -203,8 +205,8 @@ export function TenaliAIPage() {
 
   return <main className="ops-page ai-page"><PortalHomeLink />
     <div className="ai-toolbar"><h1>Assistant</h1><div className="shop-actions">
-      <button disabled={busy || titleSaving} aria-expanded={historyOpen} aria-controls="ai-history" onClick={() => setHistoryOpen(!historyOpen)}>Conversations</button>
-      <button disabled={busy || titleSaving || viewer} onClick={() => void create()}>New chat</button></div></div>
+      <button className="ai-icon-button" title="Conversations" aria-label="Conversations" disabled={busy || titleSaving} aria-expanded={historyOpen} aria-controls="ai-history" onClick={() => setHistoryOpen(!historyOpen)}><History size={19} /></button>
+      <button className="ai-icon-button" title="New chat" aria-label="New chat" disabled={busy || titleSaving || viewer} onClick={() => void create()}><SquarePen size={19} /></button></div></div>
     <details className="ai-help"><summary>Privacy, preferences & available tools</summary>
     <p className="ops-copy-note">Private assistant with platform-approved, permission-scoped business lookups.
       Operations need separate review, approval and submission. Cancellation and deletion are separate, high-impact operations.
@@ -238,7 +240,7 @@ export function TenaliAIPage() {
         <label>Search titles<input maxLength={120} disabled={busy} value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} /></label>
         <label className="ops-toggle"><input type="checkbox" disabled={busy} checked={archived} onChange={event => { setArchived(event.target.checked); setOffset(0); }} />Archived history</label>
         <nav aria-label="Private conversation history">{conversations.map(conversation =>
-          <button type="button" key={conversation.id} disabled={busy || titleSaving} aria-current={selected?.id === conversation.id ? "page" : undefined} onClick={() => void choose(conversation)}>{conversation.title}</button>)}</nav>
+          <button type="button" key={conversation.id} disabled={busy || titleSaving} aria-current={selected?.id === conversation.id ? "page" : undefined} onClick={() => void choose(conversation)}>{conversationLabel(conversation)}</button>)}</nav>
         {!conversations.length ? <p>No conversations in this view.</p> : null}
         <div className="shop-actions"><button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</button>
           <button disabled={busy || conversations.length < 30} onClick={() => setOffset(offset + 30)}>Next</button></div>
@@ -256,8 +258,10 @@ export function TenaliAIPage() {
               <button disabled={busy || titleSaving} onClick={() => void refresh()}>Refresh saved outcome</button></div>
               <p className="social-caption">Private to you. Content expires {new Date(selected.expires_at).toLocaleDateString()}.</p></details>
           </header>
-          {messageOffset || messages.length >= 50 ? <div className="shop-actions"><button disabled={busy || loadingMessages || messages.length < 50} onClick={() => setMessageOffset(messageOffset + 50)}>Older messages</button>
-            <button disabled={busy || loadingMessages || !messageOffset} onClick={() => setMessageOffset(Math.max(0, messageOffset - 50))}>Newer messages</button></div> : null}
+          <div className="ai-conversation-layout"><div className="ai-conversation-main">
+          {messageOffset || messages.length >= 50 ? <div className="ai-message-pagination" aria-label="Message history">
+            <button className="ai-icon-button" title="Older messages" aria-label="Older messages" disabled={busy || loadingMessages || messages.length < 50} onClick={() => setMessageOffset(messageOffset + 50)}><ChevronUp size={18} /></button>
+            <button className="ai-icon-button" title="Newer messages" aria-label="Newer messages" disabled={busy || loadingMessages || !messageOffset} onClick={() => setMessageOffset(Math.max(0, messageOffset - 50))}><ChevronDown size={18} /></button></div> : null}
           <div className="ai-message-list" aria-live="polite">
             {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe what you need help with.</p> : messages.map(message =>
               <article key={message.id} aria-label={message.role === "user" ? "Your message" : "Assistant reply"} className={`ai-message ai-message-${message.role}`}>
@@ -266,17 +270,19 @@ export function TenaliAIPage() {
             <div ref={messageEnd} />
           </div>
           <form className="ops-form ai-message-form" onSubmit={send}>
-            <label><span className="ai-sr-only">Message</span><textarea placeholder="Ask about your business or prepare an operation..." rows={3} maxLength={4000}
-              disabled={busy || !canSend || selected.status !== "active" || !!submission} value={submission?.content ?? text} onChange={event => setText(event.target.value)} /></label>
+            <label><span className="ai-sr-only">Message</span><textarea placeholder="Ask anything about your business..." rows={2} maxLength={4000}
+              disabled={busy || !canSend || selected.status !== "active" || !!submission} value={submission?.content ?? text} onChange={event => setText(event.target.value)}
+              onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /></label>
             {attachments.map(file => <div key={file.id} className="shop-actions"><span>{file.file_name}</span>
               <button type="button" disabled={busy || !!submission} onClick={() => {
                 setBusy(true); void ai.removeAttachment(file.id).then(() => setAttachments(previous => previous.filter(item => item.id !== file.id)))
                   .catch(failure => setError(String(failure))).finally(() => setBusy(false));
               }}>Remove file</button></div>)}
-            {features?.document_inputs_enabled ? <label>Attach text PDF, .txt or image (2 MB; up to two files)
-              <input type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
+            <div className="ai-compose-actions">
+            {features?.document_inputs_enabled ? <label className="ai-attach ai-icon-button" title="Attach file">
+              <Paperclip size={19} aria-hidden="true" />
+              <input className="ai-sr-only" aria-label="Attach text PDF, text file or image (2 MB; up to two files)" type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
                 onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /></label> : null}
-            {attachments.length ? <p>Only Send processes these private files with OpenAI; uploading does not make a paid call. Images are resized for economical reading. Review extracted figures before posting.</p> : null}
             {features?.voice_inputs_enabled && canSend && selected.status === "active" ? <AIVoiceInput key={selected.id}
               conversationId={selected.id} disabled={operationBusy || !!submission} onBusy={setVoiceBusy}
               onTranscript={transcript => {
@@ -284,14 +290,16 @@ export function TenaliAIPage() {
                 if (combined.length > 4000) { setError("Message plus transcript exceeds 4,000 characters. Shorten the message or transcript first."); return false; }
                 setText(combined); setNotice("Voice text added. Review it, then Send when ready."); return true;
               }} /> : null}
-            <div className="shop-actions"><button className="btn" disabled={busy || !canSend || selected.status !== "active" || (!text.trim() && !submission)}>
-              {busy ? "Processing..." : submission ? "Retry same message reference" : "Send message"}</button>
-              {submission ? <button type="button" disabled={busy} onClick={() => { setSubmission(null); setText(""); setNotice("Local retry cleared. The saved provider outcome and usage reservation are not changed."); }}>Clear local retry</button> : null}
+            <button className="ai-send ai-icon-button" type="submit" title={submission ? "Retry message" : "Send message"} aria-label={submission ? "Retry message" : "Send message"} disabled={busy || !canSend || selected.status !== "active" || (!text.trim() && !submission)}><ArrowUp size={19} /></button>
+            {submission ? <button type="button" disabled={busy} onClick={() => { setSubmission(null); setText(""); setNotice("Local retry cleared. The saved provider outcome and usage reservation are not changed."); }}>Clear local retry</button> : null}
             </div>
+            {attachments.length ? <p>Only Send processes these private files with OpenAI; uploading does not make a paid call. Images are resized for economical reading. Review extracted figures before posting.</p> : null}
           </form>
-          <details className="ai-operations"><summary>Operations to review</summary>
+          </div>
+          <section className="ai-operations" aria-label="Operations to review"><h2>Drafts to review</h2>
             <AIDrafts key={selected.id} conversationId={selected.id} refreshKey={draftRefresh}
-              writable={!!canSend && selected.status === "active" && !busy && !titleSaving} aiEnabled={!!canSend} /></details>
+              writable={!!canSend && selected.status === "active" && !busy && !titleSaving} aiEnabled={!!canSend} /></section>
+          </div>
         </>}
       </section>
     </div>

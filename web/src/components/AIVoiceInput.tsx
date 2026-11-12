@@ -89,8 +89,8 @@ export function AIVoiceInput({ conversationId, disabled, onBusy, onTranscript }:
       if (token === generation.current) { setPhase("ready"); setError(String(failure) + " Check saved transcription or retry the same voice reference. No automatic resend occurs."); }
     } finally { if (token === generation.current) onBusy(false); }
   };
-  return <section className="ai-voice" aria-label="Voice input">
-    {phase === "idle" ? <button type="button" className="btn light" disabled={disabled} onClick={() => void record()}><Mic size={16} />Record voice</button> : <>
+  return <section className="ai-voice" data-active={phase !== "idle"} aria-label="Voice input">
+    {phase === "idle" ? <button type="button" className="ai-icon-button" title="Record voice" aria-label="Record voice" disabled={disabled} onClick={() => void record()}><Mic size={19} /></button> : <>
       <label>Spoken language<select value={language} disabled={phase !== "ready" || !!requestKey || disabled}
         onChange={event => {
           const value = event.target.value;
@@ -117,9 +117,9 @@ export function AIVoiceInput({ conversationId, disabled, onBusy, onTranscript }:
     </>}
     {error ? <p role="alert">{error}</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
-    <p className="social-caption">Up to 60 seconds. Transcription uses your AI budget. Review text before Send.</p>
-    <details className="social-caption"><summary>Voice privacy & usage</summary>
+    {phase !== "idle" ? <p className="social-caption">Up to 60 seconds. Transcription uses your AI budget. Review text before Send.</p> : null}
+    {phase !== "idle" ? <details className="social-caption"><summary>Voice privacy & usage</summary>
       <p>Record locally, then explicitly transcribe with OpenAI. Audio is not stored on the server; recovery transcripts expire after 10 minutes. Transcription counts toward AI requests and spend. Send your message separately.</p>
-    </details>
+    </details> : null}
   </section>;
 }

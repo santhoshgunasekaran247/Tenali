@@ -2,7 +2,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -269,7 +269,7 @@ ACTIONS = {action.key: action for action in (
 class DraftProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: ActionKey
-    target_id: UUID | None
+    target_id: UUID | Annotated[str, Field(min_length=2, max_length=200)] | None
     payload_json: str = Field(max_length=10000)
 
 

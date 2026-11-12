@@ -57,6 +57,19 @@ test("AI calls use tenant transport and preserve the exact client message refere
   assert.equal(calls[0].options.headers["Content-Type"], "application/json");
 });
 
+test("draft summaries distinguish items and flag exact duplicates", () => {
+  const { draftDescription, hasDuplicateDraft } = loadClient(async () => ({}));
+  const first = { id: "one", action_key: "purchase_create", target_id: null, payload_hash: "same",
+    payload: { lines: [{ description: "Copper Tumbler", quantity: 10 }] } };
+  const second = { ...first, id: "two" };
+  assert.equal(draftDescription(first), "Copper Tumbler · Qty 10");
+  assert.equal(draftDescription({ ...first, action_key: "party_create", payload: { legal_name: "Tiger Copper" } }), "Tiger Copper");
+  assert.equal(draftDescription({ ...first, payload: {} }), "Item not specified");
+  assert.equal(hasDuplicateDraft(first, [first, second]), true);
+  assert.equal(hasDuplicateDraft(first, [first, { ...second, payload_hash: "different" }]), true);
+  assert.equal(hasDuplicateDraft(first, [first, { ...second, payload_hash: "different", payload: { lines: [{ description: "Copper Tumbler", quantity: 20 }] } }]), false);
+});
+
 test("quota failures are visible and never automatically retried", async () => {
   let attempts = 0;
   const { ai } = loadClient(async () => {
@@ -81,6 +94,12 @@ test("history searches are encoded, edits use versions, and unknown calls remain
   assert.equal(messageStatus({ role: "assistant", status: "completed" }), null);
 });
 
+test("unnamed conversations display their date without changing custom titles", () => {
+  const { conversationLabel } = loadClient(async () => ({}));
+  assert.match(conversationLabel({ title: "New conversation", created_at: "2026-11-08T10:00:00Z" }), /^New conversation · /);
+  assert.equal(conversationLabel({ title: "Copper purchase", created_at: "2026-11-08T10:00:00Z" }), "Copper purchase");
+});
+
 test("assistant page renders text safely and requires explicit operation submission", () => {
   assert.match(src("App.tsx"), /path="\/portal\/ai"/);
   const page = src("pages/TenaliAIPage.tsx");
@@ -92,6 +111,11 @@ test("assistant page renders text safely and requires explicit operation submiss
   assert.match(page, /crypto\.randomUUID\(\)/);
   assert.match(page, /token !== generation\.current/);
   assert.match(page, /viewer/);
+  assert.match(page, /<section className="ai-operations" aria-label="Operations to review">/);
+  assert.match(page, /className="ai-conversation-layout"/);
+  assert.match(page, /className="ai-compose-actions"/);
+  assert.match(page, /event\.key === "Enter" && !event\.shiftKey/);
+  assert.match(page, /aria-label=\{submission \? "Retry message" : "Send message"\}/);
 });
 
 test("draft editing, approval and submission bind exact version/hash", async () => {
@@ -116,6 +140,11 @@ test("draft editing, approval and submission bind exact version/hash", async () 
   assert.match(cards, /readonly \|\| dirty/);
   assert.match(cards, /does NOT post, pay, or change stock/);
   assert.match(cards, /Save edits & invalidate approval/);
+  assert.match(cards, /Show essential fields/);
+  assert.match(cards, /Show all fields/);
+  assert.match(cards, /"store_id", "purchase_date", "received_now", "lines"/);
+  assert.match(cards, /draft\.status === "approved" \|\| draft\.status === "executed"/);
+  assert.doesNotMatch(cards, /ai-draft-filters/);
   assert.doesNotMatch(cards, /dangerouslySetInnerHTML/);
 });
 
@@ -145,6 +174,7 @@ test("assistant titles auto-save with version checks and visible failure recover
   const page = src("pages/TenaliAIPage.tsx");
   assert.match(page, /window\.setTimeout\(\(\) => void saveTitle\(\), 600\)/);
   assert.match(page, /currentConversation\.current\?\.id === conversation\.id/);
+  assert.match(page, /currentTitle\.current\.trim\(\) === selected\.title/);
   assert.match(page, /Title not saved/);
   assert.match(page, /Retry title save/);
   assert.doesNotMatch(page, />Rename<\/button>|<strong>\{message\.role/);

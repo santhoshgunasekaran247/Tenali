@@ -54,6 +54,7 @@ class OperationsContractTests(unittest.TestCase):
             Mock(mappings=Mock(return_value=Mock(one=Mock(return_value={"company_name": "Synthetic", "gst_registered": False})))),
             Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
             Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
+            Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
         ]
         service = AssistantService(db, {"company_id": str(uuid4()), "user_id": str(uuid4())})
         actions = [{"key": key, "schema": action.schema.model_json_schema(), "description": action.description,
