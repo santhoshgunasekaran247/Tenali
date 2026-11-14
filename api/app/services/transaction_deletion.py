@@ -22,7 +22,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.services.borrowing_ledger import available_repayment
+from app.services.borrowing_ledger import OPENING_DIRECTIONS, available_repayment
 from app.services.collection_ledger import lock_receivable, sync_invoice_without_receivable, sync_receivable
 from app.services.period_lock_service import assert_period_open
 from app.services.purchase_ledger import sync_purchase_payments
@@ -160,10 +160,10 @@ class TransactionDeletionService:
                 on reversal.company_id=original.company_id and reversal.reversal_of_transaction_id=original.id
             where original.company_id=:company and (original.id=cast(:source as uuid) or (original.source_type='borrowing' and original.source_id=:id))""",
                                      source=str(borrowing["source_transaction_id"]) if borrowing["source_transaction_id"] else None, id=str(borrowing["id"]))
-        if borrowing["direction"] == "borrow" and not reversed_already:
-            available = available_repayment(self.db, self.company_id, str(borrowing["party_id"]), borrowing["transaction_date"])
+        if borrowing["direction"] in OPENING_DIRECTIONS and not reversed_already:
+            available = available_repayment(self.db, self.company_id, str(borrowing["party_id"]), borrowing["transaction_date"], borrowing["direction"])
             if Decimal(borrowing["amount"]) > available:
-                plan.block("Repayments to this party already use this borrowing. Delete those repayments first.")
+                plan.block("Repayments or collections with this party already use this entry. Delete those first.")
         if not from_transaction:
             for tx in self._all("""select * from account_transactions where company_id=:company and reversal_of_transaction_id is null
                     and (id=cast(:source as uuid) or (source_type='borrowing' and source_id=:id))""",

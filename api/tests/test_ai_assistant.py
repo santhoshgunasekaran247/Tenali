@@ -12,11 +12,11 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app.ai.provider import OpenAIProvider, ProviderResult, estimated_cost
+from app.ai.provider import OpenAIProvider, ProviderResult, estimated_cost, structured_text
 from app.ai.actions import ACTIONS, DraftProposal
 from app.ai.schemas import AssistantOutput, ConversationCreate, ConversationUpdate, LookupArguments, MessageCreate, ReadLookup
 from app.ai.service import (AssistantService, MAX_CONTEXT_BYTES, conversation_title, draft_status,
-                            reference_lookups, resolve_draft_references)
+                            reference_lookups, resolve_draft_references, resolve_purchase_bundle_references)
 from schema_support import apply_ai_read_migration
 from test_tenancy import TenantDatabaseCase
 
@@ -76,6 +76,42 @@ class AssistantUnitTests(unittest.TestCase):
             targeted, [{"key": "products"}])], [("products", "Existing Tumbler")])
         self.assertEqual(reference_lookups(proposal, [{"key": "stores"}])[0].capability, "stores")
 
+    def test_purchase_bundle_resolves_all_names_and_only_exact_hsn_rate(self):
+        proposal = DraftProposal(action="purchase_bundle_create", target_id=None, payload_json=json.dumps({
+            "vendor_name": "Tiger Glass", "create_vendor_if_missing": True,
+            "store_name": "Main Store", "account_name": "Main Account",
+            "product_name": "Glass Tumbler", "gst_rate": "5", "hsn": None,
+        }))
+        available = [{"key": key} for key in ("parties", "stores", "accounts", "hsn")]
+        lookups = reference_lookups(proposal, available)
+        self.assertEqual({item.capability for item in lookups}, {"parties", "stores", "accounts", "hsn"})
+        facts = [
+            (lookup, {"items": [
+                {"parties": {"id": str(uuid4()), "legal_name": "Tiger Glass", "party_type": "vendor"},
+                 "stores": {"id": str(uuid4()), "name": "Main Store", "code": "MAIN"},
+                 "accounts": {"account_id": str(uuid4()), "account_name": "Main Account"},
+                 "hsn": {"id": str(uuid4()), "code": "1234", "description": "Glass Tumbler", "gst_rate": Decimal("5.00")}}[lookup.capability]],
+                "more_matches": False}) for lookup in lookups]
+        resolved, unresolved = resolve_purchase_bundle_references(proposal, facts)
+        values = json.loads(resolved.payload_json)
+        self.assertTrue(values["vendor_party_id"])
+        self.assertTrue(values["store_id"])
+        self.assertTrue(values["account_id"])
+        self.assertEqual(values["hsn"], "1234")
+        self.assertEqual(unresolved, [])
+        wrong_rate = [(lookup, {"items": [{**fact["items"][0], "gst_rate": Decimal("18.00")}], "more_matches": False})
+                      if lookup.capability == "hsn" else (lookup, fact) for lookup, fact in facts]
+        unresolved_hsn, _ = resolve_purchase_bundle_references(proposal, wrong_rate)
+        self.assertIsNone(json.loads(unresolved_hsn.payload_json)["hsn"])
+
+    def test_purchase_bundle_draft_names_four_lookup_capabilities(self):
+        proposal = DraftProposal(action="purchase_bundle_create", target_id=None, payload_json=json.dumps({
+            "vendor_name": "Tiger Glass", "store_name": "Main Store", "account_name": "Main Account",
+            "product_name": "Glass Tumbler", "gst_rate": "5",
+        }))
+        lookups = reference_lookups(proposal, [{"key": key} for key in ("parties", "stores", "accounts", "hsn")])
+        self.assertEqual({item.capability for item in lookups}, {"parties", "stores", "accounts", "hsn"})
+
     def test_draft_status_distinguishes_saved_drafts_from_chat(self):
         self.assertEqual(draft_status(None), "No draft was saved in this reply.")
         self.assertEqual(draft_status("party_create"),
@@ -94,13 +130,14 @@ class AssistantUnitTests(unittest.TestCase):
             action = {"key": "party_create"}
             result = ProviderResult(AssistantOutput(reply="Ready.", clarification=None), 10, 0, 5, "fixture", draft=proposal)
             with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
-                 patch("app.ai.service.available_actions", return_value=[action]), patch("app.ai.service.DraftService.create") as create:
+                 patch("app.ai.service.available_actions", return_value=[action]), patch("app.ai.service.WorkflowService.from_proposal") as create:
+                create.return_value = {"action_key": "party_create", "status": "active"}
                 service.finish(uuid4(), uuid4(), uuid4(), uuid4(), result, offered_actions=[action], reserved_version=1)
             self.assertEqual(create.call_count, int(proposal is not None))
             answers = [call.args[1]["answer"] for call in db.execute.call_args_list
                        if len(call.args) > 1 and "answer" in call.args[1]]
             self.assertEqual(len(answers), 1)
-            self.assertIn(draft_status(proposal.action if proposal else None), answers[0])
+            self.assertIn("Operations workflow prepared: party create" if proposal else draft_status(None), answers[0])
 
     def test_strict_inputs_reject_identity_injection_and_empty_messages(self):
         for values in ({"content": " ", "client_key": uuid4()}, {"content": "x", "client_key": uuid4(), "company_id": uuid4()},
@@ -141,6 +178,18 @@ class AssistantUnitTests(unittest.TestCase):
             self.assertIsNone(result.output)
             self.assertEqual(result.input_tokens, 20)
             self.assertIn(result.error, {"invalid_response", "response_incomplete"})
+
+    def test_repeated_identical_json_reply_is_accepted_but_conflicting_repeats_are_not(self):
+        reply = '{"reply":"Hello","clarification":null}'
+        self.assertEqual(json.loads(structured_text(reply + "\n" + reply)), {"reply": "Hello", "clarification": None})
+        with self.assertRaises(ValueError):
+            structured_text(reply + '{"reply":"Other","clarification":null}')
+        response = SimpleNamespace(status="completed", id="fixture", output_text=reply + reply,
+            usage=SimpleNamespace(input_tokens=20, output_tokens=10, input_tokens_details=SimpleNamespace(cached_tokens=0)))
+        with patch("app.ai.provider.OpenAI") as client:
+            client.return_value.__enter__.return_value.responses.create.return_value = response
+            result = OpenAIProvider().respond("context", "hello", {"timeout_seconds": 30, "routine_model": "fixture", "max_output_tokens": 200})
+        self.assertEqual(result.output.reply, "Hello")
 
     def test_unicode_history_is_bounded_and_recent_context_survives(self):
         company, preferences, history = (Mock() for _ in range(3))
@@ -201,7 +250,8 @@ class AssistantUnitTests(unittest.TestCase):
         self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
 
     def test_context_includes_only_offered_bounded_existing_drafts(self):
-        company, preferences, history, drafts = (Mock() for _ in range(4))
+        company, preferences, history, drafts, workflows = (Mock() for _ in range(5))
+        workflows.mappings.return_value.all.return_value = []
         company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": False}
         preferences.mappings.return_value.all.return_value = []
         history.mappings.return_value.all.return_value = [{"role": "user", "content": "Create the vendor too"}]
@@ -212,7 +262,7 @@ class AssistantUnitTests(unittest.TestCase):
             {"action_key": "purchase_create", "status": "editing", "payload": {"notes": "x" * 5000}},
         ]
         db = Mock()
-        db.execute.side_effect = [company, preferences, history, drafts]
+        db.execute.side_effect = [company, preferences, history, drafts, workflows]
         action = ACTIONS["purchase_create"]
         actions = [{"key": action.key, "schema": action.schema.model_json_schema(), "target_required": False}]
         context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4(), actions=actions)
@@ -221,6 +271,45 @@ class AssistantUnitTests(unittest.TestCase):
         self.assertIn("Create the vendor too", context)
         self.assertNotIn("Not offered", context)
         self.assertNotIn("x" * 5000, context)
+        self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
+
+    def test_context_keeps_workflow_identity_even_when_its_payload_is_too_large(self):
+        company, preferences, history, drafts, workflows = (Mock() for _ in range(5))
+        company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": False}
+        for result in (preferences, history, drafts):
+            result.mappings.return_value.all.return_value = []
+        identifier = str(uuid4())
+        workflows.mappings.return_value.all.return_value = [{
+            "id": identifier, "status": "active", "plan": {"steps": [{
+                "action": "party_create", "target": None, "payload": {"legal_name": "Tiger", "address": "x" * 4000},
+            }]},
+        }]
+        db = Mock()
+        db.execute.side_effect = [company, preferences, history, drafts, workflows]
+        action = ACTIONS["party_create"]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4(),
+            actions=[{"key": action.key, "schema": action.schema.model_json_schema(), "target_required": False}])
+        self.assertIn(identifier, context)
+        self.assertNotIn("x" * 4000, context)
+
+    def test_sale_goal_and_its_followup_facts_survive_all_enabled_context(self):
+        company, preferences, history, drafts, workflows = (Mock() for _ in range(5))
+        company.mappings.return_value.one.return_value = {"company_name": "Example", "gst_registered": True}
+        for result in (preferences, drafts, workflows):
+            result.mappings.return_value.all.return_value = []
+        history.mappings.return_value.all.return_value = [
+            {"role": "user", "content": "Create new customer Vijay; sold bottle at 30 inclusive 5% HSN 1234"},
+            {"role": "assistant", "content": "Please answer these questions. " * 1000},
+            {"role": "user", "content": "sold 10 copper bottle to new customer Vijay"},
+        ]
+        db = Mock()
+        db.execute.side_effect = [company, preferences, history, drafts, workflows]
+        actions = [{"key": action.key, "schema": action.schema.model_json_schema(),
+                    "target_required": bool(action.target)} for action in ACTIONS.values()]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4(), actions=actions)
+        self.assertIn("sold 10 copper bottle to new customer Vijay", context)
+        self.assertIn("sold bottle at 30", context)
+        self.assertNotIn("Please answer these questions.", context)
         self.assertLessEqual(len(context.encode()), MAX_CONTEXT_BYTES)
 
 

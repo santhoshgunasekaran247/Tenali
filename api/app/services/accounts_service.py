@@ -18,7 +18,7 @@ from app.schemas.accounts import (
     PeriodLockReopen,
     TransactionReverseCreate,
 )
-from app.services.borrowing_ledger import available_repayment, lock_borrowing_party, lock_transaction_borrowing
+from app.services.borrowing_ledger import OPENING_DIRECTIONS, available_repayment, lock_borrowing_party, lock_transaction_borrowing
 from app.services.purchase_ledger import sync_purchase_payments
 from app.services.collection_ledger import (
     lock_invoice_receivables,
@@ -72,7 +72,7 @@ class AccountsService:
                     id uuid primary key default gen_random_uuid(),
                     company_id uuid not null references companies(id),
                     party_id uuid not null references parties(id),
-                    direction text not null check (direction in ('borrow', 'repay')),
+                    direction text not null check (direction in ('borrow', 'repay', 'lend', 'collect')),
                     amount numeric(14,2) not null check (amount > 0),
                     transaction_date date not null default current_date,
                     account_id uuid references accounts(id),
@@ -1229,12 +1229,12 @@ class AccountsService:
         reversal_date = payload.transaction_date or date.today()
         if reversal_date < original["transaction_date"]:
             raise HTTPException(422, "Reversal date cannot precede the original transaction")
-        if borrowing and borrowing["direction"] == "borrow":
+        if borrowing and borrowing["direction"] in OPENING_DIRECTIONS:
             available = available_repayment(
-                self.db, resolved_company_id, str(borrowing["party_id"]), reversal_date
+                self.db, resolved_company_id, str(borrowing["party_id"]), reversal_date, borrowing["direction"]
             )
             if borrowing["amount"] > available:
-                raise HTTPException(422, "Reverse linked repayments before reversing this borrowing")
+                raise HTTPException(422, "Reverse linked repayments or collections before reversing this entry")
         assert_period_open(
             db=self.db,
             company_id=resolved_company_id,

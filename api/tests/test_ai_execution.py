@@ -4,7 +4,7 @@ import json
 import os
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -22,6 +22,25 @@ from app.ai.provider import OpenAIProvider, ProviderResult
 from app.services.feature_controls import AIConfig
 from app.services.parties_service import PartiesService
 from app.schemas.parties import PartyCreate
+
+
+class BusinessAdapterUnitTests(unittest.TestCase):
+    def test_party_create_uses_shared_schema_and_callers_transaction(self):
+        from app.ai.business_writes import apply_action
+        db = Mock()
+        company = str(uuid4())
+        values = {"party_type": "vendor", "legal_name": "Synthetic vendor"}
+        with patch("app.ai.business_writes.PartiesService") as service:
+            service.return_value.create.return_value = {"id": str(uuid4())}
+            result = apply_action(db, company, "party_create", None, values, "ai-test")
+        service.assert_called_once_with(db)
+        args, kwargs = service.return_value.create.call_args
+        self.assertEqual(args[0], company)
+        self.assertIsInstance(args[1], PartyCreate)
+        self.assertEqual(args[1].model_dump(exclude_none=True), values)
+        self.assertEqual(kwargs, {"commit": False})
+        self.assertIn("id", result)
+        db.commit.assert_not_called()
 
 
 class MediaUnitTests(unittest.TestCase):
@@ -394,6 +413,20 @@ class ExecutionDatabaseTests(AIDatabaseFixture):
             line = {"product_id":product,"description":"Synthetic wire","hsn":"7408","quantity":"2","rate":"100","price_includes_gst":False}
             purchase = str(post("purchase_create", {"store_id":store,"vendor_party_id":party,"purchase_date":"2026-11-08",
                 "received_now":True,"lines":[line]})["id"])
+            bundle = post("purchase_bundle_create", {"vendor_name":"Synthetic glass vendor","create_vendor_if_missing":True,
+                "product_name":"Synthetic glass tumbler","quantity":"2","rate":"10","hsn":"7408","gst_rate":"18",
+                "price_includes_gst":True,"selling_price":"15","store_id":store,"purchase_date":"2026-11-08",
+                "payment_mode":"Cash","account_name":"Synthetic cash","account_id":account,"fully_paid":True,
+                "received_now":True})
+            self.assertTrue(bundle["vendor_created"])
+            self.assertTrue(bundle["stock_received"])
+            self.assertEqual(Decimal(str(bundle["total"])), Decimal("20.00"))
+            product_row = db.execute(text("select selling_price,is_draft from products where company_id=:company and name='Synthetic glass tumbler'"),
+                                     {"company":company}).mappings().one()
+            self.assertEqual(Decimal(str(product_row["selling_price"])), Decimal("15.00"))
+            self.assertTrue(product_row["is_draft"])
+            self.assertEqual(db.execute(text("select quantity from stock_balances where company_id=:company and store_id=:store and product_id=(select id from products where company_id=:company and name='Synthetic glass tumbler')"),
+                {"company":company,"store":store}).scalar_one(), Decimal("2"))
             post("purchase_payment", {"amount":"50","account_id":account,"payment_mode":"Cash","payment_date":"2026-11-08"}, purchase)
             invoice = str(post("invoice_create", {"store_id":store,"customer_party_id":party,"invoice_date":"2026-11-08",
                 "place_of_supply":"33 - Tamil Nadu","lines":[line],"amount_received":"25","payment_mode":"Cash","account_id":account})["id"])

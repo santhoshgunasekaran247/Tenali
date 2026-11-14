@@ -7,11 +7,61 @@ const vm = require("node:vm");
 
 const src = file => readFileSync(path.join(__dirname, "..", "src", ...file.split("/")), "utf8");
 
+function loadUI(file) {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, actionLabel, waitingForPrerequisites };" : ""), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, require: name =>
+    name === "../features/ai" ? {} :
+    name === "./WorkflowReference" ? loadUI("components/WorkflowReference.tsx") :
+    name === "./Notifications" ? {} : require(name) });
+  return exports;
+}
+
+test("forms mark filled and missing required fields without redundant selected captions", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { Fields } = loadUI("components/AIDrafts.tsx");
+  const { WorkflowReference } = loadUI("components/WorkflowReference.tsx");
+  const schema = { type: "object", required: ["name"], properties: {
+    name: { type: "string" }, optional: { type: "string" }, account_id: { type: "string", "x-workflow-reference": true },
+    missing: { type: "string" }, lines: { type: "array", items: { type: "object", properties: {
+      gst_rate: { type: "number" }, price_includes_gst: { type: "boolean" } } } },
+  } };
+  const html = renderToStaticMarkup(React.createElement(Fields, {
+    schema, root: schema, values: { name: "Vendor", optional: "Note", account_id: "id",
+      lines: [{ gst_rate: 0, price_includes_gst: false }] }, showAll: false, disabled: false,
+    requiredFields: ["account_id", "missing", "lines.0.gst_rate", "lines.0.price_includes_gst"],
+    labels: { account_id: { value: "id", label: "Main bank" } }, onChange() {},
+    renderReference: (path, title, value, label, required) => React.createElement(WorkflowReference, {
+      workflow: { id: "workflow", version: 1 }, step: { id: "step" }, field: path, title, value, label, required,
+      disabled: false, onChange() {}, onChoose() {}, onCreate() {},
+    }),
+  }));
+  assert.equal((html.match(/aria-required="true"/g) || []).length, 5);
+  assert.match(html, /aria-required="false"[^>]*value="Note"/);
+  assert.match(html, /role="combobox"[^>]*aria-required="true"[^>]*value="Main bank"/);
+  assert.match(html, /<option value="false" selected="">No<\/option>/);
+  assert.doesNotMatch(html, /Selected:|value="id"/);
+  assert.doesNotMatch(src("components/AIDrafts.tsx"), /Selected:/);
+});
+
+test("sales retain their label and completed customer prerequisites no longer show waiting", () => {
+  const { actionLabel, waitingForPrerequisites } = loadUI("components/AIDrafts.tsx");
+  assert.equal(actionLabel("invoice_create"), "Sales billing");
+  assert.equal(actionLabel("party_create", { party_type: "customer" }), "Customer");
+  assert.equal(actionLabel("party_create", { party_type: "vendor" }), "Vendor");
+  const parent = { bindings: { customer_party_id: { step_id: "customer" } } };
+  assert.equal(waitingForPrerequisites(parent, [{ id: "customer", draft_status: "editing" }]), true);
+  assert.equal(waitingForPrerequisites(parent, [{ id: "customer", draft_status: "executed" }]), false);
+  assert.equal(waitingForPrerequisites(parent, []), true);
+  assert.doesNotMatch(src("components/AIDrafts.tsx"), /Purchase rate per unit/);
+});
+
 function loadClient(fetch, globals = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(src("features/ai.ts"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText, { exports, require: () => ({ tenantFetch: fetch }), URLSearchParams, ...globals });
+  }).outputText, { exports, require: () => ({ tenantFetch: fetch }), URLSearchParams, SyntaxError, ...globals });
   return exports;
 }
 
@@ -57,12 +107,73 @@ test("AI calls use tenant transport and preserve the exact client message refere
   assert.equal(calls[0].options.headers["Content-Type"], "application/json");
 });
 
+test("workflow selection and creation use versioned private endpoints", async () => {
+  const calls = [];
+  const { ai } = loadClient(async (path, options) => {
+    calls.push({ path, options });
+    return { ok: true, json: async () => ({ items: [] }) };
+  });
+  const workflow = { id: "workflow", version: 3 }, step = { id: "step" };
+  await ai.workflows("conversation");
+  await ai.editWorkflow(workflow, step, null, { vendor_id: "selected" });
+  await ai.editWorkflow(workflow, step, null, { vendor_id: "Tiger" }, "vendor_id");
+  await ai.continueWorkflow(workflow);
+  await ai.startWorkflow("conversation", "purchase_receive", "saved-purchase", {}, "stable-key");
+  assert.equal(calls[0].path, "/api/ai/conversations/conversation/workflows?offset=0");
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    expected_version: 3, step_id: "step", target: null, payload: { vendor_id: "selected" },
+  });
+  assert.equal(JSON.parse(calls[2].options.body).create_field, "vendor_id");
+  assert.equal(calls[3].path, "/api/ai/workflows/workflow/continue?expected_version=3");
+  assert.equal(JSON.parse(calls[4].options.body).client_key, "stable-key");
+});
+
+test("workflow dropdown searches are read-only, encoded and cancellable", async () => {
+  const calls = [], signal = {};
+  const { ai } = loadClient(async (path, options) => {
+    calls.push({ path, options });
+    return { ok: true, json: async () => ({ options: [] }) };
+  });
+  const workflow = { id: "workflow", version: 3 }, step = { id: "step" };
+  await ai.searchWorkflow(workflow, step, "lines.0.product_id", "brass & bottle", signal);
+  assert.equal(calls[0].path, "/api/ai/workflows/workflow/search?step_id=step&field=lines.0.product_id&query=brass+%26+bottle");
+  assert.equal(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.body, undefined);
+  await ai.editWorkflow(workflow, step, null, { store_id: "selected" }, undefined, undefined,
+    { field: "store_id", query: "main" });
+  const payload = JSON.parse(calls[1].options.body);
+  assert.equal(payload.selection_field, "store_id");
+  assert.equal(payload.selection_query, "main");
+  const source = src("components/WorkflowReference.tsx");
+  assert.match(source, /role="combobox"/);
+  assert.match(source, /role="listbox"/);
+  assert.match(source, /controller\.abort\(\)/);
+  assert.match(source, /if \(current\)/);
+  assert.match(source, /ArrowDown/);
+  assert.match(source, /Create new/);
+});
+
+test("workflows are text-triggered and record selection advances without an operation menu", () => {
+  const source = src("components/AIDrafts.tsx");
+  assert.doesNotMatch(source, /Start an Operations workflow|Choose an operation|setNewAction/);
+  assert.match(source, /Create new \{String\(choice\.query\)\}/);
+  assert.match(source, /const choose =[\s\S]*?void onRun\(\(\) => ai\.editWorkflow/);
+  assert.match(source, /await ai\.continueWorkflow\(workflow\)/);
+  assert.match(source, /action\.workflow_schema \|\| action\.schema/);
+  assert.match(source, /Object\.values\(step\.offer_steps \|\| \{\}\)/);
+  assert.match(source, /Completed\. Would you like to make the next entry/);
+  assert.match(source, /Already submitted records are not undone/);
+});
+
 test("draft summaries distinguish items and flag exact duplicates", () => {
   const { draftDescription, hasDuplicateDraft } = loadClient(async () => ({}));
   const first = { id: "one", action_key: "purchase_create", target_id: null, payload_hash: "same",
     payload: { lines: [{ description: "Copper Tumbler", quantity: 10 }] } };
   const second = { ...first, id: "two" };
   assert.equal(draftDescription(first), "Copper Tumbler · Qty 10");
+  assert.equal(draftDescription({ ...first, action_key: "purchase_bundle_create",
+    payload: { vendor_name: "Tiger Glass", product_name: "Glass Tumbler", quantity: 100 } }),
+    "Tiger Glass · Glass Tumbler x 100");
   assert.equal(draftDescription({ ...first, action_key: "party_create", payload: { legal_name: "Tiger Copper" } }), "Tiger Copper");
   assert.equal(draftDescription({ ...first, payload: {} }), "Item not specified");
   assert.equal(hasDuplicateDraft(first, [first, second]), true);
@@ -77,6 +188,17 @@ test("quota failures are visible and never automatically retried", async () => {
     return { ok: false, json: async () => ({ detail: "Tenant AI usage limit reached" }) };
   });
   await assert.rejects(ai.send("conversation", "hello", "key"), /usage limit reached/);
+  assert.equal(attempts, 1);
+});
+
+test("non-JSON submission errors explain recovery without retrying the write", async () => {
+  let attempts = 0;
+  const { ai } = loadClient(async () => {
+    attempts++;
+    return { ok: false, status: 500, json: async () => { throw new SyntaxError("Unexpected token I"); } };
+  });
+  await assert.rejects(ai.executeDraft({ id: "vendor", version: 3, payload_hash: "approved" }),
+    /server error.*Check saved outcome/i);
   assert.equal(attempts, 1);
 });
 
@@ -106,8 +228,9 @@ test("assistant page renders text safely and requires explicit operation submiss
   const page = src("pages/TenaliAIPage.tsx");
   assert.match(page, /Chat sends your messages/);
   assert.match(page, /permission-scoped business lookups/);
-  assert.match(page, /Operations need separate review, approval and submission/);
-  assert.match(page, /<p>\{message\.content\}<\/p>/);
+  assert.match(page, /Confirm &amp; save records your approval and submits the reviewed values/);
+  assert.match(page, /<p>\{message\.role === "assistant" \? readableMessage\(message\.content\) : message\.content\}<\/p>/);
+  assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
   assert.match(page, /crypto\.randomUUID\(\)/);
   assert.match(page, /token !== generation\.current/);
@@ -137,16 +260,62 @@ test("draft editing, approval and submission bind exact version/hash", async () 
   assert.deepEqual(JSON.parse(calls[3].options.body), { expected_version: 7, expected_hash: "approved-hash", confirm_text: "Exact label" });
   const cards = src("components/AIDrafts.tsx");
   assert.match(cards, /window\.confirm/);
-  assert.match(cards, /draft\.status !== "validated"/);
+  assert.match(cards, /draft\.status === "validated" \|\| draft\.status === "approved"/);
   assert.match(cards, /readonly \|\| dirty/);
-  assert.match(cards, /does NOT post, pay, or change stock/);
-  assert.match(cards, /Save edits & invalidate approval/);
+  assert.match(cards, /Confirm and save these reviewed values/);
+  assert.match(cards, /Save changes for review/);
+  assert.match(cards, /Review & check/);
+  assert.match(cards, /Confirm & save/);
+  assert.doesNotMatch(cards, /Review calculated impact|Approve reviewed values/);
   assert.match(cards, /Show essential fields/);
   assert.match(cards, /Show all fields/);
   assert.match(cards, /"store_id", "purchase_date", "received_now", "lines"/);
+  assert.match(cards, /"fully_paid", "received_now"/);
+  assert.match(cards, /hiddenFields=\{draft\.action_key === "purchase_bundle_create"/);
   assert.match(cards, /draft\.status === "approved" \|\| draft\.status === "executed"/);
   assert.doesNotMatch(cards, /ai-draft-filters/);
   assert.doesNotMatch(cards, /dangerouslySetInnerHTML/);
+});
+
+test("confirm and save approves the exact reviewed version before posting once", async () => {
+  const calls = [];
+  const draft = { id: "draft", version: 7, payload_hash: "reviewed-hash", status: "validated" };
+  const { ai } = loadClient(async (path, options) => {
+    calls.push({ path, payload: JSON.parse(options.body) });
+    return { ok: true, json: async () => path.endsWith("/approve") ? { ...draft, status: "approved" } : { status: "succeeded" } };
+  });
+  const result = await ai.submitReviewedDraft(draft, "Exact confirmation");
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(calls.map(call => call.path), ["/api/ai/drafts/draft/approve", "/api/ai/drafts/draft/execute"]);
+  assert.deepEqual(calls[0].payload, { expected_version: 7, expected_hash: "reviewed-hash" });
+  assert.deepEqual(calls[1].payload, { expected_version: 7, expected_hash: "reviewed-hash", confirm_text: "Exact confirmation" });
+  calls.length = 0;
+  await ai.submitReviewedDraft({ ...draft, status: "approved" });
+  assert.deepEqual(calls.map(call => call.path), ["/api/ai/drafts/draft/execute"]);
+  calls.length = 0;
+  await assert.rejects(ai.submitReviewedDraft({ ...draft, status: "editing" }), /Review the current values/);
+  assert.equal(calls.length, 0);
+});
+
+test("confirm and save never posts after rejected or changed approval", async () => {
+  const draft = { id: "draft", version: 7, payload_hash: "reviewed", status: "validated" };
+  for (const body of [{ ...draft, status: "approved", id: "other-draft" }, { ...draft, status: "approved", version: 8 },
+      { ...draft, status: "approved", payload_hash: "changed" }, { ...draft, status: "editing" }]) {
+    const calls = [];
+    const { ai } = loadClient(async path => {
+      calls.push(path);
+      return { ok: true, json: async () => body };
+    });
+    await assert.rejects(ai.submitReviewedDraft(draft), /Reviewed values changed/);
+    assert.deepEqual(calls, ["/api/ai/drafts/draft/approve"]);
+  }
+  const calls = [];
+  const { ai } = loadClient(async path => {
+    calls.push(path);
+    return { ok: false, json: async () => ({ detail: "References changed" }) };
+  });
+  await assert.rejects(ai.submitReviewedDraft(draft), /References changed/);
+  assert.deepEqual(calls, ["/api/ai/drafts/draft/approve"]);
 });
 
 test("platform posting controls are separate from draft preparation and reads", () => {
@@ -198,4 +367,23 @@ test("capability discovery uses tenant transport and platform approval uses vers
   assert.match(controls, /No financial writes/);
   assert.match(controls, /unrestricted store access/);
   assert.match(src("pages/TenaliAIPage.tsx"), /not complete catalogues or company financial totals/);
+});
+
+test("older JSON lookup replies are shown as plain, readable records", () => {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(src("features/aiMessages.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { exports });
+  const { readableMessage, rupees } = exports;
+  const stored = 'I can look up your account balances. If you want, I can also narrow it.\n\nVerified Tenali lookup (read only):\n' +
+    '{"capability": "accounts", "items": [{"account_id": "50ac5aa6", "account_name": "Main Account", "account_type": "bank", ' +
+    '"is_company_account": false, "opening_balance": "1000.00", "current_balance": "4000.00", "transaction_count": 5, ' +
+    '"last_transaction_date": "2026-11-14"}], "more_matches": false, "note": "Balances as of 2026-11-14"}\n\nNo draft was saved in this reply.';
+  assert.equal(readableMessage(stored), "From your Tenali records — Accounts (1)\n• Main Account: current balance ₹4,000.00 · " +
+    "account type bank · opening balance ₹1,000.00 · transaction count 5 · last transaction date 14 Nov 2026");
+  assert.equal(readableMessage("Verified Tenali lookup (read only): Products matching “x”\n• X"),
+    "From your Tenali records — Products matching “x”\n• X");
+  assert.match(readableMessage('Checking.\n\nVerified Tenali lookup (read only):\n{"capability": "accounts", "items": [{"acc'),
+    /could not be shown/);
+  assert.equal(readableMessage("Hello there."), "Hello there.");
+  assert.equal(rupees(1234567.5), "₹12,34,567.50");
 });

@@ -276,7 +276,8 @@ class PurchasesService:
         rows = self.db.execute(text(query), params).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def create_purchase(self, company_id: str | None, payload: PurchaseCreate, *, commit: bool = True) -> dict:
+    def create_purchase(self, company_id: str | None, payload: PurchaseCreate, *, commit: bool = True,
+                        new_product_selling_prices: dict[str, Decimal] | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
         original_hash=request_hash(payload)
@@ -300,7 +301,7 @@ class PurchasesService:
 
         line_items = []
         if payload.lines:
-            create_draft_products(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id))
+            create_draft_products(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id),new_product_selling_prices)
             resolve_product_lines(self.db,resolved_company_id,payload.lines,str(payload.vendor_party_id),allow_drafts=True)
             MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             from app.services.commerce_stock import purchase_line_totals

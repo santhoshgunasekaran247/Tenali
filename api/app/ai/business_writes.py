@@ -1,10 +1,11 @@
 """Business adapters use the caller's transaction; they never commit it."""
 from decimal import Decimal
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from app.ai.actions import PurchaseBundleDraft
 from app.schemas.accounts import BusinessPaymentCreate
 from app.schemas.billing import InvoiceCreate
 from app.schemas.collections import ReceivablePaymentCreate
@@ -23,6 +24,7 @@ from app.services.purchases_service import PurchasesService
 from app.services.stores_service import get_store, stock_store
 from app.services.document_cancellation import Cancellation, cancel_document
 from app.services.transaction_deletion import TransactionDeletionService
+from app.services.access import check_module
 
 
 def operational_preview(db, company, action, target, values):
@@ -83,8 +85,11 @@ def stock_preview(db, company, changes):
         after = current + delta
         if after < 0 or (delta < 0 and after < reserved):
             raise HTTPException(422, "The operation would consume unavailable or reserved stock.")
+        names = db.execute(text("""select (select name from stores where id=:store and company_id=:company) as store_name,
+            (select name from products where id=:product and company_id=:company) as product_name"""),
+            {"company": company, "store": store, "product": product}).mappings().one()
         rows.append({"store_id": store, "product_id": product, "variant_id": variant, "current": str(current),
-                     "change": str(delta), "after": str(after), "reserved": str(reserved)})
+                     "change": str(delta), "after": str(after), "reserved": str(reserved), **names})
     return rows
 
 
@@ -196,6 +201,114 @@ def document_preview(db, company, action, values):
                         "new_products": [line.description for line in model.lines if line.new_product]}
 
 
+def purchase_bundle_preview(db, company: str, values: dict, draft_id: str):
+    model = PurchaseBundleDraft.model_validate(values)
+    identity = db.info.get("tenant_context")
+    check_module(identity, "/parties")
+    check_module(identity, "/inventory")
+    if model.fully_paid:
+        check_module(identity, "/accounts")
+    if not model.vendor_name.strip() or not model.product_name.strip():
+        raise HTTPException(422, "Vendor and product names are required.")
+    if model.quantity is None or model.rate is None:
+        raise HTTPException(422, "Quantity and purchase rate are required.")
+    if not model.purchase_date:
+        raise HTTPException(422, "Purchase date is required.")
+    if model.price_includes_gst is None:
+        raise HTTPException(422, "Confirm whether the unit rate includes GST.")
+    if model.fully_paid is None:
+        raise HTTPException(422, "Confirm whether the purchase is fully paid.")
+    if model.received_now is None:
+        raise HTTPException(422, "Confirm whether the goods have been received.")
+    if not model.hsn:
+        raise HTTPException(422, "HSN/SAC is required. Choose an active code from Master Data.")
+    hsn_rate = db.execute(text("select gst_rate from hsn_masters where company_id=:company and code=:code and is_active"),
+                          {"company": company, "code": model.hsn}).scalar_one_or_none()
+    if hsn_rate is None:
+        raise HTTPException(422, "HSN/SAC must be an active code from Master Data.")
+    if model.gst_rate is not None and Decimal(str(hsn_rate)) != model.gst_rate:
+        raise HTTPException(422, f"The selected HSN/SAC uses GST {hsn_rate}%, not {model.gst_rate}%. Review the code or rate.")
+    if not model.store_id:
+        if not model.store_name.strip():
+            raise HTTPException(422, "Receiving store is required.")
+        stores = db.execute(text("""select id from stores where company_id=:company and is_active
+            and (lower(name)=lower(:name) or lower(code)=lower(:name)) order by id limit 3"""),
+            {"company": company, "name": model.store_name.strip()}).scalars().all()
+        if len(stores) != 1:
+            raise HTTPException(422, "Could not uniquely find the receiving store. Choose an exact permitted store name.")
+        model.store_id = UUID(str(stores[0]))
+    store = stock_store(db, company, str(model.store_id))
+    if model.fully_paid and not model.account_id:
+        if not model.account_name.strip():
+            raise HTTPException(422, "Payment account is required for this fully paid purchase.")
+        accounts = db.execute(text("""select id from accounts where company_id=:company and is_active
+            and lower(nickname)=lower(:name) order by id limit 3"""),
+            {"company": company, "name": model.account_name.strip()}).scalars().all()
+        if len(accounts) != 1:
+            raise HTTPException(422, "Could not uniquely find the payment account. Choose an exact account name.")
+        model.account_id = UUID(str(accounts[0]))
+    account = (db.execute(text("select id from accounts where id=:id and company_id=:company and is_active"),
+                         {"id": str(model.account_id), "company": company}).first() if model.account_id else None)
+    if model.fully_paid and not account:
+        raise HTTPException(422, "Select an active payment account from this workspace.")
+    if model.fully_paid and not model.payment_mode.strip():
+        raise HTTPException(422, "Payment mode is required for a fully paid purchase.")
+
+    vendor_id = model.vendor_party_id
+    vendor_created = False
+    if vendor_id:
+        vendor = db.execute(text("""select id from parties where id=:id and company_id=:company and is_active
+            and party_type in ('vendor','customer_vendor')"""),
+            {"id": str(vendor_id), "company": company}).scalar_one_or_none()
+        if not vendor:
+            raise HTTPException(422, "Selected party is not an active vendor in this workspace.")
+        vendor_id = UUID(str(vendor))
+    else:
+        vendors = db.execute(text("""select id from parties where company_id=:company and is_active
+            and party_type in ('vendor','customer_vendor') and
+            (lower(legal_name)=lower(:name) or lower(coalesce(nickname,''))=lower(:name)) order by id limit 3"""),
+            {"company": company, "name": model.vendor_name.strip()}).scalars().all()
+        if len(vendors) > 1:
+            raise HTTPException(422, "Several vendors match this name. Refine the vendor name before continuing.")
+        if vendors:
+            vendor_id = UUID(str(vendors[0]))
+        elif not model.create_vendor_if_missing:
+            raise HTTPException(422, "Vendor was not found. Allow creation or provide an existing vendor name.")
+        else:
+            vendor_created = True
+            vendor_id = uuid5(NAMESPACE_URL, f"tenali-ai-purchase-vendor:{draft_id}:{model.vendor_name.strip().casefold()}")
+
+    line = {"description": model.product_name.strip(), "hsn": model.hsn, "quantity": model.quantity,
+            "rate": model.rate, "gst_rate": model.gst_rate or Decimal("0"),
+            "price_includes_gst": model.price_includes_gst, "new_product": True}
+    purchase = PurchaseCreate.model_validate({
+        "vendor_party_id": vendor_id, "store_id": model.store_id, "purchase_date": model.purchase_date,
+        "account_id": model.account_id, "payment_mode": model.payment_mode.strip() or None,
+        "amount_paid": Decimal("0"), "received_now": model.received_now,
+        "receipt_type": "PRODUCT", "lines": [line],
+    })
+    normalized, calculation = document_preview(db, company, "purchase_create", purchase.model_dump(mode="json"))
+    if model.fully_paid:
+        normalized["amount_paid"] = calculation["total"]
+        normalized, calculation = document_preview(db, company, "purchase_create", normalized)
+    bundle = model.model_dump(mode="json")
+    bundle.update(store_id=None, account_id=None, vendor_party_id=None)
+    calculation.update({
+        "workflow": [
+            {"step": "vendor", "operation": "create" if vendor_created else "reuse", "name": model.vendor_name},
+            {"step": "product", "operation": "create draft product", "name": model.product_name,
+             "selling_price": str(model.selling_price) if model.selling_price is not None else None},
+            {"step": "purchase", "date": model.purchase_date.isoformat(), "total": calculation["total"],
+             "paid": calculation["paid_or_received"], "payment_mode": model.payment_mode},
+            {"step": "stock receipt", "operation": "IN" if normalized["received_now"] else "pending",
+             "quantity": str(model.quantity), "store": store["name"]},
+        ],
+        "vendor_to_create": vendor_created,
+        "purchase_payload": normalized,
+    })
+    return bundle, calculation
+
+
 def apply_action(db, company: str, action: str, target: str | None, values: dict, key: str, preview=None, confirm_text=None):
     if action == "business_payment_create":
         return AccountsService(db).create_business_payment(company, BusinessPaymentCreate.model_validate({**values, "idempotency_key": key}), commit=False)
@@ -210,6 +323,35 @@ def apply_action(db, company: str, action: str, target: str | None, values: dict
         return AccountsService(db).create_business_payment(company, BusinessPaymentCreate.model_validate(payload), commit=False)
     if action == "purchase_create":
         return PurchasesService(db).create_purchase(company, PurchaseCreate.model_validate(payload), commit=False)
+    if action == "purchase_bundle_create":
+        purchase_values = dict(preview["purchase_payload"])
+        vendor_created = bool(preview["vendor_to_create"])
+        if vendor_created:
+            name = " ".join(values["vendor_name"].split())
+            db.execute(text("select pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                       {"key": f"purchase-vendor:{company}:{name.casefold()}"})
+            vendors = db.execute(text("""select id from parties where company_id=:company and is_active
+                and party_type in ('vendor','customer_vendor') and
+                (lower(legal_name)=lower(:name) or lower(coalesce(nickname,''))=lower(:name)) order by id limit 2"""),
+                {"company": company, "name": name}).scalars().all()
+            if len(vendors) > 1:
+                raise HTTPException(409, "More than one matching vendor exists. Review the vendor before submitting.")
+            if vendors:
+                vendor_id = str(vendors[0])
+                vendor_created = False
+            else:
+                vendor = PartiesService(db).create(company, PartyCreate(party_type="vendor", legal_name=name), commit=False)
+                vendor_id = str(vendor["id"])
+        else:
+            vendor_id = str(purchase_values["vendor_party_id"])
+        purchase_values.update(vendor_party_id=vendor_id, idempotency_key=key)
+        product_name = " ".join(values["product_name"].split())
+        prices = ({product_name.casefold(): Decimal(str(values["selling_price"]))}
+                  if values.get("selling_price") is not None else {})
+        purchase = PurchasesService(db).create_purchase(company, PurchaseCreate.model_validate(purchase_values),
+            commit=False, new_product_selling_prices=prices)
+        return {**purchase, "vendor_created": vendor_created,
+                "product_name": product_name, "stock_received": bool(purchase.get("receipt_status") == "RECEIVED")}
     if action == "invoice_create":
         return BillingService(db).create_invoice(company, InvoiceCreate.model_validate(payload), commit=False)
     if action == "party_create":

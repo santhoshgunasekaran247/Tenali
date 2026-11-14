@@ -1,8 +1,9 @@
 # Tenali AI: Phase 0 architecture and implementation plan
 
 Status: architecture and rollout history. Private chat, approved posting, files and
-voice are implemented. Revision 049 extends Operations coverage; its current scope
-and activation gates are documented in section 19. Live migrations require approval.
+voice are implemented. Revision 049 extends Operations coverage; revision 051 adds
+text-triggered workflow preparation. Scope and activation gates are documented in
+sections 19-20. Live migrations require approval.
 
 Phase 1A implementation is now present: platform defaults/limits page, tenant
 entitlements, platform-aware storefront status, tenant AI opt-in, version checks,
@@ -815,7 +816,7 @@ grants. Current feature consent, membership, module and store permissions still 
 | Parties | Existing customer/vendor create and supplied-field patch; no party-deletion API |
 | Accounts | Account create/patch, balances, transactions, bounded journal, manual inflow/outflow/transfer and linked transaction reversal |
 | Business Payments | Standalone purchase/billing/expense outflows with explicit borrowing choice; existing transaction deletion/reversal. Reads list original outflows with `is_reversed`; reversal entries are available through Transactions, not duplicated as payments. |
-| Borrowing & Settlements | Borrow/repay, individual entries and current balances; existing safe transaction-deletion workflows |
+| Borrowing & Settlements | Borrow/repay and lend/collect (two separate per-party balances: what you owe and what they owe you), individual entries and current balances; existing safe transaction-deletion workflows |
 | Refund Settlements | Pending-refund lookup and settlement through the existing reversal transaction; no duplicate money entry |
 | Receivables & Collections | Receivable create, ledger-derived/bad-debt status, reminder/history and customer collection payment |
 | Sales Billing | Existing invoice creation, lookups and cancellation/refund workflow; never delete an issued invoice |
@@ -860,3 +861,181 @@ tax/company settings remain manual. No arbitrary delete APIs or SQL tools are ad
 Downgrade refuses to erase executed Operations outcomes; disable policies to roll back
 availability instead. Schema deployment/restart and workspace activation scope are
 separate operational approvals.
+
+## 20. Text-triggered Operations workflows
+
+Revision `051_ai_operation_workflows` (after `050_ai_purchase_bundle`) adds private,
+durable workflow plans for **all 43 registered Operations actions**, not just purchases.
+Deploy the migration before the API/UI changes. No business schema or action grants
+are changed, and no policies are activated automatically. Live migrations still
+require operational approval.
+
+- A natural-language add/update request immediately proposes its intended action,
+  even with incomplete data. There is no operation/module dropdown to select.
+  The root is the business goal, not the next missing record: "sold to a new
+  customer" starts `invoice_create`, with `party_create` as its customer prerequisite.
+  A later customer/price clarification retains the sale and its earlier quantities.
+  Recent user turns are budgeted before optional old workflow/draft metadata, so a
+  completed purchase cannot crowd the pending sale out of the model context.
+  Provider proposals use typed scalar fields with dotted paths (`lines.0.quantity`),
+  not an opaque JSON-encoded payload string. The server reconstructs bounded,
+  contiguous arrays and rejects duplicate/overlapping paths before ordinary workflow
+  schema validation. Internal draft and workflow API payloads remain unchanged.
+- The server uses the existing action schemas, conditional requirements, permitted
+  read adapters and posting services. Known facts remain in the plan across replies
+  and reloads; missing data is collected together in the side panel.
+  Proposals identify the existing private workflow when continuing it; an explicitly
+  new entry starts a separate plan instead of overwriting another pending operation.
+  Text can update a unique pending prerequisite within that parent; changing a review
+  rotates its identity and rewires parent bindings without orphaning the parent.
+- Unique exact name matches are selected automatically. Ambiguous/partial matches
+  become record choices; **Create new** prepares an allowed prerequisite. An empty,
+  non-truncated search prepares missing parties, products, variants, accounts,
+  brands or categories. Repeated references share a prerequisite.
+  Sales are an exception for missing inventory: select/confirm stocked inventory in
+  Inventory rather than creating an unstocked product as a hidden sales prerequisite.
+- Selecting a record immediately resumes preparation. Creating a prerequisite
+  means preparing, reviewing, approving and submitting its ordinary action. After
+  successful posting, its saved ID is bound to the dependent step automatically.
+  Approval, unsubmitted drafts, failed executions and chat confirmations never count
+  as completed prerequisites.
+- Record-reference fields (including nested lines and update targets) use searchable
+  dropdowns. Typing at least two characters triggers a debounced, cancellable,
+  read-only search scoped to the private workflow and enabled read capability.
+  Searching does not save, create prerequisites, or invalidate an approval.
+  Selecting a result rechecks it server-side, keeps its label, and automatically
+  resumes preparation. Create new is explicit and rechecks permissions/truncation.
+- Model contracts include nested purchase/invoice/transfer line fields. Document
+  workflow input accepts the observed `item_name`, `unit_cost`, `unit_price`, `gst_inclusive`
+  aliases, rejects conflicting values, and keeps line `selling_price` for a missing
+  product's setup. These supplemental facts and `fully_paid` never enter business
+  posting schemas or change their policy fingerprints. The action endpoint exposes
+  a separate `workflow_schema`; ordinary draft editors keep the business schema.
+- Form labels use a required asterisk and accessible required state. Schema-required
+  fields are combined with per-step `required_fields`, calculated by the same server
+  rules that detect missing workflow facts (including conditional payment and nested
+  tax fields). Filled required fields stay marked; unresolved lookups alone do not
+  make optional fields mandatory. Selected names remain inside searchable inputs,
+  without a duplicate "Selected" caption. Compact aligned desktop controls expand
+  to touch-sized controls on mobile; all optional fields remain accessible.
+- Selected products can supply missing descriptions/HSN codes through permitted
+  reads, and exact configured HSN matches supply missing GST rates. Unknown tax,
+  dates and payment choices still require explicit input. Full payment waits for
+  all required details and uses the authoritative document preview total.
+  Invoice `fully_paid` means full collection, calculated from that same preview;
+  it never guesses payment timing, mode or account. Customer billing addresses are
+  reused from the permitted saved party; missing billing address/place of supply
+  stay required, and incomplete seller address/GST setup is a visible prerequisite.
+  Purchases also prepare an allowed vendor-offer prerequisite when its complete,
+  permitted lookup finds no active vendor/product/variant mapping. The purchase
+  waits for that offer to be submitted; linked offer identities cannot be swapped.
+- Current product/variant/offer/brand/category fields are loaded before full
+  replacements; account and party updates retain patch semantics. Updated chat
+  facts invalidate an existing unposted review rather than silently retaining approval.
+- Each step retains the existing preview, reference snapshots, version/hash-bound
+  approval, high-impact typed confirmation and idempotent execution. Steps commit
+  separately, **not as one atomic workflow**: a later failure does not undo a vendor
+  or product already submitted. Refresh/recover resumes from durable execution results;
+  discarding a workflow does not undo submitted records.
+  The UI presents two steps: **Review & check** calculates the preview, then
+  **Confirm & save** explicitly approves that exact version/hash and submits it.
+  Approval remains a server-side gate and audit proof, not a separate user click.
+  A rejected/changed approval prevents submission; an interrupted submission can
+  be recovered through its saved outcome. High-impact typed confirmation remains.
+  The preview explains tax, totals, payment and stock changes; technical details
+  are expandable rather than repeating every form field.
+  If a submission returns a non-JSON server response, the client explicitly directs
+  the user to check the saved outcome before retrying; it never retries the write
+  automatically or presents a JSON-parser exception as the business error.
+- After successful completion, the panel asks whether to start a relevant next entry
+  (for example purchase receipt/payment) or another entry. Only that explicit choice
+  starts the next workflow. Invoice follow-up opens Collections instead of creating
+  a duplicate receivable, and is omitted for a fully collected sale.
+- Missing update targets are never silently converted into creates. Ambiguous or
+  truncated searches never automatically create duplicates. Disabled capabilities
+  and missing business facts appear as explicit blockers. Stores and HSN masters
+  remain managed through their permitted modules, not invented by AI.
+  Create actions have no update target: stray model targets are cleared during
+  preparation, including existing plans, before constructing a strict draft.
+- Chat answers may be short or line-by-line ("Main Store / 11 Nov 2026 / 5% / yes").
+  The server coerces them using the workflow schema: yes/no become booleans; dates
+  (`11 Nov 2026`, `today`) become ISO dates; and `5%`, `Rs 10` and `1,000` become numbers.
+  Dropdown fields (`receipt_type`, `payment_mode`, `place_of_supply`, `party_type`) accept only
+  listed values or known aliases (NEFT→bank, GPay→upi, `33`/`Tamil Nadu`→`33 - Tamil Nadu`,
+  supplier→vendor, both→customer_vendor). `party_type` mirrors `PartiesService.ALLOWED_PARTY_TYPES`.
+  Free text such as "goods received" is dropped and the user is asked to choose from the list.
+  `workflow_schema` exposes these as `enum` with `x-enum-labels`, rendered as selects.
+  On a follow-up turn, a line description does not replace the product already linked
+  to that line. Each field shows one message; fields bound to a prerequisite show
+  "Complete the prerequisite step first" rather than raw UUID validation errors.
+- The provider tolerates the same JSON reply emitted twice (it uses one copy);
+  conflicting repeated objects remain `invalid_response`. An unnamed stock question
+  ("what is my stock?") is routed to the per-store `reconciliation` read instead of
+  an invalid empty product search. Read arguments sent in either the catalogue or
+  the business shape are normalised to the shape the capability expects, when no
+  date or status filter is present. Read argument schemas (and capability
+  fingerprints) are unchanged.
+- Chat questions are answered from verified data in plain language, not by matching
+  exact sentences. For a question (no draft), the reply is the verified read output,
+  headed "From your Tenali records — <plain capability name> (count)": one bullet per
+  record with its title and the key value first (balance, stock, total, status),
+  rupee amounts with Indian grouping (₹12,34,567.50), dates as "14 Nov 2026", and
+  internal IDs, false flags and developer notes hidden. A complete (non-truncated) result
+  set gets an exact total. Model text written before the data was seen ("I need the exact name",
+  "shall I fetch it?") and "No draft was saved" are not shown. Older stored replies that
+  contain raw lookup JSON are rewritten into the same readable form at display time
+  (stored content is unchanged; rendering stays plain text).
+  The context carries `today` in business time (IST), so relative periods map to dates.
+  Reads tolerate how people ask, in a bounded, read-only ladder:
+  descriptive words become typed filters (today/yesterday/this or last week/month →
+  date range; unpaid/pending/due/paid/partial/cancelled → that capability's status;
+  vendor/supplier/customer → party type), and generic words are dropped. A query made
+  only of such words is filtered first; otherwise the literal name is searched first
+  so names containing those words still match. Then come singular forms and the longest
+  word, 3-letter prefixes ranked by similarity (typos), and for listable reads
+  (accounts, stores, parties, brands, categories, HSN) the full list with a note.
+  An unrecognised store filter retries across permitted stores with a note.
+  `as_of` equal to today means current state and is ignored for current-state reads;
+  any historical `as_of` on those reads is still rejected. Account-journal search text
+  becomes its date range. A word the model places in `status` for a catalogue read
+  (which has no status filter, e.g. parties `status: "vendor"`) becomes search text. Workflow record resolution does not use this fuzzy ladder,
+  so a loose match is never auto-selected for a write.
+- Purchase and invoice steps carry a live `estimate` once lines are priced:
+  subtotal, GST and total per line and overall (with company GST/inclusive defaults).
+  For sales and received purchases it also shows stock before → after per product and
+  store, plus the source (sales invoice stock out, purchase receipt stock in).
+  The review preview repeats stock rows with product and store names. Review recomputes
+  everything authoritatively.
+- Invoice place of supply defaults to the customer GSTIN state, else the store
+  `state_code`, else the seller GSTIN. Missing seller address or GSTIN is reported on the
+  store field, with links to Company Setup (all stores) and Stores (one store).
+
+### Connected module boundaries
+
+These are dependencies and posting effects, not separate duplicate AI writes:
+
+| Root operation | Before posting | Linked effects / subsequent work |
+|---|---|---|
+| Sales Billing | Customer, store, existing inventory/variant, HSN, billing/seller details; account only when collecting | Invoice + stock OUT + linked receivable; received payment adds the account inflow in the same posting. Unpaid balance continues in Collections. |
+| Purchases | Vendor, store, inventory/variant, vendor offer, HSN; account when paying | Purchase + payment/account outflow when paid + stock IN when received. Pending receipt/payment is offered afterwards. |
+| Collections | Existing receivable/invoice, payment account | Receipt updates the linked invoice/receivable and account ledger; never a second manual inflow. |
+| Accounts / Borrowings / Refunds | Resolved accounts, parties and source document/refund where applicable | Existing posting/reversal/settlement services own balances and linked ledgers. Cash/bank accounts are not automatically required just to create a party. |
+| Inventory | Product/variant, brand/category, vendor mapping or permitted stock stores as relevant | Product/offer creation does not create owned stock. Explicit adjustment/transfer/reversal services own stock movements. |
+| Parties / masters | Required identity and duplicate selection | A prerequisite binds back to its parent goal. A standalone party request does not invent an unrelated invoice or purchase. |
+| Cancellation / deletion | Existing target and authoritative dependency preview | Existing services own stock/payment reversals and pending refunds; destructive confirmation remains separate. |
+| Reports | Permitted report/date inputs | Private read-only output, not a financial/stock posting. |
+
+Database foreign keys link invoices to customer/store/account, receivables to
+invoice/customer, receipts to receivable/account, and stock to product/variant/store.
+Stock `reference_type/reference_id` and account `source_type/source_id` are
+application-managed links: schema introspection alone cannot describe their posting
+semantics, so the registered business services remain authoritative.
+
+Plans have workspace/user RLS, conversation ownership, optimistic versions, bounded
+payloads, client-key replay protection and a maximum seven-day lifetime. Conversation
+deletion and the retention scrub command remove plan content as well as draft content.
+Provider context includes bounded recent workflow facts within the existing paid-input
+limit; preparation requires no extra model call.
+
+The existing manual boundaries remain: accounting-period close/reopen, workspace
+reset, identity linking and administrative configuration are not AI actions.

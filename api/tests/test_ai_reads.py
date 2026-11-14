@@ -103,7 +103,7 @@ class ReadUnitTests(unittest.TestCase):
                                 lookups=(product_lookup(),))
         with patch("app.ai.service.current_identity", return_value=service.identity), \
              patch("app.ai.service.available_capabilities", return_value=[]), \
-             patch("app.ai.service.execute_lookup") as execute:
+             patch("app.ai.service.execute_read") as execute:
             failed = service.read_results(uuid4(), uuid4(), result, [], {"version": 1})
             execute.assert_not_called()
             self.assertIsNone(failed.output)
@@ -111,7 +111,7 @@ class ReadUnitTests(unittest.TestCase):
             self.assertEqual(failed.input_tokens, 50)
             self.assertEqual(failed.output_tokens, 30)
 
-    def test_scoped_lookup_resolves_named_reference_in_proposed_draft(self):
+    def test_scoped_lookup_keeps_names_for_the_persistent_workflow(self):
         service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
         service.conversation = Mock(return_value={"status": "active"})
         service.require_enabled = Mock(return_value={"version": 1})
@@ -126,12 +126,12 @@ class ReadUnitTests(unittest.TestCase):
         offered = [{"key": "stores"}]
         with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
              patch("app.ai.service.available_capabilities", return_value=offered), \
-             patch("app.ai.service.execute_lookup", return_value=facts):
+             patch("app.ai.service.execute_read", return_value=facts):
             resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
-        self.assertEqual(json.loads(resolved.draft.payload_json)["store_id"], store_id)
-        self.assertIn("Verified Tenali lookup", resolved.output.reply)
+        self.assertEqual(json.loads(resolved.draft.payload_json)["store_id"], "Main Store")
+        self.assertIn("From your Tenali records", resolved.output.reply)
 
-    def test_server_automatically_looks_up_named_draft_references(self):
+    def test_reference_search_is_deferred_to_the_workflow_coordinator(self):
         service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
         service.conversation = Mock(return_value={"status": "active"})
         service.require_enabled = Mock(return_value={"version": 1})
@@ -150,15 +150,15 @@ class ReadUnitTests(unittest.TestCase):
                     "more_matches": False, "note": "Scoped results"}
         with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
              patch("app.ai.service.available_capabilities", return_value=offered), \
-             patch("app.ai.service.execute_lookup", side_effect=lookup) as execute:
+             patch("app.ai.service.execute_read", side_effect=lookup) as execute:
             resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
         values = json.loads(resolved.draft.payload_json)
-        self.assertEqual(values["store_id"], store_id)
-        self.assertEqual(values["account_id"], account_id)
-        self.assertEqual(execute.call_count, 2)
-        self.assertNotIn("Verified Tenali lookup", resolved.output.reply)
+        self.assertEqual(values["store_id"], "Main Store")
+        self.assertEqual(values["account_id"], "Main Account")
+        self.assertEqual(execute.call_count, 0)
+        self.assertNotIn("From your Tenali records", resolved.output.reply)
 
-    def test_ambiguous_named_target_does_not_produce_a_draft(self):
+    def test_ambiguous_target_survives_for_workflow_record_selection(self):
         service = AssistantService(Mock(), {"company_id": uuid4(), "user_id": uuid4()})
         service.conversation = Mock(return_value={"status": "active"})
         service.require_enabled = Mock(return_value={"version": 1})
@@ -172,10 +172,10 @@ class ReadUnitTests(unittest.TestCase):
         offered = [{"key": "products"}]
         with patch("app.ai.service.lock_policy"), patch("app.ai.service.current_identity", return_value=service.identity), \
              patch("app.ai.service.available_capabilities", return_value=offered), \
-             patch("app.ai.service.execute_lookup", return_value=facts):
+             patch("app.ai.service.execute_read", return_value=facts):
             resolved = service.read_results(uuid4(), uuid4(), result, offered, {"version": 1})
-        self.assertIsNone(resolved.draft)
-        self.assertIn("I couldn’t match target to a unique permitted record, so I didn’t save a draft", resolved.output.reply)
+        self.assertEqual(resolved.draft.target_id, "Copper Tumbler")
+        self.assertNotIn("didn’t save a draft", resolved.output.reply)
 
 
 @unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "Rollback-only read fixtures; provider always mocked")
@@ -256,7 +256,7 @@ class ReadDatabaseTests(TenantDatabaseCase):
             with patch("app.ai.service.OpenAIProvider.respond", return_value=response) as provider:
                 sent = service.send(conversation["id"], payload)
                 self.assertEqual(sent["items"][0]["status"], "completed")
-                self.assertIn("Verified Tenali lookup", sent["items"][1]["content"])
+                self.assertIn("From your Tenali records", sent["items"][1]["content"])
                 self.assertIn("Lamp fixture", sent["items"][1]["content"])
                 self.assertLessEqual(len(sent["items"][1]["content"]), 12000)
                 service.send(conversation["id"], payload)
@@ -278,7 +278,7 @@ class ReadDatabaseTests(TenantDatabaseCase):
                 return ProviderResult(AssistantOutput(reply="Checking.", clarification=None),
                                       50, 0, 30, "mock-revoked", lookups=(product_lookup(),))
             with patch("app.ai.service.OpenAIProvider.respond", side_effect=provider), \
-                 patch("app.ai.service.execute_lookup") as execute:
+                 patch("app.ai.service.execute_read") as execute:
                 sent = service.send(conversation["id"], MessageCreate(content="Find lamps", client_key=uuid4()))
                 execute.assert_not_called()
                 self.assertEqual(sent["items"][0]["status"], "failed")

@@ -41,6 +41,9 @@ class BorrowingSummaryOut(BaseModel):
     borrowed_amount: float
     repaid_amount: float
     net_outstanding: float
+    lent_amount: float = 0
+    collected_amount: float = 0
+    net_receivable: float = 0
 
 
 class BorrowingSummaryResponse(BaseModel):

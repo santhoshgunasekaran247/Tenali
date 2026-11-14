@@ -19,6 +19,7 @@ from app.schemas.purchases import PurchaseCreate, PurchasePaymentCreate, Purchas
 from app.schemas.money import PositiveMoney, SignedMoney
 from app.services.document_cancellation import Cancellation
 from datetime import date
+from decimal import Decimal
 
 
 class CancellationDraft(Cancellation):
@@ -96,7 +97,7 @@ class TransactionReverseDraft(TransactionReverseCreate):
 class BorrowingDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     party_id: UUID
-    direction: Literal["borrow", "repay"]
+    direction: Literal["borrow", "repay", "lend", "collect"]
     amount: PositiveMoney
     transaction_date: date
     account_id: UUID | None = None
@@ -169,8 +170,30 @@ class GSTReconcileDraft(BaseModel):
     from_date: date
     to_date: date
 
+
+class PurchaseBundleDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    vendor_name: str = Field(default="", max_length=300)
+    create_vendor_if_missing: bool = True
+    vendor_party_id: UUID | None = None
+    product_name: str = Field(default="", max_length=200)
+    quantity: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=3)
+    rate: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    hsn: str | None = Field(default=None, pattern=r"^\d{4,8}$")
+    gst_rate: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
+    price_includes_gst: bool | None = None
+    selling_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    store_name: str = Field(default="", max_length=120)
+    store_id: UUID | None = None
+    purchase_date: date | None = None
+    payment_mode: str = Field(default="", max_length=50)
+    account_name: str = Field(default="", max_length=200)
+    account_id: UUID | None = None
+    fully_paid: bool | None = None
+    received_now: bool | None = None
+
 ActionKey = Literal[
-    "expense_create", "purchase_create", "invoice_create", "party_create", "party_update",
+    "expense_create", "purchase_create", "purchase_bundle_create", "invoice_create", "party_create", "party_update",
     "product_create", "product_update", "stock_adjust", "stock_transfer",
     "purchase_payment", "collection_payment",
     "invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
@@ -217,8 +240,10 @@ ACTIONS = {action.key: action for action in (
            "Draft an expense payment, not a purchase payment. Requires amount, source account, mode, date and explicit borrowing choice."),
     Action("purchase_create", "/purchases", PurchaseCreate, None,
            "Draft a purchase bill with lines/store/vendor/payment/received_now. Existing service computes taxes and inventory later; never separately duplicate stock."),
+        Action("purchase_bundle_create", "/purchases", PurchaseBundleDraft, None,
+            "Prepare one reviewed chain for vendor (reuse an exact match or create if absent), new product, purchase, full payment and stock receipt. Resolve names in the server. HSN/SAC must be an active company master. No separate stock adjustment."),
     Action("invoice_create", "/billing", InvoiceCreate, None,
-           "Draft a sales invoice with resolved customer/store/lines/payment. No invoice update or cancellation."),
+           "Customer and inventory → sales invoice → stock OUT and linked Collections receivable. Received payment also creates the account inflow in the same posting; never add a duplicate stock adjustment or account transaction."),
     Action("party_create", "/parties", PartyCreateDraft, None, "Draft a vendor/customer record, clarify possible duplicates."),
     Action("party_update", "/parties", PartyUpdateDraft, "parties", "Draft a patch to a resolved vendor/customer. Only supplied fields change."),
     Action("product_create", "/inventory", ProductInput, None, "Draft a product. No stock is added by product creation."),
@@ -240,7 +265,7 @@ ACTIONS = {action.key: action for action in (
     Action("account_update", "/accounts", AccountUpdateDraft, "accounts", "Patch supplied account fields only; opening balances cannot change after transactions."),
     Action("account_transaction_create", "/accounts", TransactionCreateDraft, None, "Post one manual inflow/outflow/transfer. Do not duplicate invoice, purchase or borrowing payments."),
     Action("account_transaction_reverse", "/accounts", TransactionReverseDraft, "account_transactions", "Reverse one transaction through the existing linked-ledger workflow; never reverse a reversal."),
-    Action("borrowing_create", "/settlements", BorrowingDraft, None, "Record a borrowing or repayment with explicit account-transaction choice; repayments cannot exceed outstanding."),
+    Action("borrowing_create", "/settlements", BorrowingDraft, None, "Party loan entry with explicit account-transaction choice; repay/collect cannot exceed outstanding."),
     Action("refund_settle", "/settlements/refunds", RefundDraft, "refund_settlements", "Settle an existing pending cancellation refund in Accounts; no duplicate money entry."),
     Action("receivable_create", "/collections", ReceivableDraft, None, "Create a receivable with due date; invoice-linked amount/customer must match the invoice."),
     Action("receivable_status", "/collections", ReceivableStatusDraft, "receivables", "Separate high-impact ledger-derived status or bad-debt change; requires bad-debt reason. No fabricated settlement."),
@@ -268,13 +293,14 @@ ACTIONS = {action.key: action for action in (
 
 class DraftProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: ActionKey
+    action: ActionKey = Field(description="The user's end operation, NOT a missing prerequisite. A sale to a new customer is invoice_create, not party_create.")
     target_id: UUID | Annotated[str, Field(min_length=2, max_length=200)] | None
-    payload_json: str = Field(max_length=10000)
+    payload_json: str = Field(max_length=10000, description="All known facts for the root operation, including earlier user messages. Incomplete payloads are valid; omit unknowns. Put record names in reference ID fields.")
+    workflow_id: UUID | None = None
 
 
 class ActionAssistantOutput(ReadAssistantOutput):
-    draft: DraftProposal | None
+    draft: DraftProposal | None = Field(description="Required for any supported operational request, even with missing information. Null only for informational or unsupported requests. Prerequisite creation is handled by the server.")
 
 
 class DraftCreate(BaseModel):

@@ -18,6 +18,10 @@ def main():
             on c.id=d.conversation_id and c.company_id=d.company_id and c.user_id=d.user_id
             where d.status<>'discarded' and (d.expires_at<=now() or c.expires_at<=now() or c.status='deleted')""")).scalar_one()
         print(f"Expired/deleted private drafts to scrub: {drafts}")
+        workflows = db.execute(text("""select count(*) from ai_operation_workflows w join ai_conversations c
+            on c.id=w.conversation_id and c.company_id=w.company_id and c.user_id=w.user_id
+            where w.status<>'discarded' and (w.expires_at<=now() or c.expires_at<=now() or c.status='deleted')""")).scalar_one()
+        print(f"Expired/deleted private workflows to scrub: {workflows}")
         reports = db.execute(text("""select count(*) from ai_report_files r join ai_executions e on e.id=r.id
             join ai_conversations c on c.id=e.conversation_id and c.company_id=r.company_id and c.user_id=r.user_id
             where r.content is not null and (r.expires_at<=now() or c.expires_at<=now() or c.status='deleted')""")).scalar_one()
@@ -34,6 +38,9 @@ def main():
             approved_at=null,approved_version=null,version=version+1 from ai_conversations c
             where c.id=d.conversation_id and c.company_id=d.company_id and c.user_id=d.user_id
             and d.status<>'discarded' and (d.expires_at<=now() or c.expires_at<=now() or c.status='deleted')"""))
+        db.execute(text("""update ai_operation_workflows w set plan='{}',status='discarded',version=version+1
+            from ai_conversations c where c.id=w.conversation_id and c.company_id=w.company_id and c.user_id=w.user_id
+            and w.status<>'discarded' and (w.expires_at<=now() or c.expires_at<=now() or c.status='deleted')"""))
         db.execute(text("""update ai_attachments a set content=null,extracted_text=null,file_name='Removed'
             from ai_conversations c where c.id=a.conversation_id and c.company_id=a.company_id and c.user_id=a.user_id
             and (a.expires_at<=now() or c.expires_at<=now() or c.status='deleted')"""))

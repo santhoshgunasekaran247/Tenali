@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.ai.actions import ACTIONS, ActionAssistantOutput, DraftApproval, DraftCreate, DraftEdit, DraftProposal
 from app.ai.drafts import DraftService, action_policies, available_actions, bounded_payload, digest, reject_extra_fields
+from app.ai.business_writes import purchase_bundle_preview
 from app.ai.provider import OpenAIProvider, ProviderResult
 from app.ai.schemas import AssistantOutput, ConversationCreate, MessageCreate
 from app.ai.service import AssistantService
@@ -21,12 +22,23 @@ from test_ai_reads import ReadDatabaseTests
 
 
 class DraftUnitTests(unittest.TestCase):
+    def test_purchase_bundle_keeps_missing_hsn_as_a_mandatory_review_error(self):
+        values = {"vendor_name": "Tiger Glass", "create_vendor_if_missing": True, "product_name": "Glass Tumbler",
+                  "quantity": "100", "rate": "10", "hsn": None, "gst_rate": "5", "price_includes_gst": True,
+                  "selling_price": "15", "store_name": "Main Store", "purchase_date": "2026-11-12",
+                  "payment_mode": "cash", "account_name": "Main Account", "fully_paid": True, "received_now": True}
+        db = Mock()
+        db.info = {"tenant_context": {"role": "owner", "modules": None, "store_ids": None}}
+        with self.assertRaises(HTTPException) as error:
+            purchase_bundle_preview(db, str(uuid4()), values, str(uuid4()))
+        self.assertIn("HSN/SAC is required", str(error.exception.detail))
+
     def test_operational_allowlist_separates_high_impact_and_excludes_admin(self):
-        self.assertEqual(len(ACTIONS), 42)
+        self.assertEqual(len(ACTIONS), 43)
         self.assertEqual({key for key, action in ACTIONS.items() if action.high_impact},
                          {"invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
                           "account_transaction_reverse", "stock_transfer_reverse", "product_merge", "receivable_status"})
-        self.assertTrue({"party_create", "party_update", "product_create", "product_update"} <= set(ACTIONS))
+        self.assertTrue({"party_create", "party_update", "product_create", "product_update", "purchase_bundle_create"} <= set(ACTIONS))
         for action in ("delete", "company_update", "period_reopen", "workspace_reset"):
             with self.assertRaises(ValidationError):
                 DraftProposal(action=action, target_id=None, payload_json="{}")
@@ -64,7 +76,9 @@ class DraftUnitTests(unittest.TestCase):
     def test_provider_proposes_only_a_draft_and_preserves_metering_without_tools(self):
         output = {"reply": "Please review this private draft.", "clarification": None, "lookups": [],
                   "draft": {"action": "party_create", "target_id": None,
-                            "payload_json": json.dumps({"party_type": "customer", "legal_name": "Example"})}}
+                            "workflow_id": None,
+                            "fields": [{"path": "party_type", "value": "customer"},
+                                       {"path": "legal_name", "value": "Example"}]}}
         response = SimpleNamespace(status="completed", id="mock-draft", output_text=json.dumps(output),
             usage=SimpleNamespace(input_tokens=50, output_tokens=25, input_tokens_details=SimpleNamespace(cached_tokens=0)))
         with patch("app.ai.provider.OpenAI") as client:
@@ -78,6 +92,31 @@ class DraftUnitTests(unittest.TestCase):
         self.assertFalse(options["store"])
         self.assertNotIn("tools", options)
         self.assertEqual(options["text"]["format"]["schema"]["additionalProperties"], False)
+
+    def test_typed_operation_fields_rebuild_nested_payloads_without_embedded_json(self):
+        from app.ai.provider import OperationProposal, response_schema
+        proposal = OperationProposal(action="invoice_create", target_id=None, workflow_id=None, fields=[
+            {"path": "customer_party_id", "value": "Vijay"},
+            {"path": "lines.0.product_id", "value": "Copper bottle"},
+            {"path": "lines.0.quantity", "value": 10},
+            {"path": "lines.0.rate", "value": "30"},
+            {"path": "lines.0.price_includes_gst", "value": True},
+            {"path": "lines.0.gst_rate", "value": 5},
+        ])
+        values = json.loads(proposal.proposal().payload_json)
+        self.assertEqual(values["lines"][0]["quantity"], 10)
+        self.assertEqual(values["customer_party_id"], "Vijay")
+        self.assertIs(values["lines"][0]["price_includes_gst"], True)
+        schema = response_schema(ActionAssistantOutput)
+        self.assertNotIn("payload_json", schema["$defs"]["OperationProposal"]["properties"])
+        self.assertIn("fields", schema["$defs"]["OperationProposal"]["required"])
+        for fields in (
+            [{"path": "lines.1.rate", "value": 30}],
+            [{"path": "lines.0.rate", "value": 30}, {"path": "lines.0.rate", "value": 40}],
+            [{"path": "lines", "value": "bad"}, {"path": "lines.0.rate", "value": 30}],
+        ):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                OperationProposal(action="invoice_create", target_id=None, workflow_id=None, fields=fields).proposal()
 
     def test_store_limited_and_module_restricted_actions_are_not_offered(self):
         items = [{"key": key, "enabled": True, "compatible": True, "tenant_allowed": True} for key in ACTIONS]

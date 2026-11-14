@@ -35,8 +35,15 @@ const EMPTY_FORM: BorrowingForm = {
 };
 
 function formatMoney(value: number): string {
-  return value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const DIRECTION_LABELS: Record<BorrowingDirection, string> = {
+  borrow: "Borrowed from party",
+  repay: "Repaid to party",
+  lend: "Lent to party",
+  collect: "Collected from party",
+};
 
 export function SettlementsPage() {
   const [parties, setParties] = useState<Party[]>([]);
@@ -124,7 +131,7 @@ export function SettlementsPage() {
       <section className="ops-grid">
         <article className="ops-card">
           <div className="ops-card-head">
-            <h2>Record Borrow / Repay</h2>
+            <h2>Record Borrow / Lend</h2>
           </div>
           <form className="ops-form" onSubmit={submit}>
             <PartySelect parties={parties} value={form.party_id} label="Party" required
@@ -138,8 +145,7 @@ export function SettlementsPage() {
                   setForm((prev) => ({ ...prev, direction: event.target.value as BorrowingDirection }))
                 }
               >
-                <option value="borrow">Borrowed</option>
-                <option value="repay">Repaid</option>
+                {Object.entries(DIRECTION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
 
@@ -236,17 +242,20 @@ export function SettlementsPage() {
                   <th>Party</th>
                   <th>Borrowed</th>
                   <th>Repaid</th>
-                  <th>Net Outstanding</th>
+                  <th>You owe</th>
+                  <th>Lent</th>
+                  <th>Collected</th>
+                  <th>They owe you</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4}>Loading...</td>
+                    <td colSpan={7}>Loading...</td>
                   </tr>
                 ) : summary.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No borrowing records yet.</td>
+                    <td colSpan={7}>No borrowing or lending records yet.</td>
                   </tr>
                 ) : (
                   summary.map((row) => (
@@ -255,6 +264,9 @@ export function SettlementsPage() {
                       <td>{formatMoney(row.borrowed_amount)}</td>
                       <td>{formatMoney(row.repaid_amount)}</td>
                       <td>{formatMoney(row.net_outstanding)}</td>
+                      <td>{formatMoney(row.lent_amount ?? 0)}</td>
+                      <td>{formatMoney(row.collected_amount ?? 0)}</td>
+                      <td>{formatMoney(row.net_receivable ?? 0)}</td>
                     </tr>
                   ))
                 )}
@@ -267,7 +279,7 @@ export function SettlementsPage() {
       <section className="ops-grid ops-grid-single">
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
-            <h2>Borrowing Timeline</h2>
+            <h2>Borrowing &amp; Lending Timeline</h2>
             <span className="catalog-count">{entries.length} entries</span>
           </div>
 
@@ -293,7 +305,7 @@ export function SettlementsPage() {
                     <tr key={entry.id}>
                       <td>{entry.transaction_date}</td>
                       <td>{entry.party_name}</td>
-                      <td>{entry.direction === "borrow" ? "Borrowed" : "Repaid"}{entry.is_reversed ? " (reversed)" : ""}</td>
+                      <td>{DIRECTION_LABELS[entry.direction] || entry.direction}{entry.is_reversed ? " (reversed)" : ""}</td>
                       <td>{formatMoney(entry.amount)}</td>
                       <td>{entry.reference || "-"}</td>
                       <td>{entry.notes || "-"}</td>

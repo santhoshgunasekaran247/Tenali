@@ -67,7 +67,7 @@ create table if not exists borrowings (
     id uuid primary key default gen_random_uuid(),
     company_id uuid not null references companies(id),
     party_id uuid not null references parties(id),
-    direction text not null check (direction in ('borrow', 'repay')),
+    direction text not null check (direction in ('borrow', 'repay', 'lend', 'collect')),
     amount numeric(14,2) not null check (amount > 0),
     transaction_date date not null default current_date,
     account_id uuid references accounts(id),

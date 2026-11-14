@@ -128,6 +128,15 @@ def apply_ai_draft_migration(connection):
         migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "049_ai_operations.py"))
         with Operations.context(MigrationContext.configure(connection)):
             migration["upgrade"]()
+    from sqlalchemy import text
+    if not connection.execute(text("select 1 from ai_action_controls where key='purchase_bundle_create'")).first():
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "050_ai_purchase_bundle.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
+    if not inspect(connection).has_table("ai_operation_workflows"):
+        migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "051_ai_operation_workflows.py"))
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["upgrade"]()
 
 
 def apply_ai_business_read_migration(connection):

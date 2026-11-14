@@ -496,7 +496,7 @@ export type PeriodLockReopenInput = {
   reopen_reason?: string;
 };
 
-export type BorrowingDirection = "borrow" | "repay";
+export type BorrowingDirection = "borrow" | "repay" | "lend" | "collect";
 
 export type BorrowingEntry = {
   id: string;
@@ -534,6 +534,9 @@ export type BorrowingSummary = {
   borrowed_amount: number;
   repaid_amount: number;
   net_outstanding: number;
+  lent_amount?: number;
+  collected_amount?: number;
+  net_receivable?: number;
 };
 
 export type BorrowingSummaryResponse = {

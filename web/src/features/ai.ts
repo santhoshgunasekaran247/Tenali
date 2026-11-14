@@ -23,6 +23,7 @@ export type DraftAction = {
   high_impact: boolean;
   module_path: string | null;
   schema: Record<string, unknown>;
+  workflow_schema?: Record<string, unknown>;
 };
 export type ActionDraft = {
   id: string; action_key: string; target_id: string | null; payload: Record<string, unknown>;
@@ -31,9 +32,41 @@ export type ActionDraft = {
   approved_at: string | null; expires_at: string; created_at?: string;
   high_impact: boolean;
 };
+export type WorkflowIssue = { field: string; message: string; links?: { label: string; path: string }[] };
+export type WorkflowEstimate = {
+  subtotal: string; gst_total: string; total: string;
+  lines: { description: string; quantity: string; rate: string; gst_rate: string; price_includes_gst: boolean; taxable: string; gst: string; total: string }[];
+  stock?: { product: string; store: string; current: string; change: string; after: string }[];
+  stock_source?: string; stock_note?: string;
+};
+export type WorkflowChoice = { field: string; query: string; capability: string;
+  options: { value: string; label: string }[]; more_matches: boolean; can_create: boolean; manual_path?: string | null };
+export type WorkflowStep = {
+  required_fields?: string[];
+  id: string; action: string; target: string | null; payload: Record<string, unknown>;
+  draft_id: string | null; draft_status?: ActionDraft["status"];
+  issues: WorkflowIssue[]; choices: WorkflowChoice[];
+  estimate?: WorkflowEstimate | null;
+  labels: Record<string, { value: string; label: string }>;
+  bindings: Record<string, { step_id: string; path: (string | number)[] }>;
+  offer_steps?: Record<string, string>;
+};
+export type WorkflowNext = { action: string; target: string | null; payload: Record<string, unknown>;
+  label: string; path?: string };
+export type OperationWorkflow = {
+  id: string; action_key: string; status: "active" | "completed"; version: number;
+  operation_summary?: string;
+  plan: { steps: WorkflowStep[]; next: WorkflowNext[] };
+};
 
 export function draftDescription(draft: ActionDraft): string {
   const payload = draft.payload;
+  if (draft.action_key === "purchase_bundle_create") {
+    const vendor = typeof payload.vendor_name === "string" && payload.vendor_name.trim() ? payload.vendor_name.trim() : "Vendor required";
+    const product = typeof payload.product_name === "string" && payload.product_name.trim() ? payload.product_name.trim() : "Product required";
+    const quantity = payload.quantity == null ? "" : ` x ${String(payload.quantity)}`;
+    return `${vendor} · ${product}${quantity}`;
+  }
   if (draft.action_key === "purchase_create" || draft.action_key === "invoice_create") {
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     const first = lines[0] && typeof lines[0] === "object" && !Array.isArray(lines[0])
@@ -75,7 +108,15 @@ export async function aiRequest<T>(path: string, options?: RequestInit): Promise
   const response = await tenantFetch("/api/ai" + path, {
     ...options, headers: { "Content-Type": "application/json", ...options?.headers },
   });
-  const body: unknown = await response.json();
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new Error(response.ok
+      ? "The AI server returned an invalid response. Check saved outcome before submitting again."
+      : `The AI request failed with a server error (HTTP ${response.status}). Check saved outcome before submitting again.`);
+  }
   if (!response.ok) {
     let message = "Unable to complete the AI request.";
     if (body && typeof body === "object" && "detail" in body) {
@@ -105,6 +146,23 @@ export const ai = {
   settings: () => aiRequest<CompanyFeatures>("/settings"),
   capabilities: () => aiRequest<{ items: ReadCapability[] }>("/capabilities"),
   actions: () => aiRequest<{ items: DraftAction[] }>("/actions"),
+  workflows: (id: string, offset = 0) =>
+    aiRequest<{ items: OperationWorkflow[] }>(`/conversations/${id}/workflows?offset=${offset}`),
+  searchWorkflow: (workflow: OperationWorkflow, step: WorkflowStep, field: string, query: string, signal?: AbortSignal) =>
+    aiRequest<WorkflowChoice>(`/workflows/${workflow.id}/search?${new URLSearchParams({ step_id: step.id, field, query })}`, { signal }),
+  startWorkflow: (id: string, action: string, target: string | null, payload: Record<string, unknown>, client_key: string) =>
+    aiRequest<OperationWorkflow>(`/conversations/${id}/workflows`, { method: "POST",
+      body: JSON.stringify({ action, target, payload, client_key }) }),
+  editWorkflow: (workflow: OperationWorkflow, step: WorkflowStep, target: string | null, payload: Record<string, unknown>,
+    create_field?: string, draft_version?: number, selection?: { field: string; query: string }) =>
+    aiRequest<OperationWorkflow>(`/workflows/${workflow.id}`, { method: "PATCH",
+      body: JSON.stringify({ expected_version: workflow.version, step_id: step.id, target, payload, create_field, draft_version,
+        selection_field: selection?.field, selection_query: selection?.query }) }),
+  continueWorkflow: (workflow: OperationWorkflow) =>
+    aiRequest<OperationWorkflow>(`/workflows/${workflow.id}/continue?expected_version=${workflow.version}`, { method: "POST" }),
+  discardWorkflow: (workflow: OperationWorkflow) =>
+    aiRequest<{ discarded: boolean }>(`/workflows/${workflow.id}?expected_version=${workflow.version}`, { method: "DELETE" }),
+  draft: (id: string) => aiRequest<ActionDraft>(`/drafts/${id}`),
   drafts: (id: string, offset = 0) => aiRequest<{ items: ActionDraft[] }>(`/conversations/${id}/drafts?offset=${offset}`),
   editDraft: (draft: ActionDraft, payload: Record<string, unknown>) =>
     aiRequest<ActionDraft>(`/drafts/${draft.id}`, { method: "PATCH", body: JSON.stringify({ payload, expected_version: draft.version }) }),
@@ -116,6 +174,16 @@ export const ai = {
   executeDraft: (draft: ActionDraft, confirm_text?: string) =>
     aiRequest<AIExecution>(`/drafts/${draft.id}/execute`, { method: "POST",
       body: JSON.stringify({ expected_version: draft.version, expected_hash: draft.payload_hash, confirm_text }) }),
+  submitReviewedDraft: async (draft: ActionDraft, confirm_text?: string): Promise<AIExecution> => {
+    if (draft.status !== "validated" && draft.status !== "approved") {
+      throw new Error("Review the current values before saving.");
+    }
+    const approved = draft.status === "validated" ? await ai.approveDraft(draft) : draft;
+    if (approved.id !== draft.id || approved.status !== "approved" || approved.version !== draft.version || approved.payload_hash !== draft.payload_hash) {
+      throw new Error("Reviewed values changed. Refresh and review again before saving.");
+    }
+    return ai.executeDraft(approved, confirm_text);
+  },
   execution: (draft: ActionDraft) =>
     aiRequest<{ execution: AIExecution | null }>(`/drafts/${draft.id}/execution?expected_version=${draft.version}`),
   upload: (id: string, file_name: string, mime_type: string, data_base64: string) =>

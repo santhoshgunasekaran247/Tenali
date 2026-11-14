@@ -21,10 +21,10 @@ from app.services.period_lock_service import assert_period_open
 from app.services.purchases_service import PurchasesService
 from app.services.refund_settlements import RefundSettle, RefundSettlementsService
 from app.services.settlements_service import SettlementsService
-from app.services.borrowing_ledger import available_repayment
+from app.services.borrowing_ledger import LEDGER_SIDE, OPENING_DIRECTIONS, SETTLING_DIRECTIONS, available_repayment
 
 OPERATIONS_ACTIONS = set(ACTIONS) - {
-    "expense_create", "purchase_create", "invoice_create", "party_create", "party_update",
+    "expense_create", "purchase_create", "purchase_bundle_create", "invoice_create", "party_create", "party_update",
     "product_create", "product_update", "stock_adjust", "stock_transfer", "purchase_payment",
     "collection_payment", "invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
 }
@@ -91,12 +91,12 @@ def preview(db, company, action, target, values):
                       ledger_effect="Existing linked receipt, purchase-payment or borrowing reversal effects run together; business-category payments retain their existing semantics.")
         borrowing = AccountsService(db)._lock_reversal_source(company, str(target), original)
         if borrowing:
-            outstanding = available_repayment(db, company, str(borrowing["party_id"]), date.fromisoformat(values["transaction_date"]))
-            if borrowing["direction"] == "borrow" and borrowing["amount"] > outstanding:
-                raise HTTPException(422, "Reverse linked repayments before reversing this borrowing.")
+            outstanding = available_repayment(db, company, str(borrowing["party_id"]), date.fromisoformat(values["transaction_date"]), borrowing["direction"])
+            if borrowing["direction"] in OPENING_DIRECTIONS and borrowing["amount"] > outstanding:
+                raise HTTPException(422, "Reverse linked repayments or collections before reversing this entry.")
             result["borrowing_effect"] = {"id": str(borrowing["id"]), "direction": borrowing["direction"],
                 "outstanding_before": str(outstanding),
-                "outstanding_after": str(outstanding + borrowing["amount"] * (1 if borrowing["direction"] == "repay" else -1))}
+                "outstanding_after": str(outstanding + borrowing["amount"] * (-1 if borrowing["direction"] in OPENING_DIRECTIONS else 1))}
         if original["category"] not in {"business_purchase", "business_billing", "business_expense"}:
             source, source_id = original["source_type"], original["source_id"]
             if source in {"invoice", "receivable_payment"}:
@@ -126,13 +126,25 @@ def preview(db, company, action, target, values):
         if values["create_account_transaction"]:
             if not values["account_id"]:
                 raise HTTPException(422, "Choose an account when posting the linked account transaction.")
-        outstanding = available_repayment(db, company, values["party_id"], date.fromisoformat(values["transaction_date"]))
-        if values["direction"] == "repay" and Decimal(values["amount"]) > outstanding:
-            raise HTTPException(422, "Repayment exceeds the available outstanding borrowing balance.")
-        result.update(outstanding_before=str(outstanding),
-                      outstanding_after=str(outstanding + Decimal(values["amount"]) * (1 if values["direction"] == "borrow" else -1)),
-                      account_change=str(Decimal(values["amount"]) * (1 if values["direction"] == "borrow" else -1))
-                          if values["create_account_transaction"] else "0",
+        direction = values["direction"]
+        amount = Decimal(values["amount"])
+        outstanding = available_repayment(db, company, values["party_id"], date.fromisoformat(values["transaction_date"]), direction)
+        if direction in SETTLING_DIRECTIONS and amount > outstanding:
+            other = "repay" if direction == "collect" else "collect"
+            other_outstanding = available_repayment(db, company, values["party_id"], date.fromisoformat(values["transaction_date"]), other)
+            hint = (f" They owe you ₹{other_outstanding:.2f} from money you lent; if they paid you back, choose 'Collected back from them'."
+                    if direction == "repay" and amount <= other_outstanding else
+                    f" You owe them ₹{other_outstanding:.2f}; if you paid them back, choose 'Repaid to them'."
+                    if direction == "collect" and amount <= other_outstanding else
+                    " To give money as a loan, choose 'Lent to them'." if direction == "repay" else "")
+            if direction == "collect":
+                raise HTTPException(422, f"Collection exceeds what this party owes you (₹{outstanding:.2f}).{hint}")
+            raise HTTPException(422, f"Repayment exceeds what you owe this party (₹{outstanding:.2f}).{hint}")
+        inflow = 1 if direction in {"borrow", "collect"} else -1
+        result.update(ledger="lent to party (party owes you)" if LEDGER_SIDE[direction] == "lend" else "borrowed from party (you owe them)",
+                      outstanding_before=str(outstanding),
+                      outstanding_after=str(outstanding + amount * (1 if direction in OPENING_DIRECTIONS else -1)),
+                      account_change=str(amount * inflow) if values["create_account_transaction"] else "0",
                       no_account_entry=not values["create_account_transaction"])
     elif action == "refund_settle":
         check_module(identity, "/accounts")

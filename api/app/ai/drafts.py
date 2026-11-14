@@ -296,6 +296,9 @@ class DraftService:
         if action.key == "account_update" and not normalized:
             raise HTTPException(422, "Provide at least one changed account field.")
         preview = None
+        if action.key == "purchase_bundle_create":
+            from app.ai.business_writes import purchase_bundle_preview
+            normalized, preview = purchase_bundle_preview(self.db, self.scope["company"], normalized, str(row["id"]))
         if action.key in {"purchase_create", "invoice_create"}:
             if not normalized["lines"] or not normalized.get("store_id"):
                 raise HTTPException(422, "Select an explicit store and at least one document line.")
@@ -338,6 +341,14 @@ class DraftService:
                     elif isinstance(child, (dict, list)):
                         visit(child)
         visit(normalized)
+        if action.key == "purchase_bundle_create":
+            purchase_payload = preview["purchase_payload"]
+            for table, field in (("stores", "store_id"), ("accounts", "account_id")):
+                record = self.reference(table, purchase_payload[field])
+                snapshots.append({"table": table, "id": str(record["id"]), "hash": digest(record)})
+            if not preview["vendor_to_create"]:
+                record = self.reference("parties", purchase_payload["vendor_party_id"])
+                snapshots.append({"table": "parties", "id": str(record["id"]), "hash": digest(record)})
         if action.key in {"party_create", "party_update"}:
             from app.services.parties_service import ALLOWED_PARTY_TYPES
             if "party_type" in normalized:
@@ -361,12 +372,12 @@ class DraftService:
                 raise HTTPException(422, "Explicitly choose whether goods are received now.")
         if action.key == "stock_adjust" and not normalized.get("store_id"):
             raise HTTPException(422, "Select an explicit stock store.")
-        if not action.high_impact and action.key not in {"purchase_create", "invoice_create"}:
+        if not action.high_impact and action.key not in {"purchase_create", "purchase_bundle_create", "invoice_create"}:
             from app.ai.business_writes import operational_preview
             preview = operational_preview(self.db, self.scope["company"], action.key, row["target_id"], normalized)
         if action.key == "collection_payment" and not normalized["payment_mode"].strip():
             raise HTTPException(422, "Choose a payment mode.")
-        date_fields = {"purchase_create": "purchase_date", "invoice_create": "invoice_date",
+        date_fields = {"purchase_create": "purchase_date", "purchase_bundle_create": "purchase_date", "invoice_create": "invoice_date",
                        "purchase_payment": "payment_date", "collection_payment": "payment_date",
                        "stock_transfer": "transfer_date"}
         if action.key in date_fields and not normalized.get(date_fields[action.key]):

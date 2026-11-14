@@ -49,7 +49,14 @@ class BusinessReadUnitTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ReadLookup.model_validate({"capability": "invoices", "arguments": {**args, "from_date": "not-date"}})
         with self.assertRaises(ValidationError):
-            ReadLookup.model_validate({"capability": "products", "arguments": args})
+            ReadLookup.model_validate({"capability": "products", "arguments": {**args, "from_date": "2026-11-01"}})
+        # An unnamed stock question in the shared shape is the per-store balance listing.
+        self.assertEqual(ReadLookup.model_validate({"capability": "products", "arguments": args}).capability, "reconciliation")
+        narrowed = ReadLookup.model_validate({"capability": "products", "arguments": {**args, "query": "copper"}})
+        self.assertEqual(narrowed.arguments.model_dump(), {"query": "copper", "store_id": None, "limit": args["limit"]})
+        # Observed reply: catalogue-shaped variants args mean "no date/status filters".
+        variants = ReadLookup.model_validate({"capability": "variants", "arguments": {"query": "copper bottle", "store_id": None, "limit": 5}})
+        self.assertIsNone(variants.arguments.status)
 
     def test_company_ledgers_are_hidden_and_rejected_for_store_limited_members(self):
         items = [{"key": key, "enabled": True, "compatible": True, "tenant_allowed": True,
@@ -119,6 +126,136 @@ class BusinessReadUnitTests(unittest.TestCase):
             self.assertIsNone(invalid.output)
             self.assertEqual(invalid.error, "invalid_response")
             self.assertEqual(invalid.input_tokens, 100)
+
+
+def found(key, *rows, more=False):
+    return {"capability": key, "items": list(rows), "more_matches": more, "note": "Scoped results"}
+
+
+class TolerantReadUnitTests(unittest.TestCase):
+    def test_status_words_and_empty_catalogue_queries_are_normalised(self):
+        unpaid = lookup("invoices", query="unpaid")
+        self.assertEqual((unpaid.arguments.status, unpaid.arguments.query), ("UNPAID", ""))
+        vendors = ReadLookup.model_validate({"capability": "parties", "arguments": {"query": "", "store_id": None, "limit": 5}})
+        self.assertEqual(vendors.arguments.query, "")
+        listing = lookup("parties")
+        self.assertEqual((type(listing.arguments).__name__, listing.arguments.query), ("LookupArguments", ""))
+        suppliers = ReadLookup.model_validate({"capability": "parties", "arguments": {"query": "", "store_id": None, "limit": 10,
+            "from_date": None, "to_date": None, "as_of": None, "status": "vendor"}})
+        self.assertEqual((type(suppliers.arguments).__name__, suppliers.arguments.query), ("LookupArguments", "vendor"))
+        with self.assertRaises(ValidationError):
+            lookup("refunds", status="UNPAID")
+
+    def test_plural_typo_store_and_listing_fallbacks_stay_read_only(self):
+        from app.ai.capabilities import execute_read
+        bottle = {"id": str(uuid4()), "name": "Copper bottle", "stock": Decimal("90")}
+        def plural(_db, _identity, request):
+            return found("products", bottle) if request.arguments.query == "copper bottle" else found("products")
+        with patch("app.ai.capabilities.execute_lookup", side_effect=plural):
+            result = execute_read(None, {}, ReadLookup.model_validate(
+                {"capability": "products", "arguments": {"query": "copper bottles", "store_id": None, "limit": 5}}))
+        self.assertEqual(result["items"], [bottle])
+        def typo(_db, _identity, request):
+            return found("products", bottle) if request.arguments.query in {"cop", "bot"} else found("products")
+        with patch("app.ai.capabilities.execute_lookup", side_effect=typo):
+            result = execute_read(None, {}, ReadLookup.model_validate(
+                {"capability": "products", "arguments": {"query": "coper botle", "store_id": None, "limit": 5}}))
+        self.assertEqual(result["items"], [bottle])
+        self.assertIn("closest", result["fallback_note"])
+        account = {"account_id": str(uuid4()), "account_name": "Main Account", "balance": Decimal("4000")}
+        def accounts(_db, _identity, request):
+            return found("accounts", account) if not request.arguments.query else found("accounts")
+        with patch("app.ai.capabilities.execute_lookup", side_effect=accounts):
+            result = execute_read(None, {}, lookup("accounts", query="cash"))
+        self.assertEqual(result["items"], [account])
+        self.assertIn("listed instead", result["fallback_note"])
+        def store(_db, _identity, request):
+            if request.arguments.store_id:
+                raise HTTPException(status_code=404)
+            return found("products", bottle)
+        with patch("app.ai.capabilities.execute_lookup", side_effect=store):
+            result = execute_read(None, {}, ReadLookup.model_validate({"capability": "products", "arguments": {
+                "query": "copper bottle", "store_id": str(uuid4()), "limit": 5}}))
+        self.assertEqual(result["items"], [bottle])
+        self.assertIn("store was not recognised", result["fallback_note"])
+
+    def test_readable_facts_hide_ids_sum_complete_sets_and_stay_bounded(self):
+        from app.ai.capabilities import is_read_answer, readable_lookup, rupees
+        rows = [{"id": str(uuid4()), "invoice_number": f"I{index}", "customer_id": str(uuid4()), "total": Decimal("10.50"),
+                 "invoice_date": date(2026, 11, 14), "collection_status": "BAD_DEBT", "is_draft": False}
+                for index in range(3)]
+        text_out = readable_lookup({**found("invoices", *rows), "query": "", "fallback_note": ""}, 2000)
+        self.assertTrue(is_read_answer(text_out))
+        self.assertIn("From your Tenali records — Invoices (3)", text_out)
+        self.assertIn("• I0: total ₹10.50 · collection status bad debt · invoice date 14 Nov 2026", text_out)
+        self.assertIn("Total: ₹31.50", text_out)
+        self.assertNotIn(rows[0]["id"], text_out)
+        self.assertNotIn("draft", text_out)
+        self.assertNotIn("{", text_out)
+        self.assertEqual((rupees(Decimal("1234567.5")), rupees(Decimal("-400"))), ("₹12,34,567.50", "-₹400.00"))
+        accounts = [{"account_id": str(uuid4()), "account_name": "Main Account", "account_type": "bank",
+                     "is_company_account": False, "opening_balance": Decimal("1000.00"), "current_balance": Decimal("4000.00"),
+                     "transaction_count": 5}]
+        self.assertIn("• Main Account: current balance ₹4,000.00 · account type bank · opening balance ₹1,000.00 · "
+                      "transaction count 5", readable_lookup({**found("accounts", *accounts), "query": ""}, 2000))
+        partial = readable_lookup({**found("invoices", *rows, more=True), "query": ""}, 2000)
+        self.assertNotIn("Total:", partial)
+        self.assertIn("(3+)", partial)
+        many = [{"name": f"Product {index}", "description": "x" * 80} for index in range(40)]
+        bounded = readable_lookup({**found("products", *many), "query": "p"}, 600)
+        self.assertLessEqual(len(bounded), 640)
+        self.assertIn("Showing the first few only", bounded)
+
+    def test_descriptive_words_become_filters_only_after_the_literal_search_finds_nothing(self):
+        from app.ai.capabilities import execute_read, interpret_lookup
+        today = date(2026, 11, 14)  # Saturday
+        sales, _, notes = interpret_lookup(lookup("invoices", query="last week sales total"), today)
+        self.assertEqual((sales.arguments.query, sales.arguments.from_date, sales.arguments.to_date),
+                         ("", date(2026, 11, 2), date(2026, 11, 8)))
+        self.assertIn("Last week", notes[0])
+        bills, _, _ = interpret_lookup(lookup("purchases", query="pending supplier bills"), today)
+        self.assertEqual((bills.arguments.query, bills.arguments.status), ("", "UNPAID"))
+        refunds, _, _ = interpret_lookup(lookup("refunds", query="due refunds today"), today)
+        self.assertEqual((refunds.arguments.status, refunds.arguments.from_date), ("PENDING", today))
+        settled, _, _ = interpret_lookup(lookup("invoices", query="paid invoices this month"), today)
+        self.assertEqual((settled.arguments.status, settled.arguments.from_date), ("SETTLED", date(2026, 11, 1)))
+        vendors, party_type, _ = interpret_lookup(lookup("parties", query="vendors"), today)
+        self.assertEqual((vendors.arguments.query, party_type, vendors.arguments.limit), ("", "vendor", 10))
+        rows = [{"id": "1", "name": "Tiger Glass", "party_type": "vendor"}, {"id": "2", "name": "Vijay", "party_type": "customer"}]
+        def parties(_db, _identity, request):
+            return found("parties", *rows) if not request.arguments.query else found("parties")
+        with patch("app.ai.capabilities.execute_lookup", side_effect=parties):
+            result = execute_read(None, {}, lookup("parties", query="vendor"))
+        self.assertEqual([row["name"] for row in result["items"]], ["Tiger Glass"])
+        named = {"id": "3", "name": "Bill Traders", "party_type": "vendor"}
+        with patch("app.ai.capabilities.execute_lookup", return_value=found("parties", named)) as execute:
+            result = execute_read(None, {}, lookup("parties", query="bill traders"))
+        self.assertEqual((result["items"], execute.call_count), ([named], 1))
+
+    def test_today_as_of_means_current_and_journal_words_become_dates(self):
+        from app.ai.capabilities import execute_read
+        from app.ai.schemas import business_today
+        today = business_today()
+        current = ReadLookup.model_validate({"capability": "receivables", "arguments": {
+            "query": "", "store_id": None, "limit": 5, "from_date": None, "to_date": None, "as_of": today.isoformat(), "status": "UNPAID"}})
+        self.assertIsNone(current.arguments.as_of)
+        with self.assertRaises(ValidationError):
+            lookup("receivables", as_of=date(2020, 1, 1))
+        seen = []
+        def journal(_db, _identity, request):
+            seen.append(request.arguments)
+            return found("account_journal", {"period_key": str(today), "amount": Decimal("1")})
+        with patch("app.ai.capabilities.execute_lookup", side_effect=journal):
+            execute_read(None, {}, lookup("account_journal", query="sales today"))
+        self.assertEqual((len(seen), seen[0].query, seen[0].from_date, seen[0].to_date), (1, "", today, today))
+        customers = [{"id": "1", "name": "test customer", "party_type": "customer"},
+                     {"id": "2", "name": "Vijay", "party_type": "customer"}, {"id": "3", "name": "Tiger", "party_type": "vendor"}]
+        def parties(_db, _identity, request):
+            rows = [row for row in customers if request.arguments.query in row["name"]]
+            return found("parties", *rows)
+        with patch("app.ai.capabilities.execute_lookup", side_effect=parties):
+            result = execute_read(None, {}, lookup("parties", query="customers"))
+        self.assertEqual([row["name"] for row in result["items"]], ["test customer", "Vijay"])
 
 
 @unittest.skipUnless(os.getenv("TENALI_AI_ISOLATED_DB"), "Synthetic finance tests require an isolated PostgreSQL database")
@@ -291,7 +428,7 @@ class BusinessReadDatabaseTests(TenantDatabaseCase):
             with patch("app.ai.service.OpenAIProvider.respond", return_value=response) as provider:
                 result = service.send(conversation["id"], payload)
                 self.assertEqual(result["items"][0]["status"], "completed")
-                self.assertIn("Verified Tenali lookup", result["items"][1]["content"])
+                self.assertIn("From your Tenali records", result["items"][1]["content"])
                 self.assertIn("Fixture INV", result["items"][1]["content"])
                 self.assertLessEqual(len(result["items"][1]["content"]), 12000)
                 offered = provider.call_args.args[2]["_read_capabilities"]

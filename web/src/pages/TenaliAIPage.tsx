@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUp, ChevronDown, ChevronUp, History, Paperclip, SquarePen } from "lucide-react";
 import { ai, conversationLabel, messageStatus, type AIUsage, type ChatMessage, type Conversation, type Preference, type ReadCapability, type AIAttachment } from "../features/ai";
+import { readableMessage } from "../features/aiMessages";
 import { featureExplanation } from "../features/featureControls";
 import { useAuth } from "../features/auth";
 import { FloatingAlert } from "../components/Notifications";
@@ -209,7 +210,7 @@ export function TenaliAIPage() {
       <button className="ai-icon-button" title="New chat" aria-label="New chat" disabled={busy || titleSaving || viewer} onClick={() => void create()}><SquarePen size={19} /></button></div></div>
     <details className="ai-help"><summary>Privacy, preferences & available tools</summary>
     <p className="ops-copy-note">Private assistant with platform-approved, permission-scoped business lookups.
-      Operations need separate review, approval and submission. Cancellation and deletion are separate, high-impact operations.
+      Operations need review, then Confirm &amp; save records your approval and submits the reviewed values. Cancellation and deletion are separate, high-impact operations.
       Chat sends your messages, recent conversation (including earlier lookup results), saved preferences and basic company context to OpenAI.
       Do not share passwords or unnecessary sensitive information.</p>
     {canSend ? <details><summary>Available business lookups ({capabilities.length})</summary>
@@ -265,7 +266,7 @@ export function TenaliAIPage() {
           <div className="ai-message-list" aria-live="polite">
             {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe what you need help with.</p> : messages.map(message =>
               <article key={message.id} aria-label={message.role === "user" ? "Your message" : "Assistant reply"} className={`ai-message ai-message-${message.role}`}>
-                <p>{message.content}</p>{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
+                <p>{message.role === "assistant" ? readableMessage(message.content) : message.content}</p>{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
             {busy && submission ? <p role="status">Waiting for a reply. Your message reference is preserved for recovery.</p> : null}
             <div ref={messageEnd} />
           </div>
@@ -296,7 +297,7 @@ export function TenaliAIPage() {
             {attachments.length ? <p>Only Send processes these private files with OpenAI; uploading does not make a paid call. Images are resized for economical reading. Review extracted figures before posting.</p> : null}
           </form>
           </div>
-          <section className="ai-operations" aria-label="Operations to review"><h2>Drafts to review</h2>
+          <section className="ai-operations" aria-label="Operations to review"><h2>Operations workflows</h2>
             <AIDrafts key={selected.id} conversationId={selected.id} refreshKey={draftRefresh}
               writable={!!canSend && selected.status === "active" && !busy && !titleSaving} aiEnabled={!!canSend} /></section>
           </div>

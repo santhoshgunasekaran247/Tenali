@@ -373,6 +373,37 @@ class FinanceIntegrityTests(unittest.TestCase):
         )
         self.assertEqual(service.summarize_borrowings(self.company)["items"][0]["net_outstanding"], 0)
 
+    def test_lending_is_a_separate_balance_with_money_leaving_the_account(self):
+        from app.schemas.accounts import TransactionReverseCreate
+        from app.schemas.settlements import BorrowingEntryCreate
+        from app.services.settlements_service import SettlementsService
+
+        service = SettlementsService(self.db)
+        with self.assertRaises(HTTPException) as error:
+            service.create_borrowing(self.company, BorrowingEntryCreate(
+                party_id=self.party, direction="collect", amount=1, transaction_date=date(2026, 9, 10)))
+        self.assertIn("owes you", error.exception.detail)
+        lent = service.create_borrowing(self.company, BorrowingEntryCreate(
+            party_id=self.party, direction="lend", amount=100, account_id=self.account["id"],
+            transaction_date=date(2026, 9, 10)))
+        posted = self.db.execute(self.text("""select from_account_id, to_account_id, description from account_transactions
+            where company_id=:company and source_type='borrowing' and source_id=:id"""),
+            {"company": self.company, "id": lent["id"]}).mappings().one()
+        self.assertEqual((str(posted["from_account_id"]), posted["to_account_id"]), (str(self.account["id"]), None))
+        self.assertTrue(posted["description"].startswith("Lent to"))
+        with self.assertRaises(HTTPException):
+            service.create_borrowing(self.company, BorrowingEntryCreate(
+                party_id=self.party, direction="repay", amount=1, transaction_date=date(2026, 9, 11)))
+        service.create_borrowing(self.company, BorrowingEntryCreate(
+            party_id=self.party, direction="collect", amount=40, account_id=self.account["id"],
+            transaction_date=date(2026, 9, 11)))
+        row = service.summarize_borrowings(self.company)["items"][0]
+        self.assertEqual((row["net_outstanding"], row["lent_amount"], row["collected_amount"], row["net_receivable"]), (0, 100, 40, 60))
+        lend_tx = self.db.execute(self.text("select id from account_transactions where source_id=:id"), {"id": lent["id"]}).scalar_one()
+        with self.assertRaises(HTTPException) as error:
+            self.accounts.reverse_transaction(str(lend_tx), self.company, TransactionReverseCreate(transaction_date=date(2026, 9, 12)))
+        self.assertEqual(error.exception.status_code, 422)
+
     def test_legacy_business_payment_borrowing_is_not_guessed(self):
         from app.schemas.accounts import AccountCreate, BusinessPaymentCreate, TransactionReverseCreate
         from app.services.settlements_service import SettlementsService

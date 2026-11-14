@@ -1,14 +1,18 @@
 """Explicit read adapters; database configuration can restrict but cannot add code."""
+import difflib
 import hashlib
 import json
+import re
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException
 
 from app.ai.schemas import (
     BusinessLookupArguments, CATALOGUE_KEYS, COMPANY_LEDGER_KEYS, STORE_READ_KEYS,
     CapabilityKey, LookupArguments, ReadLookup, CapabilityUpdate, TenantCapabilityUpdate,
-    DATED_READ_KEYS, AS_OF_READ_KEYS, READ_STATUSES,
+    DATED_READ_KEYS, AS_OF_READ_KEYS, READ_STATUSES, business_today,
 )
 from app.ai.business_reads import business_lookup
 from app.services.access import allowed_stores, check_module
@@ -68,8 +72,9 @@ REGISTRY = {
         ReadCapability("refunds", "/settlements", "Search refunds by document/party, creation-date range and PENDING/SETTLED. Optional verified store_id. PAY_CUSTOMER versus RECEIVE_VENDOR denotes refund direction. No global totals.",
                        ("id", "direction", "document_type", "document_number", "party_name", "amount",
                         "status", "settled_on", "payment_mode", "created_at")),
-        ReadCapability("borrowings", "/settlements", "Search current borrowing balances by party name. Excludes reversals, requires unrestricted stores. Positive outstanding means money owed to party. No historical or date/status/store filters.",
-                       ("party_id", "party_name", "borrowed_amount", "repaid_amount", "net_outstanding")),
+        ReadCapability("borrowings", "/settlements", "Search current loan balances by party name. Excludes reversals, requires unrestricted stores. net_outstanding=we owe party; net_receivable=party owes us. No date/status/store filters.",
+                       ("party_id", "party_name", "borrowed_amount", "repaid_amount", "net_outstanding",
+                        "lent_amount", "collected_amount", "net_receivable")),
         ReadCapability("reorder", "/inventory", "Search reorder reminders by product name/SKU; optional verified store_id. Empty query lists bounded reminders. Quantities include only permitted stores compared with configured thresholds, not company totals.",
                        ("product_id", "variant_id", "product_name", "variant_name", "stock_qty", "reorder_level",
                         "reorder_quantity", "reminder_date", "reminder_due", "low_stock")),
@@ -107,21 +112,21 @@ REGISTRY = {
 }
 
 READ_CONTEXT_NOTES = {
-    "stores": "active permitted name/code",
-    "products": "active name/SKU;stock sums all variants in permitted stores",
-    "parties": "active customer/vendor name;no contacts",
-    "hsn": "configured active code/description;never infer tax classification",
-    "brands": "inventory name/code",
-    "categories": "inventory name/code",
-    "accounts": "active names;balances at as_of;unrestricted stores",
-    "transactions": "nickname/reference/category;transaction dates;includes reversals",
-    "invoices": "number/customer;invoice dates;current collection status or CANCELLED",
-    "purchases": "bill/voucher/vendor;purchase dates;current payment status or CANCELLED",
+    "stores": "active name/code",
+    "products": "name/SKU;stock sums variants,permitted stores",
+    "parties": "customer/vendor name;empty=list;no contacts",
+    "hsn": "active code/description;never infer tax",
+    "brands": "name/code",
+    "categories": "name/code",
+    "accounts": "names;empty=all with balances at as_of",
+    "transactions": "nickname/reference/category;dates;includes reversals",
+    "invoices": "number/customer;invoice dates",
+    "purchases": "bill/voucher/vendor;purchase dates",
     "receivables": "party/reference;due dates;current balances",
-    "refunds": "document/party;creation dates;PAY_CUSTOMER owed,RECEIVE_VENDOR due back",
-    "borrowings": "party;current net outstanding excludes reversals;positive=owed",
-    "reorder": "product/SKU;permitted-store stock versus thresholds;not vendor availability",
-    "reconciliation": "product/SKU;per-store balance minus signed movements;missing sources separate",
+    "refunds": "document/party;dates;PAY_CUSTOMER owed,RECEIVE_VENDOR due back",
+    "borrowings": "party;we owe=net_outstanding;owes us=net_receivable",
+    "reorder": "product/SKU;stock vs thresholds",
+    "reconciliation": "empty=current stock per store/product;product/SKU",
     "period_locks": "reason;overlapping dates;as_of tests CURRENT active locks",
     "product_details": "product name/SKU/verified UUID;replacement fields;no stock totals",
     "variants": "product/variant name/SKU/UUID;replacement fields;no stock totals",
@@ -134,7 +139,7 @@ READ_CONTEXT_NOTES = {
     "reminder_history": "party/receivable UUID;reminded-at dates;no notes/actors",
     "account_journal": "EMPTY query only;daily entries;date window default=today;no totals",
     "audit_events": "action/entity text;creation dates;no actors or private payloads",
-    "business_payments": "original outflows;is_reversed marks reversals;account/reference/category;dates;not settlement",
+    "business_payments": "original outflows;account/reference/category;dates;not settlement",
 }
 
 
@@ -271,3 +276,255 @@ def format_lookup(result, budget: int) -> str:
     if len(rendered) > budget:
         raise HTTPException(422, "Lookup output is too large. Narrow your query.")
     return "\n\nVerified Tenali lookup (read only):\n" + rendered
+
+
+LISTABLE_READS = {"accounts", "stores", "parties", "brands", "categories", "hsn"}
+TITLE_FIELDS = ("name", "legal_name", "product_name", "account_name", "invoice_number", "voucher_number", "bill_number",
+                "party_name", "customer_name", "vendor_name", "code", "store_code", "nickname", "reference")
+
+
+def row_title(row):
+    return next((str(row[key]) for key in TITLE_FIELDS if row.get(key) not in (None, "")), "")
+
+
+def with_arguments(lookup, **values):
+    return lookup.model_copy(update={"arguments": lookup.arguments.model_copy(update=values)})
+
+
+def singular(word):
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") and len(word) > 4 else word
+
+
+def relaxed_queries(query):
+    words = re.findall(r"\w+", query.lower())
+    base = [singular(word) for word in words]
+    exact = [" ".join(base)] if base != words else []
+    if len(base) > 1:
+        exact.append(max(base, key=len))
+    prefixes = list(dict.fromkeys(word[:3] for word in base if len(word) >= 4))[:3]
+    return [value for value in dict.fromkeys(exact) if len(value) >= 2 and value != query.lower()], prefixes
+
+
+def period_range(words, today):
+    """Relative periods people say ("today", "last week") become an explicit inclusive date range."""
+    joined = " ".join(words)
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    previous_month_end = month_start - timedelta(days=1)
+    periods = (
+        ("last week", (week_start - timedelta(days=7), week_start - timedelta(days=1))),
+        ("this week", (week_start, today)),
+        ("last month", (previous_month_end.replace(day=1), previous_month_end)),
+        ("this month", (month_start, today)),
+        ("this year", (today.replace(month=1, day=1), today)),
+        ("yesterday", (today - timedelta(days=1), today - timedelta(days=1))),
+        ("today", (today, today)), ("todays", (today, today)),
+    )
+    for phrase, dates in periods:
+        if re.search(rf"\b{phrase}\b", joined):
+            return phrase, dates
+    return None, None
+
+
+STATUS_WORDS = {"unpaid": "UNPAID", "pending": "UNPAID", "due": "UNPAID", "outstanding": "UNPAID", "partial": "PARTIAL",
+                "partly": "PARTIAL", "paid": "PAID", "settled": "SETTLED", "cancelled": "CANCELLED", "canceled": "CANCELLED"}
+PARTY_WORDS = {"vendor": "vendor", "supplier": "vendor", "customer": "customer", "client": "customer", "buyer": "customer"}
+GENERIC_WORDS = {
+    "a", "all", "an", "any", "are", "below", "bill", "by", "current", "do", "for", "from", "have", "how", "i", "in", "invoice",
+    "inventory", "is", "item", "level", "list", "low", "many", "me", "much", "my", "now", "of", "on", "please", "pls",
+    "product", "purchase", "recent", "reorder", "sale", "sales", "show", "stock", "the", "total", "what", "which", "with",
+    "week", "month", "year", "last", "this", "today", "todays", "yesterday", "balance", "account", "party", "parties",
+}
+
+
+def interpret_lookup(lookup: ReadLookup, today):
+    """Turns descriptive words in a search into typed filters; returns (lookup, party_type, notes)."""
+    words = [singular(word)
+             for word in re.findall(r"\w+", lookup.arguments.query.lower())]
+    args, updates, notes, party_type = lookup.arguments, {}, [], None
+    if isinstance(args, BusinessLookupArguments):
+        phrase, dates = period_range(words, today)
+        if dates and lookup.capability in DATED_READ_KEYS and not (args.from_date or args.to_date):
+            updates.update(from_date=dates[0], to_date=dates[1])
+            notes.append(f"{phrase.capitalize()} = {dates[0]} to {dates[1]}.")
+        allowed = READ_STATUSES.get(lookup.capability, set())
+        if args.status is None:
+            for word in words:
+                status = STATUS_WORDS.get(word)
+                status = "PENDING" if status == "UNPAID" and "PENDING" in allowed else status
+                status = "SETTLED" if status == "PAID" and "SETTLED" in allowed else status
+                if status in allowed:
+                    updates["status"] = status
+                    notes.append(f"Status {status.replace('_', ' ').lower()}.")
+                    break
+    if lookup.capability == "parties":
+        party_type = next((PARTY_WORDS[word] for word in words if word in PARTY_WORDS), None)
+    remaining = [word for word in words if word not in GENERIC_WORDS and word not in STATUS_WORDS and word not in PARTY_WORDS]
+    updates["query"] = " ".join(remaining) if len(" ".join(remaining)) >= 2 else ""
+    if party_type or lookup.capability in LISTABLE_READS:
+        updates["limit"] = 10
+    return with_arguments(lookup, **updates), party_type, notes
+
+
+def execute_read(db, identity, lookup: ReadLookup):
+    """Chat reads tolerate how people ask: unknown store filters, plurals, typos and loose names stay bounded and read-only."""
+    notes = []
+
+    def run(request, party_type=None):
+        try:
+            found = execute_lookup(db, identity, request)
+        except HTTPException as error:
+            if request.arguments.store_id is None or error.status_code not in {403, 404, 422}:
+                raise
+            request = with_arguments(request, store_id=None)
+            found = execute_lookup(db, identity, request)
+            if "That store was not recognised, so all permitted stores are shown." not in notes:
+                notes.append("That store was not recognised, so all permitted stores are shown.")
+        if party_type:
+            found = {**found, "items": [row for row in found["items"] if row.get("party_type") in {party_type, "both"}]}
+        return found, request
+
+    attempts = [(lookup, None, [])]
+    if lookup.arguments.query:
+        interpreted, party_type, meaning = interpret_lookup(lookup, business_today())
+        if lookup.capability == "account_journal":
+            # The journal is filtered by dates only; its search words can only be periods.
+            attempts = [(with_arguments(interpreted, query=""), None, meaning)]
+        elif not interpreted.arguments.query:
+            # Only descriptive words ("customers", "today sales"): they are filters, not a name.
+            attempts.insert(0, (interpreted, party_type, meaning))
+        elif interpreted.arguments != lookup.arguments:
+            attempts.append((interpreted, party_type, meaning))
+    for index, (request, party_type, meaning) in enumerate(attempts):
+        candidate, request = run(request, party_type)
+        if index == 0 or candidate["items"]:
+            result, lookup, chosen = candidate, request, meaning
+        if candidate["items"]:
+            break
+    notes.extend(chosen)
+    query = lookup.arguments.query
+    if not result["items"] and query and lookup.capability != "account_journal":
+        exact, prefixes = relaxed_queries(query)
+        for candidate in exact:
+            relaxed = execute_lookup(db, identity, with_arguments(lookup, query=candidate))
+            if relaxed["items"]:
+                result = relaxed
+                break
+        if not result["items"] and prefixes:
+            found = {}
+            for prefix in prefixes:
+                for row in execute_lookup(db, identity, with_arguments(lookup, query=prefix))["items"]:
+                    found.setdefault(json.dumps(row, default=str, sort_keys=True), row)
+            ranked = sorted(((difflib.SequenceMatcher(None, query.lower(), row_title(row).lower()).ratio(), row)
+                             for row in found.values()), key=lambda pair: -pair[0])
+            close = [row for score, row in ranked if score >= 0.5][:lookup.arguments.limit]
+            if close:
+                result = {**result, "items": close, "more_matches": False}
+        if not result["items"] and lookup.capability in LISTABLE_READS:
+            result = execute_lookup(db, identity, with_arguments(lookup, query=""))
+            if result["items"]:
+                notes.append(f"Nothing is named “{query}”; all {lookup.capability} are listed instead.")
+        elif result["items"]:
+            notes.append(f"No exact match for “{query}”; closest matches shown.")
+    result["query"] = lookup.arguments.query
+    result["fallback_note"] = " ".join(notes)
+    return result
+
+
+READ_MARKER = "From your Tenali records"
+LEGACY_READ_MARKER = "Verified Tenali lookup (read only):"
+FIRST_FIELDS = ("current_balance", "stock_qty", "balance_quantity", "quantity", "total", "balance_amount", "amount",
+                "outstanding", "collection_status", "payment_status", "status")
+HIDDEN_FIELDS = {"id", "period_key", "is_draft", "movement_quantity", "movement_count", "difference",
+                 "missing_document_references"}
+MONEY_WORDS = ("amount", "balance", "total", "price", "cost", "inflow", "outflow", "value", "outstanding", "mrp")
+COUNT_WORDS = ("qty", "quantity", "stock", "count", "difference", "references")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def is_read_answer(content):
+    return READ_MARKER + " — " in content or LEGACY_READ_MARKER in content
+
+
+def is_money(key):
+    return any(word in key for word in MONEY_WORDS) and not any(word in key for word in COUNT_WORDS)
+
+
+def rupees(value):
+    """Indian digit grouping (1,23,456.00)."""
+    amount = Decimal(str(value)).quantize(Decimal("0.01"))
+    sign, (whole, fraction) = "-" if amount < 0 else "", f"{abs(amount):.2f}".split(".")
+    head, tail = whole[:-3], whole[-3:]
+    while len(head) > 2:
+        tail, head = head[-2:] + "," + tail, head[:-2]
+    return f"{sign}₹{head + ',' if head else ''}{tail}.{fraction}"
+
+
+def display_value(key, value):
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    text_value = str(value)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text_value[:10]) and (len(text_value) == 10 or text_value[10] in "T "):
+        year, month, day = text_value[:10].split("-")
+        return f"{int(day)} {MONTHS[int(month) - 1]} {year}"
+    number = value if isinstance(value, (Decimal, int, float)) else None
+    if isinstance(value, str) and is_money(key) and re.fullmatch(r"-?\d+(\.\d+)?", value):
+        number = Decimal(value)
+    if number is not None:
+        if is_money(key):
+            return rupees(number)
+        exact = Decimal(str(number))
+        return format(exact.normalize(), "f") if exact == exact.to_integral() else text_value
+    if key.endswith("status") or key == "direction":
+        return text_value.replace("_", " ").lower()
+    return text_value
+
+
+def field_label(key):
+    return key.removeprefix("is_").replace("_", " ")
+
+
+def readable_row(row):
+    title = row_title(row)
+    keys = [key for key in FIRST_FIELDS if key in row] + [key for key in row if key not in FIRST_FIELDS]
+    details = []
+    for key in keys:
+        value = row[key]
+        if (value in (None, "") or value is False or key in HIDDEN_FIELDS or key.endswith("_id")
+                or str(value) == title):
+            continue
+        details.append(field_label(key) if value is True else f"{field_label(key)} {display_value(key, value)}")
+    return "• " + ": ".join(part for part in (title, " · ".join(details)) if part)
+
+
+CAPABILITY_TITLES = {"reconciliation": "Stock by store", "reorder": "Low stock", "account_journal": "Account entries",
+                     "hsn": "HSN codes", "parties": "Customers & vendors"}
+
+
+def readable_lookup(result, budget: int) -> str:
+    """Plain-language facts for people; values are data only, never instructions."""
+    count = len(result["items"])
+    title = CAPABILITY_TITLES.get(result["capability"], result["capability"].replace("_", " ").capitalize())
+    heading = f"{READ_MARKER} — {title}"
+    if result.get("query"):
+        heading += f" matching “{result['query']}”"
+    heading += f" ({count}{'+' if result.get('more_matches') else ''})"
+    lines = [readable_row(row) for row in result["items"]] or ["• No matching records."]
+    footer = [result["fallback_note"]] if result.get("fallback_note") else []
+    if count > 1 and not result.get("more_matches"):
+        # Complete (non-truncated) result sets can be summed exactly.
+        for key in ("current_balance", "total", "balance_amount", "amount", "stock_qty", "balance_quantity"):
+            values = [row.get(key) for row in result["items"]]
+            if all(isinstance(value, (Decimal, int)) and not isinstance(value, bool) for value in values):
+                label = "Total" if key == "total" else f"Total {field_label(key)}"
+                footer.append(f"{label}: {display_value(key, sum(values))}")
+                break
+    if result.get("more_matches"):
+        footer.append("More records match; ask with a narrower name, store or date.")
+    limited = False
+    while len(lines) > 1 and len("\n".join([heading, *lines, *footer])) > budget - 80:
+        lines.pop()
+        limited = True
+    if limited:
+        footer.insert(0, "Showing the first few only; narrow your question to see more.")
+    return "\n\n" + "\n".join([heading, *lines, *footer])[:max(0, budget - 40)]

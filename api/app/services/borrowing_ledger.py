@@ -24,6 +24,11 @@ not exists (
 )
 """
 
+# Two independent balances per party: what we borrowed (borrow/repay) and what we lent (lend/collect).
+LEDGER_SIDE = {"borrow": "borrow", "repay": "borrow", "lend": "lend", "collect": "lend"}
+OPENING_DIRECTIONS = {"borrow", "lend"}
+SETTLING_DIRECTIONS = {"repay", "collect"}
+
 
 def lock_borrowing_party(db: Session, company_id: str, party_id: str) -> dict:
     party = db.execute(
@@ -37,18 +42,20 @@ def lock_borrowing_party(db: Session, company_id: str, party_id: str) -> dict:
     return dict(party)
 
 
-def available_repayment(db: Session, company_id: str, party_id: str, effective_date: date) -> Decimal:
+def available_repayment(db: Session, company_id: str, party_id: str, effective_date: date, side: str = "borrow") -> Decimal:
+    """Outstanding balance of one side (borrowed or lent) available for repayment or collection."""
+    opening, settling = ("borrow", "repay") if LEDGER_SIDE[side] == "borrow" else ("lend", "collect")
     rows = db.execute(
         text(
             """
             with events as (
                 select b.transaction_date,
-                       case when b.direction = 'borrow' then b.amount else -b.amount end as amount
+                       case when b.direction = :opening then b.amount else -b.amount end as amount
                 from borrowings b
-                where b.company_id = :company and b.party_id = :party
+                where b.company_id = :company and b.party_id = :party and b.direction in (:opening, :settling)
                 union all
                 select reversal.transaction_date,
-                       case when b.direction = 'borrow' then -b.amount else b.amount end
+                       case when b.direction = :opening then -b.amount else b.amount end
                 from borrowings b
                 join account_transactions original
                   on original.company_id = b.company_id
@@ -58,7 +65,7 @@ def available_repayment(db: Session, company_id: str, party_id: str, effective_d
                 join account_transactions reversal
                   on reversal.company_id = original.company_id
                  and reversal.reversal_of_transaction_id = original.id
-                where b.company_id = :company and b.party_id = :party
+                where b.company_id = :company and b.party_id = :party and b.direction in (:opening, :settling)
             ),
             changes as (
                 select transaction_date, sum(amount) as amount
@@ -74,7 +81,7 @@ def available_repayment(db: Session, company_id: str, party_id: str, effective_d
                    (select min(balance) from balances where transaction_date > :date) as future_minimum
             """
         ),
-        {"company": company_id, "party": party_id, "date": effective_date},
+        {"company": company_id, "party": party_id, "date": effective_date, "opening": opening, "settling": settling},
     ).mappings().one()
     available = Decimal(rows["on_date"])
     if rows["future_minimum"] is not None:

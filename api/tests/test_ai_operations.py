@@ -21,6 +21,7 @@ from app.ai.operations_writes import OPERATIONS_ACTIONS
 from app.ai.reports import download, generate
 from app.ai.schemas import BusinessLookupArguments, ReadLookup
 from app.ai.service import AssistantService
+from app.ai.provider import response_schema
 from test_ai_execution import AIDatabaseFixture
 
 NEW_READS = {"borrowing_entries", "stock_transfers", "stock_movements", "movement_sources", "variants",
@@ -55,18 +56,29 @@ class OperationsContractTests(unittest.TestCase):
             Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
             Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
             Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
+            Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
         ]
         service = AssistantService(db, {"company_id": str(uuid4()), "user_id": str(uuid4())})
         actions = [{"key": key, "schema": action.schema.model_json_schema(), "description": action.description,
                     "target_required": bool(action.target)} for key, action in ACTIONS.items()]
         reads = [{"key": key, "description": item.description} for key, item in REGISTRY.items()]
-        schema_bytes = len(json.dumps(ActionAssistantOutput.model_json_schema()).encode())
+        schema_bytes = len(json.dumps(response_schema(ActionAssistantOutput)).encode())
         budget = min(15000, 20000 - 4000 - schema_bytes - 512)
         context = service.context(uuid4(), reads, max_bytes=budget, actions=actions)
         self.assertLessEqual(len(context.encode()) + 4000 + schema_bytes + 512, 20000)
         for key in [*ACTIONS, *REGISTRY]:
             self.assertIn(key, context)
         self.assertIn("draft_contracts", context)
+        from app.ai.service import SYSTEM
+        data = json.loads(context[len(SYSTEM):])
+        for action in ("purchase_create", "invoice_create", "stock_transfer"):
+            contract = data["draft_contracts"][data["available_draft_actions"][action][1]]
+            self.assertIn("product_id", contract["nested"]["lines"])
+            self.assertIn("quantity", contract["nested"]["lines"])
+        purchase = data["draft_contracts"][data["available_draft_actions"]["purchase_create"][1]]
+        self.assertIn("selling_price", purchase["nested"]["lines"])
+        self.assertIn("price_includes_gst", purchase["nested"]["lines"])
+        self.assertIn("fully_paid", purchase["fields"])
 
     def test_filters_and_manual_boundaries_are_explicit(self):
         self.assertFalse({"period_close", "period_reopen", "reset_all", "invoice_delete", "online_customer_link"} & set(ACTIONS))

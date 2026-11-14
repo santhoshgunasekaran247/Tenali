@@ -91,10 +91,17 @@ class ExecutionService:
                     if any(Decimal(str(result[name])) != Decimal(str(normalized[name]))
                            for name in ("subtotal", "gst_total", "total")):
                         raise HTTPException(409, "Business totals changed from the approved preview. No changes saved.")
+                elif row["action_key"] == "purchase_bundle_create":
+                    from decimal import Decimal
+                    approved_purchase = report["preview"]["purchase_payload"]
+                    if any(Decimal(str(result[name])) != Decimal(str(approved_purchase[name]))
+                           for name in ("subtotal", "gst_total", "total")):
+                        raise HTTPException(409, "Purchase totals changed from the approved preview. No changes saved.")
                 # Recovery only needs durable references, not copies of business/contact data.
                 outcome = {name: result[name] for name in ("id", "status", "deleted", "deletion_id", "borrowing_id",
                     "subtotal", "gst_total", "total", "refunds", "mapped_count", "reversal_of_transaction_id",
-                    "reversal_of_transfer_id", "report_id", "report_rows", "product_id") if name in result}
+                    "reversal_of_transfer_id", "report_id", "report_rows", "product_id", "vendor_created",
+                    "product_name", "stock_received") if name in result}
                 if "account_transaction" in result:
                     outcome["id"] = result["account_transaction"]["id"]
                 self.record(row, execution_id, key, "succeeded", outcome)

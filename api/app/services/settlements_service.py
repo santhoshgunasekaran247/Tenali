@@ -8,10 +8,13 @@ from sqlalchemy.orm import Session
 from app.services.runtime_schema import managed_schema
 
 from app.schemas.settlements import BorrowingEntryCreate
-from app.services.borrowing_ledger import ACTIVE_BORROWING, available_repayment, lock_borrowing_party
+from app.services.borrowing_ledger import ACTIVE_BORROWING, LEDGER_SIDE, SETTLING_DIRECTIONS, available_repayment, lock_borrowing_party
 from app.services.period_lock_service import assert_period_open
 
-ALLOWED_DIRECTIONS = {"borrow", "repay"}
+ALLOWED_DIRECTIONS = set(LEDGER_SIDE)
+# Money enters our account for borrow/collect and leaves it for repay/lend.
+INFLOW_DIRECTIONS = {"borrow", "collect"}
+DESCRIPTIONS = {"borrow": "Borrowed from", "repay": "Repaid to", "lend": "Lent to", "collect": "Collected from"}
 
 
 class SettlementsService:
@@ -39,7 +42,7 @@ class SettlementsService:
                     id uuid primary key default gen_random_uuid(),
                     company_id uuid not null references companies(id),
                     party_id uuid not null references parties(id),
-                    direction text not null check (direction in ('borrow', 'repay')),
+                    direction text not null check (direction in ('borrow', 'repay', 'lend', 'collect')),
                     amount numeric(14,2) not null check (amount > 0),
                     transaction_date date not null default current_date,
                     account_id uuid references accounts(id),
@@ -119,13 +122,16 @@ class SettlementsService:
                     p.legal_name as party_name,
                     coalesce(sum(case when b.direction = 'borrow' then b.amount else 0 end), 0) as borrowed_amount,
                     coalesce(sum(case when b.direction = 'repay' then b.amount else 0 end), 0) as repaid_amount,
-                    coalesce(sum(case when b.direction = 'borrow' then b.amount else -b.amount end), 0) as net_outstanding
+                    coalesce(sum(case when b.direction = 'borrow' then b.amount when b.direction = 'repay' then -b.amount else 0 end), 0) as net_outstanding,
+                    coalesce(sum(case when b.direction = 'lend' then b.amount else 0 end), 0) as lent_amount,
+                    coalesce(sum(case when b.direction = 'collect' then b.amount else 0 end), 0) as collected_amount,
+                    coalesce(sum(case when b.direction = 'lend' then b.amount when b.direction = 'collect' then -b.amount else 0 end), 0) as net_receivable
                 from borrowings b
                 join parties p on p.id = b.party_id
                 where b.company_id = :company_id and {ACTIVE_BORROWING}
                     and (:search='' or strpos(lower(p.legal_name),lower(:search))>0)
                 group by b.party_id, p.legal_name
-                order by net_outstanding desc,p.legal_name asc,b.party_id limit :limit
+                order by net_outstanding desc,net_receivable desc,p.legal_name asc,b.party_id limit :limit
                 """
             ),
             {"company_id": resolved_company_id, "search": search, "limit": limit},
@@ -138,7 +144,7 @@ class SettlementsService:
 
         direction = payload.direction.strip().lower()
         if direction not in ALLOWED_DIRECTIONS:
-            raise HTTPException(status_code=422, detail="direction must be borrow or repay")
+            raise HTTPException(status_code=422, detail="direction must be borrow, repay, lend or collect")
         if payload.amount <= 0:
             raise HTTPException(status_code=422, detail="amount must be greater than zero")
 
@@ -159,9 +165,11 @@ class SettlementsService:
             transaction_date=transaction_date,
             action_label="Posting borrowing/settlement entry",
         )
-        if direction == "repay":
-            available = available_repayment(self.db, resolved_company_id, str(payload.party_id), transaction_date)
+        if direction in SETTLING_DIRECTIONS:
+            available = available_repayment(self.db, resolved_company_id, str(payload.party_id), transaction_date, direction)
             if payload.amount > available:
+                if direction == "collect":
+                    raise HTTPException(422, f"Collection exceeds the amount this party still owes you ({available:.2f})")
                 raise HTTPException(422, f"Repayment exceeds the available outstanding balance ({available:.2f})")
         row = self.db.execute(
             text(
@@ -204,14 +212,13 @@ class SettlementsService:
             raise HTTPException(status_code=500, detail="Failed to create borrowing record")
 
         if payload.create_account_transaction and payload.account_id:
-            if direction == "borrow":
+            if direction in INFLOW_DIRECTIONS:
                 from_account_id = None
                 to_account_id = str(payload.account_id)
-                description = f"Borrowed from {party['legal_name']}"
             else:
                 from_account_id = str(payload.account_id)
                 to_account_id = None
-                description = f"Repaid to {party['legal_name']}"
+            description = f"{DESCRIPTIONS[direction]} {party['legal_name']}"
 
             if payload.notes:
                 description += f" - {payload.notes}"

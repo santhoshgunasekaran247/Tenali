@@ -14,7 +14,7 @@ def active_hsn(db, company_id: str, code: str | None) -> bool:
                                      {"company": company_id, "code": code}).scalar_one_or_none() is not None
 
 
-def create_draft_products(db, company_id: str, lines, vendor_id: str) -> None:
+def create_draft_products(db, company_id: str, lines, vendor_id: str, selling_prices: dict[str, Decimal] | None = None) -> None:
     """Purchase lines marked as new items become draft inventory products mapped to the bill's vendor."""
     from app.services.financial_amounts import line_amounts
     created: dict[str, str] = {}
@@ -35,9 +35,12 @@ def create_draft_products(db, company_id: str, lines, vendor_id: str) -> None:
             if existing:
                 raise HTTPException(409, f"{existing} already exists in Product Inventory. Select it from the product list instead of adding a new item.")
             buying_price, _ = line_amounts(Decimal("1"), line.rate, line.gst_rate, bool(line.price_includes_gst))
-            product_id = str(db.execute(text("""insert into products(company_id,portal_product_id,name,hsn_code,is_draft,catalog_visible,preferred_vendor_id)
-                values(:company,:code,:name,:hsn,true,false,:vendor) returning id"""),
-                {"company": company_id, "code": f"PRD-{uuid4().hex[:12].upper()}", "name": name, "hsn": line.hsn, "vendor": vendor_id}).scalar_one())
+            prices = selling_prices or {}
+            product_id = str(db.execute(text("""insert into products(company_id,portal_product_id,name,hsn_code,selling_price,
+                is_draft,catalog_visible,preferred_vendor_id)
+                values(:company,:code,:name,:hsn,:selling_price,true,false,:vendor) returning id"""),
+                {"company": company_id, "code": f"PRD-{uuid4().hex[:12].upper()}", "name": name, "hsn": line.hsn,
+                 "selling_price": prices.get(key), "vendor": vendor_id}).scalar_one())
             db.execute(text("insert into vendor_contributions(vendor_id,product_id,buying_price,is_active) values(:vendor,:product,:price,true)"),
                        {"vendor": vendor_id, "product": product_id, "price": buying_price})
             created[key] = product_id

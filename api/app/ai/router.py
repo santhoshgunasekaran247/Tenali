@@ -12,12 +12,44 @@ from app.dependencies import get_db
 from app.ai.actions import DraftCreate, DraftEdit, DraftApproval, ExecutionApproval
 from app.ai.drafts import DraftService, available_actions
 from app.ai.execution import ExecutionService
+from app.ai.workflows import WorkflowCreate, WorkflowEdit, WorkflowService, workflow_schema
 
 router = APIRouter()
 
 
 def assistant(request: Request, db=Depends(get_db)):
     return AssistantService(db, request.state.tenant)
+
+
+@router.get("/conversations/{conversation_id}/workflows")
+def workflows(conversation_id: UUID, offset: int = Query(0, ge=0), service=Depends(assistant)):
+    return WorkflowService(service).list(conversation_id, offset)
+
+
+@router.post("/conversations/{conversation_id}/workflows", status_code=201)
+def create_workflow(conversation_id: UUID, payload: WorkflowCreate, service=Depends(assistant)):
+    return WorkflowService(service).create(conversation_id, payload)
+
+
+@router.patch("/workflows/{workflow_id}")
+def edit_workflow(workflow_id: UUID, payload: WorkflowEdit, service=Depends(assistant)):
+    return WorkflowService(service).advance(workflow_id, payload.expected_version, payload)
+
+
+@router.get("/workflows/{workflow_id}/search")
+def search_workflow(workflow_id: UUID, step_id: UUID, field: str = Query(min_length=1, max_length=160),
+                    query: str = Query(min_length=2, max_length=80), service=Depends(assistant)):
+    return WorkflowService(service).search(workflow_id, step_id, field, query)
+
+
+@router.post("/workflows/{workflow_id}/continue")
+def continue_workflow(workflow_id: UUID, expected_version: int = Query(ge=1), service=Depends(assistant)):
+    return WorkflowService(service).advance(workflow_id, expected_version)
+
+
+@router.delete("/workflows/{workflow_id}")
+def discard_workflow(workflow_id: UUID, expected_version: int = Query(ge=1), service=Depends(assistant)):
+    return WorkflowService(service).discard(workflow_id, expected_version)
 
 
 @router.get("/executions/{execution_id}/report")
@@ -50,7 +82,8 @@ def remove_attachment(attachment_id: UUID, service=Depends(assistant)):
 def actions(service=Depends(assistant)):
     service.require_enabled()
     identity = current_identity(service.db, service.identity)
-    return {"items": available_actions(service.db, identity)}
+    return {"items": [{**item, "workflow_schema": workflow_schema(item["key"])}
+                      for item in available_actions(service.db, identity)]}
 
 
 @router.get("/conversations/{conversation_id}/drafts")
