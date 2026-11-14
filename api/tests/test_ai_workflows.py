@@ -626,6 +626,80 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(steps[1]["payload"], {"name": "Jar", "hsn_code": "1234"})
         self.assertEqual(len(root["bindings"]), 2)
 
+    def test_bill_line_creates_missing_hsn_and_product_with_printed_facts_and_photo(self):
+        service = self.service()
+        root = step("purchase_create", {"lines": [{"product_id": "Copper Plate", "hsn": "7418", "gst_rate": 12,
+                                                    "description": "Copper Plate - Round", "selling_price": 575}]})
+        root["line_images"] = {"0": "data:image/jpeg;base64,AAAA"}
+        steps = [root]
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            for path, value, spec in reference_fields(root["payload"]):
+                service.resolve(root, path, value, spec, steps)
+        created = {child["action"]: child["payload"] for child in steps[1:]}
+        self.assertEqual(created["hsn_create"], {"code": "7418", "gst_rate": 12, "description": "Copper Plate - Round"})
+        self.assertEqual(created["product_create"], {"name": "Copper Plate", "hsn_code": "7418", "selling_price": 575,
+                                                     "image_url": "data:image/jpeg;base64,AAAA"})
+        self.assertEqual(set(root["bindings"]), {"lines.0.hsn", "lines.0.product_id"})
+        # The new product waits for the new HSN master (product saves require an active code).
+        product = next(child for child in steps if child["action"] == "product_create")
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(product, ("hsn_code",), "7418", REFERENCES["hsn_code"], steps)
+        hsn_step = next(child for child in steps if child["action"] == "hsn_create")
+        self.assertEqual(product["bindings"]["hsn_code"]["step_id"], hsn_step["id"])
+        self.assertEqual(len(steps), 3)
+
+    def test_bill_to_own_business_is_never_the_vendor(self):
+        service = self.service()
+        service.db.execute.return_value.scalar_one_or_none.return_value = "testscarrysan"
+        item = step("purchase_create", {"vendor_party_id": "TestScarry San"})
+        service.own_business_party(item)
+        self.assertNotIn("vendor_party_id", item["payload"])
+        self.assertIn("letterhead", item["issues"][0]["message"])
+        item = step("purchase_create", {"vendor_party_id": "Shree Metals & Crafts"})
+        service.own_business_party(item)
+        self.assertEqual(item["payload"]["vendor_party_id"], "Shree Metals & Crafts")
+        self.assertEqual(item["issues"], [])
+
+    def test_document_photo_regions_are_removed_and_cropped_from_the_single_image(self):
+        service = self.service()
+        attachment = "6f1c2d3e-4a5b-4c6d-8e7f-901234567890"
+        service.assistant.current_files = [{"id": attachment, "mime_type": "image/jpeg", "content": b"img"}]
+        ref = lambda box: f"ai-photo:{attachment}/{box}"
+        crop = lambda content, box: object()
+        # One detected picture per line: rows map top to bottom, even when the model's box is off or absent.
+        values = {"lines": [{"product_id": "Plate", "image_box": "10,300,200,400"}, {"product_id": "Cup"}]}
+        with patch("app.ai.media.photo_regions", return_value=["50,500,200,650", "50,700,200,850"]), \
+                patch("app.ai.media.crop_region", side_effect=crop):
+            # Products keep a full-resolution reference to the bill region, not a lossy inline thumbnail.
+            self.assertEqual(service.document_photos(values), {"0": ref("50,500,200,650"), "1": ref("50,700,200,850")})
+        self.assertNotIn("image_box", values["lines"][0])
+        # Otherwise only a model hint near a detected picture selects it; far or missing hints attach nothing.
+        for hint, expected in (("40,520,210,640", {"0": ref("50,500,200,650")}), ("40,50,210,90", {}), (None, {})):
+            values = {"lines": [{"product_id": "Plate", "image_box": hint}, {"product_id": "Cup"}, {"product_id": "Jar"}]}
+            with patch("app.ai.media.photo_regions", return_value=["50,500,200,650"]), \
+                    patch("app.ai.media.crop_region", side_effect=crop):
+                self.assertEqual(service.document_photos(values), expected)
+        with patch("app.ai.media.photo_regions", return_value=["50,500,200,650"]), \
+                patch("app.ai.media.crop_region", return_value=None):
+            self.assertEqual(service.document_photos({"lines": [{"product_id": "Plate"}]}), {})
+        service.assistant.current_files = [{"mime_type": "image/png", "content": b"a"}, {"mime_type": "image/png", "content": b"b"}]
+        values = {"lines": [{"image_box": "10,10,200,200"}]}
+        self.assertEqual(service.document_photos(values), {})
+        self.assertEqual(values["lines"][0], {})
+
+    def test_document_totals_decide_whether_line_rates_include_gst(self):
+        line = {"product_id": "Plate", "quantity": 100, "rate": 440, "gst_rate": 12}
+        exclusive = normalize_document_proposal("purchase_create", {"subtotal": 44000, "total": 49280, "lines": [dict(line)]})
+        self.assertIs(exclusive["lines"][0]["price_includes_gst"], False)
+        inclusive = normalize_document_proposal("invoice_create", {"total": 44000, "subtotal": 39285.71, "lines": [dict(line)]})
+        self.assertIs(inclusive["lines"][0]["price_includes_gst"], True)
+        for payload in ({"lines": [dict(line)]}, {"subtotal": 44000, "total": 44000, "lines": [dict(line)]},
+                        {"subtotal": 1, "total": 2, "lines": [dict(line)]}):
+            self.assertNotIn("price_includes_gst", normalize_document_proposal("purchase_create", payload)["lines"][0])
+        stated = normalize_document_proposal("purchase_create", {"subtotal": 44000, "total": 49280,
+                                                                 "lines": [{**line, "price_includes_gst": True}]})
+        self.assertIs(stated["lines"][0]["price_includes_gst"], True)
+
     def test_select_create_option_checks_current_results_and_never_duplicates_exact_match(self):
         service = self.service()
         root = step("offer_create", {"vendor_id": "Tiger"})
@@ -687,6 +761,21 @@ class WorkflowTests(unittest.TestCase):
             "id": child["draft_id"], "version": 1, "status": "executed", "payload": child["payload"]}
         service.prepare(row)
         service.drafts.create.assert_not_called()
+
+    def test_posted_hsn_binds_its_code_even_from_an_id_only_outcome(self):
+        for result in ({"id": str(uuid4()), "code": "7418"}, {"id": str(uuid4())}):
+            with self.subTest(result=result):
+                service = self.service()
+                root = step("product_create", {"name": "Copper Plate", "hsn_code": "7418"})
+                child = step("hsn_create", {"code": "7418", "gst_rate": 12, "description": "Copper Plate"})
+                child["draft_id"] = str(uuid4())
+                root["bindings"]["hsn_code"] = {"step_id": child["id"], "path": ["hsn_code"]}
+                row = self.workflow("product_create", {})
+                row["plan"]["steps"] = [root, child]
+                service.drafts.get.return_value = {"id": child["draft_id"], "version": 1, "status": "executed", "payload": child["payload"]}
+                service.db.execute.return_value.mappings.return_value.one.return_value = {"result": result}
+                prepared = service.prepare(row)
+                self.assertEqual(prepared["plan"]["steps"][0]["payload"]["hsn_code"], "7418")
 
     def test_failed_or_unsubmitted_prerequisite_never_advances(self):
         service = self.service()

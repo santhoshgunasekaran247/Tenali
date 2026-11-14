@@ -5,14 +5,67 @@ import warnings
 from uuid import uuid4
 
 from fastapi import HTTPException
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy import text
 
 from app.services.feature_controls import platform_settings
+from app.services.product_images import PHOTO_REFERENCE
 
 MAX_BYTES = 2 * 1024 * 1024
+STORED_SIDE = 2048
+MODEL_SIDE = 1024
+
+
+def model_image(content):
+    """The copy sent to the model: 1024px keeps one image well under the paid-input bound."""
+    with Image.open(io.BytesIO(content)) as image:
+        if max(image.size) <= MODEL_SIDE:
+            return content
+        image = image.convert("RGB")
+        image.thumbnail((MODEL_SIDE, MODEL_SIDE))
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=85)
+        return output.getvalue()
+
+
+def photo_reference(attachment_id, box):
+    return f"ai-photo:{attachment_id}/{box}"
+
+
+def crop_region(content, box):
+    """Full-resolution RGB crop of a 0-1000 normalized "x0,y0,x1,y1" region, or None."""
+    try:
+        x0, y0, x1, y1 = (float(part) for part in str(box).split(","))
+    except ValueError:
+        return None
+    if not (0 <= x0 < x1 <= 1000 and 0 <= y0 < y1 <= 1000) or (x1 - x0) < 20 or (y1 - y0) < 20:
+        return None
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            width, height = image.size
+            return image.convert("RGB").crop((round(x0 * width / 1000), round(y0 * height / 1000),
+                                              round(x1 * width / 1000), round(y1 * height / 1000)))
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+
+
+def referenced_photo(db, company_id, reference, user_id=None):
+    """Lossless PNG of a bill photo reference owned by this company (and user, for AI drafts)."""
+    match = PHOTO_REFERENCE.match(reference or "")
+    if not match:
+        raise HTTPException(422, "Invalid document photo reference.")
+    content = db.execute(text("""select content from ai_attachments where id=:id and company_id=:company
+        and (cast(:user as uuid) is null or user_id=cast(:user as uuid)) and content is not null
+        and mime_type like 'image/%'"""), {"id": match[1], "company": str(company_id),
+                                            "user": str(user_id) if user_id else None}).scalar_one_or_none()
+    region = crop_region(content, match[2]) if content else None
+    if region is None:
+        raise HTTPException(422, "The bill photo for this product was removed or expired. Upload a product image in Inventory.")
+    output = io.BytesIO()
+    region.save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 def normalize_upload(payload):
@@ -38,10 +91,14 @@ def normalize_upload(payload):
                     if image.width * image.height > 16_000_000 or getattr(image, "n_frames", 1) != 1:
                         raise HTTPException(422, "Use a single still image with at most 16 million pixels.")
                     image.load()
-                    image = ImageOps.exif_transpose(image)
-                    image.thumbnail((512, 512))
-                    output = io.BytesIO()
-                    image.convert("RGB").save(output, format="JPEG", quality=85)
+                    image = ImageOps.exif_transpose(image).convert("RGB")
+                    # Keep up to 2048px so product photos cropped from a bill stay sharp; the model gets a 1024px copy.
+                    image.thumbnail((STORED_SIDE, STORED_SIDE))
+                    for quality in (92, 85, 75):
+                        output = io.BytesIO()
+                        image.save(output, format="JPEG", quality=quality)
+                        if output.tell() <= MAX_BYTES:
+                            break
                     return name, "image/jpeg", output.getvalue(), None, 16000
         except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             raise HTTPException(422, "Invalid or oversized image.") from error
@@ -68,6 +125,61 @@ def normalize_upload(payload):
     if not content.strip() or len(encoded) > 12000 or any(ord(char) < 32 and char not in "\r\n\t" for char in content):
         raise HTTPException(422, "Use a text document with 1-12,000 UTF-8 bytes. For scanned PDFs, upload a page as an image.")
     return name, "text/plain", encoded, content, len(encoded) + 512
+
+
+def photo_regions(content, *, columns=96):
+    """Find picture-like blocks (dense, roughly square) on a document page, top to bottom, as 0-1000
+    "x0,y0,x1,y1" boxes. Text strokes are sparse and header/total bars are long, so neither qualifies."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            width, height = image.size
+            rows = max(1, round(columns * height / width))
+            small = image.convert("RGB").resize((columns * 4, rows * 4))
+    except (UnidentifiedImageError, OSError, ValueError):
+        return []
+    background = max(small.getcolors(small.width * small.height), key=lambda item: item[0])[1]
+    ink = ImageChops.difference(small, Image.new("RGB", small.size, background)).convert("L").point(
+        lambda value: 255 if value > 40 else 0)
+    dense = {(row, column) for row in range(rows) for column in range(columns)
+             if ImageStat.Stat(ink.crop((column * 4, row * 4, column * 4 + 4, row * 4 + 4))).mean[0] >= 0.75 * 255}
+    seen, regions = set(), []
+    for cell in sorted(dense):
+        if cell in seen:
+            continue
+        seen.add(cell)
+        stack, component = [cell], []
+        while stack:
+            row, column = stack.pop()
+            component.append((row, column))
+            for near in ((row + 1, column), (row - 1, column), (row, column + 1), (row, column - 1)):
+                if near in dense and near not in seen:
+                    seen.add(near)
+                    stack.append(near)
+        top, bottom = min(row for row, _ in component), max(row for row, _ in component) + 1
+        left, right = min(column for _, column in component), max(column for _, column in component) + 1
+        span_x, span_y = right - left, bottom - top
+        if span_x < 4 or span_y < 4 or max(span_x / span_y, span_y / span_x) > 3 or len(component) < 0.5 * span_x * span_y:
+            continue
+        # Photos have shading; QR codes, stamps and flat logos are mostly two-tone.
+        tones = small.convert("L").crop((left * 4, top * 4, right * 4, bottom * 4))
+        histogram = tones.histogram()
+        if sum(histogram[40:216]) < 0.3 * sum(histogram) or ImageStat.Stat(tones).stddev[0] < 15:
+            continue
+        regions.append((top, ",".join(str(round(value)) for value in (
+            max(0, left - 1) * 1000 / columns, max(0, top - 1) * 1000 / rows,
+            min(columns, right + 1) * 1000 / columns, min(rows, bottom + 1) * 1000 / rows))))
+    return [box for _, box in sorted(regions)]
+
+
+def photo_preview(content, box, side=480):
+    """Small JPEG preview of a bill photo region for the private review screen, or None."""
+    region = crop_region(content, box)
+    if region is None:
+        return None
+    region.thumbnail((side, side))
+    output = io.BytesIO()
+    region.save(output, format="JPEG", quality=85)
+    return output.getvalue()
 
 
 class MediaService:
@@ -106,6 +218,22 @@ class MediaService:
                 raise HTTPException(404, "Private attachment not found, expired or removed.")
             items.append(dict(row))
         return items
+
+    def photo(self, reference):
+        """Private review preview of a bill photo reference owned by the current user."""
+        match = PHOTO_REFERENCE.match(reference or "")
+        if not match:
+            raise HTTPException(422, "Invalid document photo reference.")
+        row = self.db.execute(text("""select conversation_id,content from ai_attachments where id=:id and company_id=:company
+            and user_id=:user and content is not null and mime_type like 'image/%'"""),
+            {**self.scope, "id": match[1]}).mappings().first()
+        if not row:
+            raise HTTPException(404, "Document photo not found, expired or removed.")
+        self.assistant.conversation(row["conversation_id"])
+        preview = photo_preview(row["content"], match[2])
+        if preview is None:
+            raise HTTPException(422, "Invalid document photo region.")
+        return preview
 
     def remove(self, attachment_id):
         row = self.db.execute(text("""select conversation_id from ai_attachments where id=:id and company_id=:company

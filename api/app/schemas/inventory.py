@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.company import validate_image_source
+from app.services.product_images import PHOTO_REFERENCE
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=3)]
@@ -55,9 +56,10 @@ class ProductInput(ItemDetails):
 
     @model_validator(mode="after")
     def validate_images(self):
-        validate_image_source(self.image_url)
-        for image in self.image_urls:
-            validate_image_source(image)
+        for image in [self.image_url, *self.image_urls]:
+            # AI bill-photo references are resolved and published by the file store when the product is saved.
+            if not (image and PHOTO_REFERENCE.match(image)):
+                validate_image_source(image)
         return self
 
 

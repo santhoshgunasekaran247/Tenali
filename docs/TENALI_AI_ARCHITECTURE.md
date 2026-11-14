@@ -744,8 +744,10 @@ legacy profile attribution is retained and tenant credentials receive no SELECT 
 Private uploads accept UTF-8 `.txt`, text PDF (one to five unencrypted pages), or a
 single PNG/JPEG/WebP image, at most 2 MB/file, ten retained files/conversation and two
 files/message. Text extraction is limited to 12,000 UTF-8 bytes. Scanned PDFs must
-be uploaded as page images. Images are decoded, orientation-corrected, stripped of metadata and normalized
-to a JPEG no larger than 512 x 512, sent at low detail for economical reading.
+be uploaded as page images. Images are decoded, orientation-corrected, stripped of metadata and stored
+as a JPEG no larger than 2048 x 2048 (sharp enough to cut product photos from); the provider receives a
+1024 x 1024 copy at high detail so bill rows and small print stay legible.
+Document messages use low reasoning effort for row-by-row extraction; plain chat keeps the model default.
 Original binary PDFs/images are not forwarded to the provider or exposed through
 public URLs. Normalized private bytes/text are stored in `ai_attachments`, protected
 by company/user/conversation ownership, RLS and expiry. There is intentionally no
@@ -891,7 +893,7 @@ require operational approval.
 - Unique exact name matches are selected automatically. Ambiguous/partial matches
   become record choices; **Create new** prepares an allowed prerequisite. An empty,
   non-truncated search prepares missing parties, products, variants, accounts,
-  brands or categories. Repeated references share a prerequisite.
+  brands, categories or HSN/SAC codes. Repeated references share a prerequisite.
   Sales are an exception for missing inventory: select/confirm stocked inventory in
   Inventory rather than creating an unstocked product as a hidden sales prerequisite.
 - Selecting a record immediately resumes preparation. Creating a prerequisite
@@ -929,6 +931,38 @@ require operational approval.
   Purchases also prepare an allowed vendor-offer prerequisite when its complete,
   permitted lookup finds no active vendor/product/variant mapping. The purchase
   waits for that offer to be submitted; linked offer identities cannot be swapped.
+- Bill images: every item row becomes a document line (never notes). The vendor is
+  the letterhead seller; a vendor/customer name matching this business (Bill To /
+  Ship To) is removed with a visible issue. A missing HSN/SAC code prepares an
+  `hsn_create` prerequisite seeded with the printed GST rate and item text; HSN
+  bindings carry the code, and a new product using that code waits for it.
+  Whether line rates include GST is inferred only when quantity x rate matches
+  exactly one of the printed subtotal (exclusive) or grand total (inclusive).
+  Product pictures are found server-side as dense, shaded, roughly square blocks
+  (text, bars, QR codes and flat logos are ignored). With one picture per line they
+  map top to bottom; otherwise only a model `image_box` hint near a detected picture
+  selects it. The product draft holds a private reference
+  (`ai-photo:<attachment>/<x0,y0,x1,y1>`), not inline image data: it seeds the image of a
+  *new* product only, is previewed (≤480 px, owner only, `GET /api/ai/photos`) and
+  removable in review, and fails clearly if the bill expired or was removed; existing
+  products are not changed. Product saves (Inventory uploads and these AI photos, cut
+  from the full stored bill) publish two public files: the untouched original and a
+  1000x1000 WebP website display image. Display images are made per photo by local
+  AI models on CPU through OpenCV DNN (no provider call, nothing generated or
+  repainted): product segmentation (ISNet, falling back to the bundled U2-Net-p, or
+  the photo's own transparency) keeps only the product, on pure white with a soft
+  contact shadow. If no clearly separable product is found (for example a close-up
+  that fills the frame), the whole photo, with bill margins and table rules trimmed,
+  fills the square over a blurred extension of itself. Small photos are 4x
+  super-resolved (EDSR up to 60,000 pixels, bundled FSRCNN up to 400,000, else a plain
+  resize); all get auto-contrast, clarity, colour and sharpening. Every model is
+  SHA-256 pinned; EDSR (38 MB) and ISNet (179 MB) are fetched once into
+  `TENALI_MODEL_CACHE` (default `~/.cache/tenali/models`). A bill product takes about
+  10-20 s on CPU. The display URL
+  becomes `image_url`/`image_urls`; `products.image_originals` maps it to the
+  original and keeps the pair only while that display image stays on the product.
+  Already-published URLs are stored unchanged. Dropdown options, including optional ones, are listed in the model context
+  (`choices`) so values such as payment mode come from the allowed set.
 - Current product/variant/offer/brand/category fields are loaded before full
   replacements; account and party updates retain patch semantics. Updated chat
   facts invalidate an existing unposted review rather than silently retaining approval.

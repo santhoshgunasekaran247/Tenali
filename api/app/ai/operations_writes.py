@@ -293,6 +293,11 @@ def preview(db, company, action, target, values):
             and id is distinct from cast(:id as uuid) limit 1"""),
             {"company": company, "name": values["name"], "id": str(target) if target else None}).first():
             raise HTTPException(409, "This name already exists.")
+    elif action == "hsn_create":
+        if db.execute(text("select 1 from hsn_masters where company_id=:company and code=:code limit 1"),
+                      {"company": company, "code": values["code"]}).first():
+            raise HTTPException(409, "This HSN/SAC code already exists; select it or reactivate it in Master Data.")
+        result["stock_change"] = "0"
     elif action == "reorder_reminder":
         if values["variant_id"]:
             inventory._variant(str(target), values["variant_id"])
@@ -362,6 +367,11 @@ def apply(db, company, action, target, values):
         if target:
             return inventory.update_lookup(kind, target, ACTIONS[action].schema.model_validate(values), commit=False)
         return inventory.create_lookup(kind, **values, commit=False)
+    if action == "hsn_create":
+        from app.schemas.masters import HsnMasterCreate
+        from app.services.masters_service import MastersService
+        row = MastersService(db).create_hsn(HsnMasterCreate.model_validate(values), company, commit=False)
+        return {"id": str(row["id"]), "code": row["code"]}
     if action == "reorder_reminder":
         inventory.remind(target, ReorderReminder.model_validate(values), commit=False)
         return {"id": values["variant_id"] or target}

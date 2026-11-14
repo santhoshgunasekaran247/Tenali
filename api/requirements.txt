@@ -12,3 +12,5 @@ phonenumbers>=8.13
 openai>=2.0
 Pillow>=11.0
 pypdf>=5.0
+numpy>=2.0
+opencv-contrib-python-headless>=4.10

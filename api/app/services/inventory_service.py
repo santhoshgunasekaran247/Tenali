@@ -55,7 +55,7 @@ class InventoryService:
         for key, value in values.items():
             if not re.fullmatch(r"[a-z_]+", key):
                 raise ValueError("Invalid inventory field")
-            if key == "attributes":
+            if key in {"attributes", "image_originals"}:
                 params[key] = json.dumps(value)
                 expressions[key] = f"cast(:{key} as jsonb)"
             else:
@@ -254,14 +254,23 @@ class InventoryService:
                 "fields": payload.model_dump(mode="json"), "stock_added": "0"}
 
     def save_product(self, payload: ProductInput, product_id: str | None = None, *, commit: bool = True) -> dict:
-        if product_id and self._product(product_id, lock=True).get("is_draft") and payload.catalog_visible:
+        current = self._product(product_id, lock=True) if product_id else None
+        if current and current.get("is_draft") and payload.catalog_visible:
             raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
         self._validate_item(values, product_id)
         files = FileStore(self.db)
-        images = {source: files.image(self.company_id, source) for source in dict.fromkeys([values["image_url"], *values["image_urls"]])}
+        images, originals = {}, {}
+        for source in dict.fromkeys([values["image_url"], *values["image_urls"]]):
+            images[source], original = files.product_image(self.company_id, source)
+            if original:
+                originals[images[source]] = original
         values["image_url"] = images[values["image_url"]]
         values["image_urls"] = "|".join(images[image] for image in values["image_urls"])
+        in_use = {values["image_url"], *values["image_urls"].split("|")} - {None, ""}
+        # Keep the uploaded original beside each website display image that is still on the product.
+        values["image_originals"] = {display: original for display, original in
+                                     {**((current or {}).get("image_originals") or {}), **originals}.items() if display in in_use}
         if not product_id:
             values.update(company_id=self.company_id, portal_product_id=f"PRD-{uuid4().hex[:12].upper()}")
         product_id = self._write("products", values, product_id)

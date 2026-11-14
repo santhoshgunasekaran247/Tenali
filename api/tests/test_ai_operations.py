@@ -79,6 +79,13 @@ class OperationsContractTests(unittest.TestCase):
         self.assertIn("selling_price", purchase["nested"]["lines"])
         self.assertIn("price_includes_gst", purchase["nested"]["lines"])
         self.assertIn("fully_paid", purchase["fields"])
+        # Optional/$ref dropdowns are offered once; conflicting option sets stay with their own contract.
+        self.assertEqual(data["choices"]["payment_mode"], "cash|bank|upi|card|cheque|other")
+        self.assertEqual(data["choices"]["receipt_type"], "PRODUCT|STOCK|SERVICE")
+        self.assertIn("vendor", data["choices"]["party_type"])
+        loan = data["draft_contracts"][data["available_draft_actions"]["borrowing_create"][1]]
+        self.assertEqual(loan["choices"]["direction"], "borrow|repay|lend|collect")
+        self.assertIn("image_box", purchase["nested"]["lines"])
 
     def test_filters_and_manual_boundaries_are_explicit(self):
         self.assertFalse({"period_close", "period_reopen", "reset_all", "invoice_delete", "online_customer_link"} & set(ACTIONS))

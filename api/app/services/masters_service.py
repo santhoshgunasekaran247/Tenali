@@ -34,16 +34,19 @@ class MastersService:
                 "search": search or "", "pattern": f"%{search or ''}%", "limit": limit}).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def create_hsn(self, payload: HsnMasterCreate, company_id: str | None) -> dict:
+    def create_hsn(self, payload: HsnMasterCreate, company_id: str | None, *, commit: bool = True) -> dict:
         values = {**payload.model_dump(), "company_id": self._company_id(company_id)}
         try:
-            row = self.db.execute(text("""
-                insert into hsn_masters(company_id, code, description, gst_rate, is_active)
-                values(:company_id, :code, :description, :gst_rate, :is_active) returning *
-            """), values).mappings().one()
-            self.db.commit()
+            with self.db.begin_nested():
+                row = self.db.execute(text("""
+                    insert into hsn_masters(company_id, code, description, gst_rate, is_active)
+                    values(:company_id, :code, :description, :gst_rate, :is_active) returning *
+                """), values).mappings().one()
+            if commit:
+                self.db.commit()
         except IntegrityError as exc:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
             raise HTTPException(status_code=409, detail="HSN/SAC code already exists; edit or reactivate it") from exc
         return dict(row)
 

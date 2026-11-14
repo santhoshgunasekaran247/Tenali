@@ -155,3 +155,23 @@ class FileStore:
                 raise HTTPException(422, "Unsupported image asset type")
         file = self.save(company_id, content, mime_type, public=not private, kind="signature" if private else "image")
         return f"/api/company/assets/{file['id']}" if private else ObjectStorage().public_url(file)
+
+    def product_image(self, company_id, source):
+        """Publish an uploaded product photo as an enhanced website display image and keep the original.
+        Returns (display_url, original_url); URLs and catalog assets are already published, so original is None."""
+        if source and source.startswith("ai-photo:"):
+            # A product photo cut from a bill the user uploaded to the AI assistant, at full stored resolution.
+            from app.ai.media import referenced_photo
+            content, mime_type = referenced_photo(self.db, company_id, source), "image/png"
+        elif not source or not source.startswith("data:"):
+            return self.image(company_id, source), None
+        else:
+            validate_image_source(source)
+            header, encoded = source.split(",", 1)
+            content, mime_type = base64.b64decode(encoded, validate=True), header[5:].split(";", 1)[0]
+        from app.services.product_images import display_image
+        display = display_image(content)
+        original = self.save(company_id, content, mime_type, public=True, kind="image")
+        enhanced = self.save(company_id, display, "image/webp", public=True, kind="image")
+        storage = ObjectStorage()
+        return storage.public_url(enhanced), storage.public_url(original)

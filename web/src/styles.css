@@ -967,6 +967,9 @@ body {
 .workflow-reference-dropdown p { margin: 6px 0; font-size: 13px; overflow-wrap: anywhere; }
 .ai-operations { min-width: 0; }
 .ai-impact { margin: 8px 0; }
+.ai-image-field { display: grid; gap: 6px; justify-items: start; }
+.ai-image-field img, .ai-impact-image { width: 96px; height: 96px; object-fit: contain; border: 1px solid var(--line, #d8dee6); border-radius: 6px; background: #fff; }
+.ai-image-pending { display: inline-grid; place-items: center; width: 96px; height: 96px; border: 1px dashed var(--line, #d8dee6); border-radius: 6px; color: #64748b; font-size: 12px; text-align: center; }
 .ai-impact > div { padding: 8px 0; border-bottom: 1px solid var(--site-border); }
 .ai-impact dt { font-weight: 600; text-transform: capitalize; }
 .ai-impact dd { margin: 4px 0 0; overflow-wrap: anywhere; }

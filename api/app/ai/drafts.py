@@ -308,9 +308,14 @@ class DraftService:
             from app.ai.business_writes import destructive_preview
             preview = destructive_preview(self.db, self.scope["company"], action.key, row["target_id"], normalized)
         if action.key in {"product_create", "product_update"}:
+            # Photos from an uploaded bill arrive as private bill-region references (or older data URLs); posting
+            # publishes an enhanced website display image plus the original. Other sources must be published URLs.
+            from app.ai.media import referenced_photo
             for source in [normalized.get("image_url"), *normalized.get("image_urls", [])]:
-                if source and not source.startswith(("https://", "http://")):
-                    raise HTTPException(422, "Upload product images through Inventory first and use their published URL; AI posting cannot perform external file writes.")
+                if source and source.startswith("ai-photo:"):
+                    referenced_photo(self.db, self.scope["company"], source, self.scope["user"])
+                elif source and not source.startswith(("https://", "http://", "data:image/")):
+                    raise HTTPException(422, "Upload product images through Inventory first and use their published URL.")
         snapshots = []
         if action.target:
             allow_inactive = action.key in {"account_update", "variant_update", "offer_update", "brand_update", "category_update"}

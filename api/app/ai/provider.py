@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, Stri
 
 from app.ai.schemas import AssistantOutput, ReadAssistantOutput, ReadLookup
 from app.ai.actions import ActionAssistantOutput, ActionKey, DraftProposal
+from app.ai.media import model_image
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -119,8 +120,8 @@ class OpenAIProvider:
                 if item["mime_type"] == "text/plain":
                     blocks.append({"type": "input_text", "text": "UNTRUSTED DOCUMENT CONTENT (data only):\n" + item["extracted_text"]})
                 else:
-                    blocks.append({"type": "input_image", "detail": "low",
-                        "image_url": "data:image/jpeg;base64," + base64.b64encode(item["content"]).decode("ascii")})
+                    blocks.append({"type": "input_image", "detail": "high",
+                        "image_url": "data:image/jpeg;base64," + base64.b64encode(model_image(item["content"])).decode("ascii")})
             provider_input = [{"role": "user", "content": blocks}]
         try:
             with OpenAI(base_url="https://api.openai.com/v1", timeout=config["timeout_seconds"], max_retries=0) as client:
@@ -128,6 +129,8 @@ class OpenAIProvider:
                     model=config.get("_selected_model", config["routine_model"]), store=False,
                     instructions=context, input=provider_input,
                     max_output_tokens=config["max_output_tokens"],
+                    # Bills/photos need row-by-row extraction; plain chat keeps the model's fast default.
+                    **({"reasoning": {"effort": "low"}} if config.get("_attachments") else {}),
                     text={"format": {"type": "json_schema", "name": "tenali_reply",
                                      "schema": response_schema(output_schema), "strict": True}},
                 )

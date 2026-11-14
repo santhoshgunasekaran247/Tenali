@@ -143,6 +143,11 @@ export const ai = {
     document.body.appendChild(link);
     try { link.click(); } finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
   },
+  documentPhoto: async (reference: string) => {
+    const response = await tenantFetch(`/api/ai/photos?${new URLSearchParams({ reference })}`);
+    if (!response.ok) throw new Error("The bill photo is no longer available.");
+    return response.blob();
+  },
   settings: () => aiRequest<CompanyFeatures>("/settings"),
   capabilities: () => aiRequest<{ items: ReadCapability[] }>("/capabilities"),
   actions: () => aiRequest<{ items: DraftAction[] }>("/actions"),

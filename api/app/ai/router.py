@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.ai.schemas import ConversationCreate, ConversationOut, ConversationUpdate, MessageCreate, PreferenceUpdate, AIUpload, VoiceInput
 from app.ai.voice import VoiceService
@@ -76,6 +76,12 @@ def upload_attachment(conversation_id: UUID, payload: AIUpload, service=Depends(
 @router.delete("/attachments/{attachment_id}")
 def remove_attachment(attachment_id: UUID, service=Depends(assistant)):
     return MediaService(service).remove(attachment_id)
+
+
+@router.get("/photos")
+def document_photo(reference: str = Query(max_length=120), service=Depends(assistant)):
+    return Response(MediaService(service).photo(reference), media_type="image/jpeg",
+                    headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/actions")

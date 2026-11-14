@@ -32,6 +32,24 @@ const object = (value: unknown): Record<string, unknown> =>
 const waitingForPrerequisites = (step: WorkflowStep, steps: WorkflowStep[]) =>
   [...Object.values(step.bindings).map(binding => binding.step_id), ...Object.values(step.offer_steps || {})]
     .some(id => steps.find(child => child.id === id)?.draft_status !== "executed");
+const isDocumentImage = (value: string) => value.startsWith("data:image/") || value.startsWith("ai-photo:");
+
+// Bill photo references are private to the signed-in tenant user, so they are fetched with tenant headers.
+function DocumentImage({ source, alt, className }: { source: string; alt: string; className?: string }) {
+  const [url, setUrl] = useState(source.startsWith("data:image/") ? source : "");
+  useEffect(() => {
+    if (source.startsWith("data:image/")) { setUrl(source); return; }
+    let current = "", active = true;
+    setUrl("");
+    ai.documentPhoto(source).then(blob => {
+      if (!active) return;
+      current = URL.createObjectURL(blob);
+      setUrl(current);
+    }).catch(() => undefined);
+    return () => { active = false; if (current) URL.revokeObjectURL(current); };
+  }, [source]);
+  return url ? <img className={className} src={url} alt={alt} /> : <span className="ai-image-pending">Photo from the bill</span>;
+}
 
 function Fields({ values, schema, root, disabled, showAll, requiredFields = [], visibleFields = requiredFields, hiddenFields = [], labels = {}, prefix = "", renderReference, onChange }: {
   values: Record<string, unknown>; schema: FieldSchema; root: Record<string, unknown>; disabled: boolean;
@@ -83,6 +101,9 @@ function Fields({ values, schema, root, disabled, showAll, requiredFields = [], 
     if (raw["x-workflow-reference"] && renderReference) return <div key={key}>
       {renderReference(path, fieldLabel(key), value, label, required)}</div>;
     const choices = field.enum || (field.const !== undefined ? [field.const] : null);
+    if (typeof value === "string" && isDocumentImage(value)) return <div key={key} className="ai-image-field">{caption}
+      <DocumentImage source={value} alt={`${fieldLabel(key)} from the document`} />
+      <button className="btn light" type="button" disabled={disabled} onClick={() => set(null)}>Remove image</button></div>;
     if (field.type === "boolean") return <label key={key}>{caption}<select aria-required={required} disabled={disabled}
       value={value === undefined || value === null ? "" : String(value)} onChange={event => set(event.target.value === "" ? null : event.target.value === "true")}>
       <option value="">Choose explicitly</option><option value="true">Yes</option><option value="false">No</option>
@@ -106,6 +127,7 @@ function Impact({ value }: { value: unknown }) {
     <li key={index}><Impact value={item} /></li>)}</ol> : <span>None</span>;
   if (typeof value === "object") return <dl className="ai-impact">{Object.entries(object(value)).map(([key, item]) =>
     <div key={key}><dt>{friendly(key)}</dt><dd><Impact value={item} /></dd></div>)}</dl>;
+  if (typeof value === "string" && isDocumentImage(value)) return <DocumentImage className="ai-impact-image" source={value} alt="Image from the document" />;
   return <span>{typeof value === "boolean" ? value ? "Yes" : "No" : String(value)}</span>;
 }
 

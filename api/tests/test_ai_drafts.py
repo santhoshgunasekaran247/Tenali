@@ -34,7 +34,7 @@ class DraftUnitTests(unittest.TestCase):
         self.assertIn("HSN/SAC is required", str(error.exception.detail))
 
     def test_operational_allowlist_separates_high_impact_and_excludes_admin(self):
-        self.assertEqual(len(ACTIONS), 43)
+        self.assertEqual(len(ACTIONS), 44)
         self.assertEqual({key for key, action in ACTIONS.items() if action.high_impact},
                          {"invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
                           "account_transaction_reverse", "stock_transfer_reverse", "product_merge", "receivable_status"})

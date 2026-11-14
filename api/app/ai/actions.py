@@ -11,6 +11,7 @@ from app.ai.schemas import ReadAssistantOutput
 from app.schemas.accounts import AccountCreate, AccountUpdate, AccountTransactionCreate, BusinessPaymentCreate, TransactionReverseCreate
 from app.schemas.billing import InvoiceCreate
 from app.schemas.collections import ReceivablePaymentCreate
+from app.schemas.masters import HsnMasterCreate
 from app.schemas.inventory import (ProductInput, StockAdjustment, StockTransferCreate, VariantInput,
     VendorOfferInput, BulkVendorMapping, ProductMerge, StockTransferReverse, ExternalMovementSource,
     ReorderReminder, InventoryLookupCreate)
@@ -203,7 +204,7 @@ ActionKey = Literal[
     "offer_create", "offer_update", "vendor_bulk_map", "brand_create", "brand_update",
     "category_create", "category_update", "reorder_reminder", "stock_transfer_reverse", "movement_attribute",
     "report_export", "gst_reconcile",
-    "business_payment_create",
+    "business_payment_create", "hsn_create",
 ]
 
 
@@ -281,6 +282,7 @@ ACTIONS = {action.key: action for action in (
     Action("brand_create", "/inventory", InventoryLookupCreate, None, "Create an inventory brand."),
     Action("brand_update", "/inventory", InventoryLookupCreate, "brands", "Replace the name/description/active fields of an inventory brand."),
     Action("category_create", "/inventory", InventoryLookupCreate, None, "Create an inventory category."),
+    Action("hsn_create", "/masters", HsnMasterCreate, None, "Add an HSN/SAC code with its description and GST rate as printed on the user's document."),
     Action("category_update", "/inventory", InventoryLookupCreate, "product_categories", "Replace the name/description/active fields of an inventory category."),
     Action("reorder_reminder", "/inventory", ReorderReminder, "products", "Set a product/variant reorder reminder; no automatic order."),
     Action("stock_transfer_reverse", "/inventory", StockTransferReverse, "stock_transfers", "Separate high-impact reversal back to the original store, dated today; requires available destination stock."),

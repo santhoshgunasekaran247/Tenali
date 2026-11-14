@@ -415,6 +415,21 @@ working paper, not tax filing or ITC certification. Accounting-period close/reop
 reset-all, shopper identity linking and administrative tax/company settings stay manual.
 See [Operations coverage](TENALI_AI_ARCHITECTURE.md#19-operations-wide-capability-coverage).
 
+### Product display images
+
+Product photos get AI background removal and super-resolution through OpenCV DNN
+(`numpy` and `opencv-contrib-python-headless` in `api/requirements.txt`). The small
+U2-Net-p and FSRCNN models are bundled; prefetch the pinned ISNet (179 MB) and EDSR
+(38 MB) models during deployment so the first product save does not download them:
+
+```powershell
+cd api; python -m app.services.vision_models
+```
+
+Set `TENALI_MODEL_CACHE` to a persistent writable directory if the default
+`~/.cache/tenali/models` is not. Without the downloaded models the bundled ones are
+used; without OpenCV, display images fall back to classic trimming and resizing.
+
 ### Microphone voice input
 
 Apply `048_ai_voice` before restarting the updated API. Voice defaults off and does

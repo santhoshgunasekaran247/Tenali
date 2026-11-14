@@ -161,7 +161,7 @@ export type InventoryItem = InventoryItemInput & {
 };
 export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string };
 export type InventoryProduct = InventoryItem & Omit<InventoryProductInput, "image_urls"> & {
-  image_urls: string; portal_product_id: string; brand_name?: string; category_name?: string;
+  image_urls: string; image_originals?: Record<string, string>; portal_product_id: string; brand_name?: string; category_name?: string;
   base_stock_qty: number; variants: InventoryVariant[]; is_draft?: boolean;
 };
 export type InventoryLookups = {

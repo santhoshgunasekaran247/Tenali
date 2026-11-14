@@ -28,7 +28,7 @@ REFERENCES = {
     "brand_id": ("brands", ("name", "code"), "id", "brand_create", "name"),
     "category_id": ("categories", ("name", "code"), "id", "category_create", "name"),
     "invoice_id": ("invoices", ("invoice_number",), "id", None, None),
-    "hsn": ("hsn", ("code",), "code", None, None),
+    "hsn": ("hsn", ("code",), "code", "hsn_create", "code"),
 }
 for alias in ("stock_store_id", "from_store_id", "to_store_id"):
     REFERENCES[alias] = REFERENCES["store_id"]
@@ -286,7 +286,31 @@ def normalize_document_proposal(action, payload):
             line["product_id"] = line["description"]
         if line.get("product_id") and line.get("new_product"):
             line["new_product"] = False
+    document_gst_basis(normalized)
     return normalized
+
+
+def document_gst_basis(payload):
+    """The document's own totals show whether rates include GST: qty x rate summing to the subtotal means
+    exclusive, to the grand total means inclusive. Ambiguous or incomplete documents stay a user choice."""
+    lines = [line for line in payload.get("lines") or [] if isinstance(line, dict)]
+    if not lines or all(line.get("price_includes_gst") is not None for line in lines):
+        return
+    try:
+        gross = sum(Decimal(str(line["quantity"])) * Decimal(str(line["rate"])) for line in lines)
+        taxed = any(Decimal(str(line["gst_rate"])) > 0 for line in lines)
+        subtotal, total = (Decimal(str(payload[key])) if payload.get(key) is not None else None for key in ("subtotal", "total"))
+    except (KeyError, ArithmeticError, TypeError, ValueError):
+        return
+    tolerance = Decimal("1") * len(lines)
+    exclusive = subtotal is not None and abs(gross - subtotal) <= tolerance
+    inclusive = total is not None and abs(gross - total) <= tolerance
+    if not taxed or exclusive == inclusive:
+        return
+    for line in lines:
+        line.setdefault("price_includes_gst", inclusive)
+        if line["price_includes_gst"] is None:
+            line["price_includes_gst"] = inclusive
 
 
 def business_payload(action, payload):
@@ -538,6 +562,7 @@ class WorkflowService:
         self.db = assistant.db
         self.scope = assistant.scope
         self.drafts = DraftService(assistant)
+        self.line_images = {}
 
     def policies(self):
         lock_policy(self.db)
@@ -630,11 +655,48 @@ class WorkflowService:
             self.db.commit()
         return saved
 
+    def document_photos(self, values):
+        """Attach each bill row's product picture to that line. Detected picture blocks are authoritative;
+        the model's image_box is only a hint, since its coordinates are often a row off."""
+        images = [item for item in (vars(self.assistant).get("current_files") or [])
+                  if str(item.get("mime_type", "")).startswith("image/") and item.get("content")]
+        lines = values.get("lines") if isinstance(values.get("lines"), list) else []
+        hints = {index: line.pop("image_box", None) for index, line in enumerate(lines) if isinstance(line, dict)}
+        if len(images) != 1 or not lines:
+            return {}
+        from app.ai.media import crop_region, photo_reference, photo_regions
+        content = images[0]["content"]
+        regions = photo_regions(content)
+        chosen = {}
+        if len(regions) == len(lines):
+            chosen = dict(enumerate(regions))
+        else:
+            def center(box):
+                x0, y0, x1, y1 = (float(part) for part in str(box).split(","))
+                return (x0 + x1) / 2, (y0 + y1) / 2
+            unused = list(regions)
+            for index, hint in hints.items():
+                try:
+                    x, y = center(hint)
+                except ValueError:
+                    continue
+                near = min(unused, key=lambda box: abs(center(box)[0] - x) + abs(center(box)[1] - y), default=None)
+                if near and abs(center(near)[1] - y) <= 250:
+                    chosen[index] = near
+                    unused.remove(near)
+        photos = {}
+        for index, box in chosen.items():
+            # The product keeps a reference to the full-resolution bill region, not a lossy thumbnail.
+            if crop_region(content, box) is not None:
+                photos[str(index)] = photo_reference(images[0]["id"], box)
+        return photos
+
     def from_proposal(self, conversation_id, proposal: DraftProposal, client_key):
         self.assistant.lock_conversation(conversation_id)
         values = json.loads(proposal.payload_json)
         if not isinstance(values, dict):
             raise HTTPException(422, "The workflow proposal must be a JSON object.")
+        self.line_images = self.document_photos(values)
         if proposal.action in {"purchase_create", "invoice_create"}:
             values = normalize_document_proposal(proposal.action, values)
         coerce_payload(proposal.action, values)
@@ -764,8 +826,21 @@ class WorkflowService:
                 seed["hsn_code"] = container["hsn"]
             if spec[0] == "products" and isinstance(container, dict) and container.get("selling_price") is not None:
                 seed["selling_price"] = container["selling_price"]
+            photo = item.get("line_images", {}).get(str(path[1])) if spec[0] == "products" and path[0] == "lines" else None
+            if photo:
+                seed["image_url"] = photo
             if spec[0] == "variants" and isinstance(container, dict) and container.get("product_id"):
                 seed["product_id"] = container["product_id"]
+            if spec[0] == "hsn":
+                # The document line carries the printed rate and item text for a new code.
+                lines = [line for parent in [item, *steps] for line in (parent["payload"].get("lines") or [])
+                         if isinstance(line, dict) and normalize(line.get("hsn")) == normalize(value)]
+                source = next((line for line in lines if line.get("gst_rate") is not None), lines[0] if lines else {})
+                if source.get("gst_rate") is not None:
+                    seed["gst_rate"] = source["gst_rate"]
+                description = source.get("description") or (container.get("name") if isinstance(container, dict) else None)
+                if description:
+                    seed["description"] = str(description)[:300]
             if spec[0] == "parties":
                 if path[-1] in {"vendor_party_id", "vendor_id", "preferred_vendor_id"}:
                     seed["party_type"] = "vendor"
@@ -777,6 +852,8 @@ class WorkflowService:
             child = shared or step(spec[3], seed)
             if not shared:
                 steps.append(child)
+            elif photo and not child.get("draft_id") and not child["payload"].get("image_url"):
+                child["payload"]["image_url"] = photo
             item["bindings"][location] = {"step_id": child["id"], "path": list(path)}
             return value
         item["choices"].append({"field": location, "query": value, "capability": spec[0],
@@ -863,6 +940,21 @@ class WorkflowService:
         elif action == "purchase_create" and payload.get("received_now") is False:
             estimate["stock_note"] = "Stock is not changed until goods are received."
         return estimate
+
+    def own_business_party(self, item):
+        """A bill's Bill To/Ship To is this business; it is never the vendor or customer party."""
+        field = "vendor_party_id" if item["action"] == "purchase_create" else "customer_party_id"
+        value = item["payload"].get(field)
+        if not value or uuid_value(value) or field in item["bindings"]:
+            return
+        name = self.db.execute(text("select company_name from companies where id=:company"),
+                               {"company": self.scope["company"]}).scalar_one_or_none()
+        compact = lambda text_value: re.sub(r"[^a-z0-9]", "", str(text_value or "").casefold())
+        if name and compact(value) == compact(name):
+            item["payload"].pop(field)
+            role = "seller (the bill's letterhead)" if field == "vendor_party_id" else "customer"
+            item["issues"].append({"field": field, "message":
+                f"{value} is your own business (Bill To / Ship To). Choose the {role} instead."})
 
     def loan_direction(self, item):
         """Wording like "X gave back" is ambiguous; the party's balances decide repay versus collect."""
@@ -964,6 +1056,17 @@ class WorkflowService:
     def prepare(self, row, create_request=None):
         steps = row["plan"]["steps"]
         by_id = {item["id"]: item for item in steps}
+        root = steps[0]
+        if self.line_images and root["action"] in {"purchase_create", "invoice_create"} and not root.get("draft_id"):
+            root.setdefault("line_images", {}).update(self.line_images)
+            self.line_images = {}
+            for location, binding in root["bindings"].items():
+                parts = location.split(".")
+                child = by_id.get(binding["step_id"])
+                photo = root["line_images"].get(parts[1]) if parts[0] == "lines" and parts[-1] == "product_id" else None
+                if photo and child and child["action"] == "product_create" and not child.get("draft_id") \
+                        and not child["payload"].get("image_url"):
+                    child["payload"]["image_url"] = photo
         # Recover every posted prerequisite before evaluating any dependent step.
         for item in steps:
             if item.get("draft_id"):
@@ -989,10 +1092,14 @@ class WorkflowService:
             for binding in item["bindings"].values():
                 child = by_id.get(binding["step_id"])
                 if child and child.get("result", {}).get("id"):
-                    set_path(item["payload"], binding["path"], str(child["result"]["id"]))
-                    name = child["payload"].get("name") or child["payload"].get("legal_name") or child["payload"].get("nickname") or child["payload"].get("variant_name")
+                    # HSN references store the code; every other reference stores the record id.
+                    # Outcomes saved before "code" was retained only have the id; the approved payload holds the code.
+                    bound = (child["result"].get("code") or child["payload"]["code"]) if child["action"] == "hsn_create" \
+                        else child["result"]["id"]
+                    set_path(item["payload"], binding["path"], str(bound))
+                    name = child["payload"].get("name") or child["payload"].get("legal_name") or child["payload"].get("nickname") or child["payload"].get("variant_name") or child["payload"].get("code")
                     item["labels"][".".join(map(str, binding["path"]))] = {
-                        "value": str(child["result"]["id"]), "label": str(name or "Selected record")}
+                        "value": str(bound), "label": str(name or "Selected record")}
                 else:
                     item["issues"].append({"field": ".".join(map(str, binding["path"])),
                                            "message": "Complete the prerequisite step first."})
@@ -1026,6 +1133,7 @@ class WorkflowService:
                         item["payload"][identifier] = item["payload"][name]
             if action.key in {"purchase_create", "invoice_create"}:
                 self.document_products(item)
+                self.own_business_party(item)
             references = list(reference_fields(item["payload"]))
             for path, value, spec in references:
                 location = ".".join(map(str, path))
