@@ -958,7 +958,9 @@ require operational approval.
   resize); all get auto-contrast, clarity, colour and sharpening. Every model is
   SHA-256 pinned; EDSR (38 MB) and ISNet (179 MB) are fetched once into
   `TENALI_MODEL_CACHE` (default `~/.cache/tenali/models`). A bill product takes about
-  10-20 s on CPU. The display URL
+  10-20 s on CPU, so AI execution renders draft photos before it takes the draft
+  advisory/row locks (with no transaction open) and caches results by photo content;
+  the locked save then only uploads. The display URL
   becomes `image_url`/`image_urls`; `products.image_originals` maps it to the
   original and keeps the pair only while that display image stays on the product.
   Already-published URLs are stored unchanged. Dropdown options, including optional ones, are listed in the model context

@@ -1,6 +1,9 @@
+import hashlib
 import io
 import re
+import threading
 import warnings
+from collections import OrderedDict
 
 from fastapi import HTTPException
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
@@ -10,9 +13,28 @@ MAX_PIXELS = 16_000_000
 # A product photo inside a bill uploaded to the AI assistant: the private attachment and a 0-1000 "x0,y0,x1,y1" region.
 PHOTO_REFERENCE = re.compile(r"^ai-photo:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/"
                              r"(\d{1,4}(?:\.\d{1,3})?(?:,\d{1,4}(?:\.\d{1,3})?){3})$")
+# AI rendering takes tens of seconds, so results are reused by photo content: callers render before taking
+# database locks (see warm_display_images) and the locked save then only uploads.
+RENDER_CACHE_SIZE = 32
+_rendered: OrderedDict = OrderedDict()
+_rendered_lock = threading.Lock()
 
 
 def display_image(content: bytes, size: int = DISPLAY_SIZE) -> bytes:
+    key = (hashlib.sha256(content).hexdigest(), size)
+    with _rendered_lock:
+        if key in _rendered:
+            _rendered.move_to_end(key)
+            return _rendered[key]
+    result = _render(content, size)
+    with _rendered_lock:
+        _rendered[key] = result
+        while len(_rendered) > RENDER_CACHE_SIZE:
+            _rendered.popitem(last=False)
+    return result
+
+
+def _render(content: bytes, size: int) -> bytes:
     """Website display version of a product photo as a square WebP. When AI segmentation (or the photo's
     own transparency) isolates the product, only the product is kept, on pure white with a soft contact
     shadow. Otherwise the whole photo fills the square over a blurred extension of itself, never a

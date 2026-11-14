@@ -404,7 +404,9 @@ class DraftService:
                 raise HTTPException(422, "The selected date is in a locked accounting period.")
         preview = json.loads(json.dumps(preview, default=str))
         report = {"snapshots": snapshots, "policy_version": policy["version"], "tenant_version": policy["tenant_version"],
-                  "features_hash": digest(company_features(self.db, self.scope["company"])),
+                  # Only settings that gate execution; voice/document inputs and the support link do not change it.
+                  "features_hash": digest({name: value for name, value in company_features(self.db, self.scope["company"]).items()
+                                           if name in {"ai", "storefront", "ai_settings_version"}}),
                   "platform_version": platform_settings(self.db)["version"], "identity_hash": digest(identity),
                   "contract": action.fingerprint, "execution_contract": 1, "preview": preview,
                   "effective_date": when,

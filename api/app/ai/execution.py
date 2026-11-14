@@ -11,8 +11,25 @@ from app.ai.business_writes import apply_action
 from app.ai.drafts import DraftService, digest
 from app.ai.actions import ACTIONS
 from app.services.feature_controls import lock_policy
+from app.services.object_storage import FileStore
+from app.services.product_images import display_image
 
 logger = logging.getLogger(__name__)
+
+
+def image_sources(value):
+    """Every product image source (image_url / image_urls) anywhere in a draft payload."""
+    if isinstance(value, dict):
+        for name, item in value.items():
+            if name == "image_url" and isinstance(item, str):
+                yield item
+            elif name == "image_urls" and isinstance(item, list):
+                yield from (source for source in item if isinstance(source, str))
+            else:
+                yield from image_sources(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from image_sources(item)
 
 
 class ExecutionService:
@@ -36,6 +53,27 @@ class ExecutionService:
             and company_id=:company and user_id=:user"""), {**self.scope, "id": str(draft_id), "version": version}).mappings().first()
         return dict(row) if row else None
 
+    def prepare_images(self, draft_id):
+        """Render product display images (AI segmentation and super-resolution take tens of seconds) before
+        execution takes its locks, so the locked transaction only uploads cached results. Any problem is left
+        for the locked execution to report."""
+        files, photos = FileStore(self.db), []
+        for source in dict.fromkeys(image_sources(self.drafts.get(draft_id)["payload"])):
+            try:
+                photo = files.product_photo(self.scope["company"], source)
+            except HTTPException:
+                continue
+            if photo:
+                photos.append(photo[0])
+        if not photos:
+            return
+        self.db.commit()  # Nothing is written yet; do not hold a transaction open while rendering.
+        for content in photos:
+            try:
+                display_image(content)
+            except HTTPException:
+                continue
+
     def record(self, row, execution_id, key, status, result):
         self.db.execute(text("""insert into ai_executions(id,company_id,user_id,conversation_id,draft_id,
             draft_version,payload_hash,request_key,status,result)
@@ -48,6 +86,8 @@ class ExecutionService:
     def execute(self, draft_id, approval):
         execution_id = uuid5(NAMESPACE_URL, f"tenali-ai:{self.scope['company']}:{draft_id}:{approval.expected_version}")
         key = f"ai-{execution_id}"
+        if not self.for_draft(draft_id, approval.expected_version):
+            self.prepare_images(draft_id)
         self.db.execute(text("select pg_advisory_xact_lock(hashtextextended(:key,0))"), {"key": key})
         saved = self.for_draft(draft_id, approval.expected_version)
         if saved:

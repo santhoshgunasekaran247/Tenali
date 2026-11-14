@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from app.migrate_storage import StorageMigration
 from app.services.object_storage import ObjectStorage, FileStore, PUBLIC_BUCKET, PRIVATE_BUCKET
+from app.services import product_images
 from app.services.product_images import display_image
 from app.schemas.company import CompanyUpdate
 from app.services.company_service import CompanyService
@@ -78,6 +79,19 @@ class ProductImageTests(unittest.TestCase):
             patcher = patch(f"app.services.vision_models.{name}", return_value=value)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
+        product_images._rendered.clear()
+        self.addCleanup(product_images._rendered.clear)
+
+    def test_rendered_display_images_are_reused_by_photo_content(self):
+        content = self.encode(Image.new("RGB", (60, 40), (200, 50, 50)))
+        first = display_image(content)
+        self.product_mask.reset_mock()
+        self.assertEqual(display_image(content), first)
+        self.product_mask.assert_not_called()
+        self.assertNotEqual(display_image(content, 500), first)
+        for index in range(product_images.RENDER_CACHE_SIZE + 1):
+            display_image(self.encode(Image.new("RGB", (8, 8), (index, 0, 0))), 50)
+        self.assertEqual(len(product_images._rendered), product_images.RENDER_CACHE_SIZE)
 
     def test_display_image_keeps_only_the_segmented_product_on_white(self):
         photo = Image.new("RGB", (400, 300), (110, 120, 130))
@@ -171,6 +185,7 @@ class ProductImageTests(unittest.TestCase):
         mask = Image.new("L", small.size, 0)
         mask.paste(255, (10, 8, 50, 32))
         self.product_mask.return_value = mask
+        product_images._rendered.clear()
         display_image(self.encode(small))
         self.assertEqual(self.upscale.call_args.args[0].size, (44, 28))
         # Large photos skip it, and a missing model falls back to a plain resize.

@@ -156,19 +156,25 @@ class FileStore:
         file = self.save(company_id, content, mime_type, public=not private, kind="signature" if private else "image")
         return f"/api/company/assets/{file['id']}" if private else ObjectStorage().public_url(file)
 
-    def product_image(self, company_id, source):
-        """Publish an uploaded product photo as an enhanced website display image and keep the original.
-        Returns (display_url, original_url); URLs and catalog assets are already published, so original is None."""
+    def product_photo(self, company_id, source):
+        """Uploaded photo bytes and type for a product image source, or None when it is already published."""
         if source and source.startswith("ai-photo:"):
             # A product photo cut from a bill the user uploaded to the AI assistant, at full stored resolution.
             from app.ai.media import referenced_photo
-            content, mime_type = referenced_photo(self.db, company_id, source), "image/png"
-        elif not source or not source.startswith("data:"):
+            return referenced_photo(self.db, company_id, source), "image/png"
+        if not source or not source.startswith("data:"):
+            return None
+        validate_image_source(source)
+        header, encoded = source.split(",", 1)
+        return base64.b64decode(encoded, validate=True), header[5:].split(";", 1)[0]
+
+    def product_image(self, company_id, source):
+        """Publish an uploaded product photo as an enhanced website display image and keep the original.
+        Returns (display_url, original_url); URLs and catalog assets are already published, so original is None."""
+        photo = self.product_photo(company_id, source)
+        if not photo:
             return self.image(company_id, source), None
-        else:
-            validate_image_source(source)
-            header, encoded = source.split(",", 1)
-            content, mime_type = base64.b64decode(encoded, validate=True), header[5:].split(";", 1)[0]
+        content, mime_type = photo
         from app.services.product_images import display_image
         display = display_image(content)
         original = self.save(company_id, content, mime_type, public=True, kind="image")

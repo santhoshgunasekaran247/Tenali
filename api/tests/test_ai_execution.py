@@ -42,6 +42,38 @@ class BusinessAdapterUnitTests(unittest.TestCase):
         self.assertIn("id", result)
         db.commit.assert_not_called()
 
+    def test_product_photos_are_rendered_before_execution_locks(self):
+        from app.ai.execution import image_sources
+        payload = {"name": "Diya", "image_url": "ai-photo:a", "image_urls": ["data:x", "https://cdn.test/a.png"],
+                   "lines": [{"new_product": {"image_url": "ai-photo:b"}}, {"image_url": None}]}
+        self.assertEqual(list(image_sources(payload)), ["ai-photo:a", "data:x", "https://cdn.test/a.png", "ai-photo:b"])
+        events = []
+        service = ExecutionService.__new__(ExecutionService)
+        service.db, service.scope = Mock(), {"company": str(uuid4()), "user": str(uuid4())}
+        service.drafts = Mock()
+        service.drafts.get.return_value = {"payload": payload}
+        service.db.commit.side_effect = lambda: events.append("commit")
+
+        def lock(statement, *args):
+            events.append("lock")
+            raise RuntimeError("stop after lock")
+
+        service.db.execute.side_effect = lock
+
+        def photo(company, source):
+            if source == "ai-photo:b":
+                raise HTTPException(422, "gone")
+            return None if source.startswith("https") else (source.encode(), "image/png")
+
+        with patch.object(ExecutionService, "for_draft", return_value=None), \
+                patch("app.ai.execution.FileStore") as files, \
+                patch("app.ai.execution.display_image", side_effect=lambda content: events.append(content)):
+            files.return_value.product_photo.side_effect = photo
+            with self.assertRaisesRegex(RuntimeError, "stop after lock"):
+                service.execute(uuid4(), ExecutionApproval(expected_version=1, expected_hash="a" * 64))
+        # Reads finish and the transaction ends before slow AI rendering; only then does execution lock.
+        self.assertEqual(events, ["commit", b"ai-photo:a", b"data:x", "lock"])
+
 
 class MediaUnitTests(unittest.TestCase):
     def test_text_bound_and_invalid_files(self):
