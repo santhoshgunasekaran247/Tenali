@@ -948,7 +948,8 @@ require operational approval.
   products are not changed. Product saves (Inventory uploads and these AI photos, cut
   from the full stored bill) publish two public files: the untouched original and a
   1000x1000 WebP website display image. Display images are made per photo by local
-  AI models on CPU through OpenCV DNN (no provider call, nothing generated or
+  AI models on CPU through OpenCV DNN, when enabled with `TENALI_IMAGE_AI=1` (off by
+  default: ~1.5 GB peak memory; off uses the classic path below) (no provider call, nothing generated or
   repainted): product segmentation (ISNet, falling back to the bundled U2-Net-p, or
   the photo's own transparency) keeps only the product, on pure white with a soft
   contact shadow. If no clearly separable product is found (for example a close-up

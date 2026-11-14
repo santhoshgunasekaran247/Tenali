@@ -417,7 +417,13 @@ See [Operations coverage](TENALI_AI_ARCHITECTURE.md#19-operations-wide-capabilit
 
 ### Product display images
 
-Product photos get AI background removal and super-resolution through OpenCV DNN
+AI background removal and super-resolution are **off by default** because the models
+peak at about 1.2-1.6 GB of memory (more than small hosts such as Render's 512 MB free
+tier). Set `TENALI_IMAGE_AI=1` only on a server with at least 2 GB. When off, display
+images use classic trimming, fitting, tone and sharpening (about 0.4 s, no model
+loads; OpenCV is never imported).
+
+When enabled, the models run through OpenCV DNN
 (`numpy` and `opencv-contrib-python-headless` in `api/requirements.txt`). The small
 U2-Net-p and FSRCNN models are bundled; prefetch the pinned ISNet (179 MB) and EDSR
 (38 MB) models during deployment so the first product save does not download them:

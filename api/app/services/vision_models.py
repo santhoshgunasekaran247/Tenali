@@ -35,6 +35,12 @@ _nets = {}
 _failed = set()
 
 
+def enabled() -> bool:
+    """The models need ~1.5 GB of memory, so they are opt-in (TENALI_IMAGE_AI=1). When off, display images
+    use the lightweight classic path: trim, fit, tone and sharpen without background removal."""
+    return os.environ.get("TENALI_IMAGE_AI", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _digest(path: Path) -> str:
     hasher = hashlib.sha256()
     with path.open("rb") as handle:
@@ -98,7 +104,7 @@ def upscale(image: Image.Image) -> Image.Image | None:
     """4x learned upscale of an RGB image, or None when it is too large or no model is available."""
     pixels = image.width * image.height
     names = [name for name, limit in (("edsr", EDSR_MAX_PIXELS), ("fsrcnn", FSRCNN_MAX_PIXELS)) if pixels <= limit]
-    if not names:
+    if not names or not enabled():
         return None
     try:
         import numpy
@@ -121,6 +127,8 @@ def upscale(image: Image.Image) -> Image.Image | None:
 def product_mask(image: Image.Image) -> Image.Image | None:
     """Soft "L" mask of the main product (255 = product), or None when no model is available or the photo
     has no clearly separable product (for example a close-up that fills the frame)."""
+    if not enabled():
+        return None
     try:
         import cv2
         import numpy

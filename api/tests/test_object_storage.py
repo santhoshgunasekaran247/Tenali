@@ -201,6 +201,22 @@ class VisionModelTests(unittest.TestCase):
             import cv2  # noqa: F401
         except ImportError:
             self.skipTest("OpenCV is not installed")
+        switch = patch.dict(os.environ, {"TENALI_IMAGE_AI": "1"})
+        switch.start()
+        self.addCleanup(switch.stop)
+
+    def test_models_stay_unloaded_unless_enabled(self):
+        from app.services import vision_models
+        photo = Image.new("RGB", (30, 20), (180, 90, 30))
+        for value in ("", "0", "off"):
+            with patch.dict(os.environ, {"TENALI_IMAGE_AI": value}), patch.object(vision_models, "_net") as net:
+                self.assertIsNone(vision_models.upscale(photo))
+                self.assertIsNone(vision_models.product_mask(photo))
+                net.assert_not_called()
+        with patch.dict(os.environ, {"TENALI_IMAGE_AI": "0"}), patch.object(vision_models, "_net") as net:
+            with Image.open(io.BytesIO(display_image(ProductImageTests.encode(photo)))) as result:
+                self.assertEqual((result.format, result.size), ("WEBP", (1000, 1000)))
+            net.assert_not_called()
 
     def test_bundled_models_are_verified_and_upscale(self):
         from app.services import vision_models
