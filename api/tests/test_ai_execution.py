@@ -74,6 +74,27 @@ class BusinessAdapterUnitTests(unittest.TestCase):
         # Reads finish and the transaction ends before slow AI rendering; only then does execution lock.
         self.assertEqual(events, ["commit", b"ai-photo:a", b"data:x", "lock"])
 
+    def test_stale_approval_is_sent_back_for_review_instead_of_staying_stuck(self):
+        service = ExecutionService.__new__(ExecutionService)
+        service.db, service.scope = Mock(), {"company": str(uuid4()), "user": str(uuid4())}
+        service.drafts = Mock()
+        row = {"id": uuid4(), "action_key": "party_create", "target_id": None, "status": "approved", "version": 3,
+               "approved_version": 3, "payload_hash": "a" * 64, "payload": {},
+               "validation": {"execution_contract": 1, "snapshots": [], "features_hash": "old"}}
+        service.drafts.lock.return_value = row
+        service.drafts.gate.return_value = ({}, {"execution_enabled": True})
+        service.drafts.preflight.return_value = ({}, {**row["validation"], "features_hash": "new"})
+        with patch.object(ExecutionService, "for_draft", return_value=None), \
+                patch.object(ExecutionService, "prepare_images"), patch("app.ai.execution.lock_policy"), \
+                patch("app.ai.execution.apply_action") as apply:
+            with self.assertRaisesRegex(HTTPException, "Review & check") as error:
+                service.execute(row["id"], ExecutionApproval(expected_version=3, expected_hash="a" * 64))
+        self.assertEqual(error.exception.status_code, 409)
+        apply.assert_not_called()
+        reset = [call.args[0].text for call in service.db.execute.call_args_list if "status='editing'" in str(call.args[0])]
+        self.assertEqual(len(reset), 1)
+        service.db.commit.assert_called_once()
+
 
 class MediaUnitTests(unittest.TestCase):
     def test_text_bound_and_invalid_files(self):

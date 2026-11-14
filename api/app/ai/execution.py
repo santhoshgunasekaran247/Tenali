@@ -112,7 +112,12 @@ class ExecutionService:
             self.drafts.reference(item["table"], item["id"], lock=True, allow_inactive=item.get("allow_inactive", False))
         normalized, report = self.drafts.preflight(row)
         if report != row["validation"] or digest({"action": row["action_key"], "target": row["target_id"], "payload": normalized}) != row["payload_hash"]:
-            raise HTTPException(409, "References, amounts or policy changed. Validate and approve again.")
+            # Like approval: send the draft back for review so the user can re-check it instead of being stuck.
+            self.db.execute(text("""update ai_action_drafts set status='editing',validation=null,approved_at=null,
+                approved_version=null,version=version+1,updated_at=now() where id=:id and company_id=:company and user_id=:user"""),
+                {**self.scope, "id": str(draft_id)})
+            self.db.commit()
+            raise HTTPException(409, "References, amounts or settings changed since approval, so nothing was saved. Choose Review & check, then Confirm & save again.")
         proof = self.db.execute(text("""select 1 from ai_draft_approvals where draft_id=:id and draft_version=:version
             and company_id=:company and user_id=:user and payload_hash=:hash
             and contract_fingerprint=:contract and snapshot_hash=:snapshot"""), {
