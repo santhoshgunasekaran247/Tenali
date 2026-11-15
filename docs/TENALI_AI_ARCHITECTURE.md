@@ -782,8 +782,9 @@ disabling user pinch zoom.
 Revision `048_ai_voice` adds a separately enabled, duration-priced transcription
 contract (`gpt-transcribe`), using the backend key and model allowlist. English/Tamil
 microphone recordings become editable text, never an automatically sent message or
-an action approval. Users explicitly transcribe, review/correct, add text to the
-composer, then Send separately. Audio-file uploads and synthesized voice replies
+an action approval. Stop sends the recording for transcription and adds the result
+to the composer for review; discard sends nothing. At 60 seconds it stops and
+transcribes automatically. Users Send separately. Audio-file uploads and synthesized voice replies
 remain outside this release.
 
 Web Audio captures mono PCM using an AudioWorklet capped at 60 seconds; cancellation,
@@ -891,11 +892,33 @@ require operational approval.
   Text can update a unique pending prerequisite within that parent; changing a review
   rotates its identity and rewires parent bindings without orphaning the parent.
 - Unique exact name matches are selected automatically. Ambiguous/partial matches
-  become record choices; **Create new** prepares an allowed prerequisite. An empty,
-  non-truncated search prepares missing parties, products, variants, accounts,
-  brands, categories or HSN/SAC codes. Repeated references share a prerequisite.
-  Sales are an exception for missing inventory: select/confirm stocked inventory in
-  Inventory rather than creating an unstocked product as a hidden sales prerequisite.
+  become record choices; **Create new** prepares an allowed prerequisite. A search
+  with no matches and no truncation prepares a named missing party, product, variant,
+  account, brand, category, store or HSN/SAC code. Repeated references share a prerequisite,
+  including at the step limit. A party needed in conflicting roles requires review of
+  its type rather than silently reusing an incompatible party; cyclic dependencies
+  are rejected instead of leaving a workflow permanently waiting.
+  Sales can also prepare an explicit product-creation prerequisite. Creating a product
+  does not add stock: sales still require sufficient available stock in the selected store.
+- This is not yet a universal prerequisite-creation mechanism: an absent reference
+  without a name needs user input, and existing documents have no linked AI create
+  action. Update/reversal targets must identify an existing record. Required
+  amounts, dates and choices cannot be fabricated, and missing stock or seller setup
+  is not automatically converted into another workflow.
+- Store creation requires migration `055_ai_store_create`, platform contract approval,
+  execution enablement, tenant permission and an owner or administrator. The store
+  name, code and kind are reviewed before saving; creating a store does not add stock.
+  Online stores may themselves require a fulfilment store, and settlement accounts
+  may be resolved as prerequisites. The store write and AI execution outcome commit
+  together.
+- `quotation_create` starts a quotation rather than an invoice from a natural-language
+  request. It resolves customer, store, product, variant and HSN references through the
+  same permitted prerequisite workflows as sales. Review and execution revalidate the
+  quotation snapshot, and save no stock, receivable or payment. Completed invoice and
+  quotation workflows offer PDF downloads from the saved Billing document; Billing
+  module and store access still apply. Older completed workflows can recover the saved
+  outcome without reposting. Migration `058_ai_quotation`, platform
+  contract approval and execution enablement, and per-workspace permission are required.
 - Selecting a record immediately resumes preparation. Creating a prerequisite
   means preparing, reviewing, approving and submitting its ordinary action. After
   successful posting, its saved ID is bound to the dependent step automatically.

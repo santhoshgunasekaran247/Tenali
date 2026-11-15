@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from app.ai.actions import ACTIONS, DraftProposal
 from app.ai.service import SYSTEM
-from app.ai.workflows import (REFERENCES, REPLACEMENTS, TARGETS, WorkflowCreate,
+from app.ai.workflows import (MAX_STEPS, REFERENCES, REPLACEMENTS, TARGETS, WorkflowCreate,
     WorkflowEdit, WorkflowService, business_payload, choice_value, coerce_payload, keep_line_products, merge_known, missing_fields, next_entries,
     normalize_choices, normalize_document_proposal, normalize_purchase_proposal, reference_fields, required_fields, step, validate_workflow_payload,
     workflow_schema, workflow_view)
@@ -52,6 +52,127 @@ class WorkflowTests(unittest.TestCase):
                 service.assistant.db.commit.assert_not_called()
         self.assertIn("For EVERY Operations add/update", SYSTEM)
         self.assertIn("No conversational interrogation", SYSTEM)
+
+    def test_named_creatable_references_use_the_shared_prerequisite_resolver(self):
+        for field, spec in REFERENCES.items():
+            if not spec[3]:
+                continue
+            with self.subTest(field=field):
+                service = self.service()
+                item = step("purchase_create", {field: "Missing reference"})
+                steps = [item]
+                with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+                    service.resolve(item, (field,), "Missing reference", spec, steps)
+                self.assertEqual(len(steps), 2)
+                self.assertEqual(steps[1]["action"], spec[3])
+                self.assertEqual(steps[1]["payload"][spec[4]], "Missing reference")
+                self.assertEqual(item["bindings"][field]["step_id"], steps[1]["id"])
+                service.drafts.create.assert_not_called()
+
+    def test_existing_prerequisite_can_be_reused_at_the_step_limit(self):
+        service = self.service()
+        item = step("invoice_create", {"customer_party_id": "New party"})
+        child = step("party_create", {"legal_name": "New party", "party_type": "customer"})
+        steps = [item, child] + [step("brand_create", {"name": str(index)}) for index in range(MAX_STEPS - 2)]
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(item, ("customer_party_id",), "New party", REFERENCES["customer_party_id"], steps)
+        self.assertEqual(len(steps), MAX_STEPS)
+        self.assertEqual(item["bindings"]["customer_party_id"]["step_id"], child["id"])
+        self.assertEqual(item["issues"][0]["message"], "Complete the prerequisite step first.")
+
+    def test_shared_party_with_conflicting_roles_requires_review(self):
+        service = self.service()
+        item = step("purchase_create", {"vendor_party_id": "New party"})
+        child = step("party_create", {"legal_name": "New party", "party_type": "customer"})
+        steps = [item, child]
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(item, ("vendor_party_id",), "New party", REFERENCES["vendor_party_id"], steps)
+        self.assertEqual(child["payload"]["party_type"], "customer")
+        self.assertNotIn("vendor_party_id", item["bindings"])
+        self.assertIn("Customer + Vendor", item["issues"][0]["message"])
+        child["payload"]["party_type"] = "customer_vendor"
+        item["issues"].clear()
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(item, ("vendor_party_id",), "New party", REFERENCES["vendor_party_id"], steps)
+        self.assertEqual(item["bindings"]["vendor_party_id"]["step_id"], child["id"])
+        self.assertEqual(len(steps), 2)
+
+    def test_store_prerequisite_requires_store_details_and_binds_after_execution(self):
+        service = self.service()
+        row = self.workflow("stock_transfer", {"from_store_id": "New warehouse"})
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            row = service.prepare(row)
+        root, child = row["plan"]["steps"]
+        self.assertEqual(child["action"], "store_create")
+        self.assertEqual(child["payload"], {"name": "New warehouse"})
+        self.assertEqual({issue["field"] for issue in child["issues"]}, {"code", "kind"})
+        self.assertEqual(root["bindings"]["from_store_id"]["step_id"], child["id"])
+        self.assertIsNone(child["draft_id"])
+        store = str(uuid4())
+        child["payload"].update(code="WH", kind="warehouse")
+        child["draft_id"] = str(uuid4())
+        service.drafts.get.return_value = {"id": child["draft_id"], "version": 1,
+                                           "status": "executed", "payload": child["payload"]}
+        service.db.execute.return_value.mappings.return_value.one.return_value = {"result": {"id": store}}
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            row = service.prepare(row)
+        self.assertEqual(row["plan"]["steps"][0]["payload"]["from_store_id"], store)
+
+    def test_store_prerequisite_cannot_depend_on_itself(self):
+        service = self.service()
+        item = step("store_create", {"name": "Online shop", "fulfilment_store_id": "Online shop"})
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(item, ("fulfilment_store_id",), "Online shop", REFERENCES["fulfilment_store_id"], [item])
+        self.assertEqual(item["bindings"], {})
+        self.assertIn("depend on itself", item["issues"][0]["message"])
+
+    def test_quotation_prepares_customer_product_and_hsn_prerequisites_without_payment(self):
+        service = self.service()
+        service.own_business_party = Mock()
+        service.document_estimate = Mock(return_value=None)
+        row = self.workflow("quotation_create", {
+            "customer_party_id": "New customer", "store_id": str(uuid4()), "quotation_date": "2026-11-15",
+            "billing_address": "Address", "place_of_supply": "33 - Tamil Nadu",
+            "lines": [{"product_id": "New bottle", "description": "New bottle", "hsn": "7418",
+                       "quantity": 2, "rate": 100, "gst_rate": 5}]})
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            prepared = service.prepare(row)
+        root = prepared["plan"]["steps"][0]
+        self.assertEqual(root["action"], "quotation_create")
+        self.assertEqual({child["action"] for child in prepared["plan"]["steps"][1:]},
+                         {"party_create", "product_create", "hsn_create"})
+        self.assertEqual(set(root["bindings"]), {"customer_party_id", "lines.0.product_id", "lines.0.hsn"})
+        self.assertNotIn("amount_received", root["payload"])
+        self.assertNotIn("account_id", root["payload"])
+        self.assertIsNone(root["draft_id"])
+        service.db.commit.assert_not_called()
+
+    def test_quotation_resumes_only_after_customer_prerequisite_is_saved(self):
+        service = self.service()
+        service.own_business_party = Mock()
+        service.document_estimate = Mock(return_value=None)
+        row = self.workflow("quotation_create", {
+            "customer_party_id": "New customer", "store_id": str(uuid4()), "quotation_date": "2026-11-15",
+            "billing_address": "Address", "place_of_supply": "33 - Tamil Nadu",
+            "lines": [{"product_id": str(uuid4()), "description": "Widget", "quantity": 2, "rate": 100, "hsn": "7418"}]})
+        def lookup(spec, query):
+            return {"items": [{"code": "7418", "gst_rate": 5}] if spec[0] == "hsn" else [], "more_matches": False}
+        with patch.object(service, "lookup", side_effect=lookup):
+            row = service.prepare(row)
+        root, child = row["plan"]["steps"]
+        self.assertIsNone(root["draft_id"])
+        customer = str(uuid4())
+        child["draft_id"] = str(uuid4())
+        service.drafts.get.return_value = {"id": child["draft_id"], "version": 1,
+                                           "status": "executed", "payload": child["payload"]}
+        service.db.execute.return_value.mappings.return_value.one.return_value = {"result": {"id": customer}}
+        with patch.object(service, "lookup", side_effect=lookup):
+            row = service.prepare(row)
+        self.assertEqual(row["plan"]["steps"][0]["payload"]["customer_party_id"], customer)
+        self.assertIsNotNone(row["plan"]["steps"][0]["draft_id"])
+        self.assertEqual(row["plan"]["steps"][0]["draft_status"], "editing")
+        self.assertTrue(any(next_item.get("path") == "/portal/billing"
+                            for next_item in next_entries("quotation_create", {}, {"id": str(uuid4())})))
 
     def test_create_workflows_ignore_stray_target_names_from_model_or_legacy_plan(self):
         service = self.service()
@@ -120,17 +241,60 @@ class WorkflowTests(unittest.TestCase):
                          {"store_id", "invoice_date", "amount_received", "billing_address", "place_of_supply"})
         self.assertEqual(len(continued["plan"]["steps"]), 2)
 
-    def test_sales_cannot_create_unstocked_inventory_as_a_hidden_prerequisite(self):
+    def test_sale_prepares_product_prerequisite_without_inventing_stock(self):
+        service = self.service()
+        row = self.workflow("invoice_create", {"lines": [
+            {"product_id": "Missing bottle", "quantity": 10, "rate": 30}]})
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            row = service.prepare(row)
+            choices = service.search_choices("invoice_create", "lines.0.product_id", "Missing bottle")
+        root, product = row["plan"]["steps"]
+        self.assertEqual(product["action"], "product_create")
+        self.assertEqual(product["payload"], {"name": "Missing bottle"})
+        self.assertEqual(root["bindings"]["lines.0.product_id"]["step_id"], product["id"])
+        self.assertTrue(choices["can_create"])
+        self.assertEqual(root["payload"]["lines"][0]["quantity"], 10)
+        self.assertNotIn("stock_adjust", [item["action"] for item in row["plan"]["steps"]])
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.prepare(row)
+        self.assertTrue(any("does not add stock" in issue["message"] for issue in root["issues"]))
+        product_id = str(uuid4())
+        product["draft_id"] = str(uuid4())
+        service.drafts.get.return_value = {"id": product["draft_id"], "version": 1,
+                                          "status": "executed", "payload": product["payload"]}
+        service.db.execute.return_value.mappings.return_value.one.return_value = {"result": {"id": product_id}}
+        service.document_estimate = Mock(return_value=None)
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.prepare(row)
+        self.assertEqual(root["payload"]["lines"][0]["product_id"], product_id)
+        self.assertEqual(len(row["plan"]["steps"]), 2)
+
+    def test_sales_still_reject_unavailable_stock_after_product_creation(self):
+        from app.ai.business_writes import stock_preview
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = Decimal("0")
+        with patch("app.ai.business_writes.stock_store"), \
+             patch("app.services.shop_stock.reserved_stock", return_value=Decimal("0")):
+            with self.assertRaisesRegex(HTTPException, "unavailable or reserved stock"):
+                stock_preview(db, str(uuid4()), {(str(uuid4()), str(uuid4()), None): Decimal("-10")})
+
+    def test_sale_missing_product_respects_create_permission_and_truncated_search(self):
         service = self.service()
         root = step("invoice_create", {"lines": [{"product_id": "Missing bottle"}]})
-        steps = [root]
+        service.actions.remove("product_create")
         with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            self.assertFalse(service.search_choices("invoice_create", "lines.0.product_id", "Missing bottle")["can_create"])
+            steps = [root]
             service.resolve(root, ("lines", 0, "product_id"), "Missing bottle", REFERENCES["product_id"], steps)
-            choices = service.search_choices("invoice_create", "lines.0.product_id", "Missing bottle")
-        self.assertEqual(len(steps), 1)
-        self.assertFalse(choices["can_create"])
-        self.assertFalse(root["choices"][0]["can_create"])
-        self.assertEqual(choices["manual_path"], "/portal/inventory")
+            self.assertEqual(len(steps), 1)
+            self.assertFalse(root["choices"][0]["can_create"])
+        service.actions.add("product_create")
+        root = step("invoice_create", {"lines": [{"product_id": "Missing bottle"}]})
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": True}):
+            steps = [root]
+            service.resolve(root, ("lines", 0, "product_id"), "Missing bottle", REFERENCES["product_id"], steps)
+            self.assertEqual(len(steps), 1)
+            self.assertFalse(root["choices"][0]["can_create"])
 
     def test_fully_received_sale_uses_computed_invoice_total_and_no_duplicate_actions(self):
         service = self.service()
@@ -513,7 +677,7 @@ class WorkflowTests(unittest.TestCase):
             result = service.search(row["id"], root["id"], "store_id", "mai")
         lookup.assert_called_once_with(REFERENCES["store_id"], "mai")
         self.assertEqual(result["options"], [{"value": identifier, "label": "Main store · MAIN"}])
-        self.assertFalse(result["can_create"])
+        self.assertTrue(result["can_create"])
         self.assertEqual(row, original)
         service.db.commit.assert_not_called()
         service.drafts.create.assert_not_called()

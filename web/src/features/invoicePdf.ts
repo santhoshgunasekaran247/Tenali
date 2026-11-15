@@ -1,6 +1,6 @@
 import { GState, jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { Invoice } from "../types";
+import type { Invoice, Quotation } from "../types";
 import { toAssetUrl } from "./catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "./invoiceSettings";
 import { cancellationStamp } from "./invoiceReissue";
@@ -45,10 +45,11 @@ async function loadInvoiceImage(url: string, label: string): Promise<{ data: str
   return { data: canvas.toDataURL("image/png"), ratio: image.naturalWidth / image.naturalHeight };
 }
 
-export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
+export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string | null, isQuotation = false): Promise<jsPDF> {
   const data = invoice.document_data;
   if (!data?.lines.length) throw new Error("This legacy invoice has no saved product details for a tax invoice.");
-  const settings = { ...DEFAULT_INVOICE_SETTINGS, ...data.seller.invoice_settings };
+  const settings = { ...DEFAULT_INVOICE_SETTINGS, ...data.seller.invoice_settings,
+    ...(isQuotation ? { title: "QUOTATION" } : {}) };
   const NAVY = colorRgb(settings.primary_color);
   const GOLD = colorRgb(settings.accent_color);
   const [logo, signature] = await Promise.all([
@@ -76,7 +77,7 @@ export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
       [seller.company_name, seller.address, `GSTIN: ${seller.gst_number || ""}`,
         seller.udyam_number ? `Udyam: ${seller.udyam_number}` : "",
         [seller.phone, seller.email].filter(Boolean).join(" | "), seller.website].filter(Boolean).join("\n"),
-      `Invoice No: ${invoice.invoice_number}\nDate: ${invoiceDate}\nPlace of Supply: ${data.place_of_supply}${invoice.reference ? `\nReference: ${invoice.reference}` : ""}`,
+      `${isQuotation ? "Quotation" : "Invoice"} No: ${invoice.invoice_number}\nDate: ${invoiceDate}\nPlace of Supply: ${data.place_of_supply}${invoice.reference ? `\nReference: ${invoice.reference}` : ""}`,
     ]],
   });
   table({
@@ -112,13 +113,14 @@ export async function createInvoicePdf(invoice: Invoice): Promise<jsPDF> {
       ["Taxable Value (INR)", money(data.subtotal)],
       ...(data.interstate ? [["IGST", taxSum("igst")]] : [["CGST", taxSum("cgst")], ["SGST", taxSum("sgst")]]),
       ["Total GST", money(data.gst_total)],
-      [{ content: "Invoice Total (INR)", styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }, { content: money(data.total), styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }],
+      [{ content: `${isQuotation ? "Quotation" : "Invoice"} Total (INR)`, styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }, { content: money(data.total), styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }],
     ],
   });
   table({ startY: endY + 4, theme: "plain", body: [[{
     content: `${settings.amount_in_words_label}: ${amountInWords(data.total)}`,
     styles: { fontStyle: "bold" },
   }]] });
+  if (isQuotation && quotationNotes) table({ startY: endY + 4, theme: "plain", body: [[`Notes: ${quotationNotes}`]] });
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   const noteLines: string[] = settings.thank_you_note ? pdf.splitTextToSize(settings.thank_you_note, 117) : [];
@@ -189,4 +191,18 @@ export async function downloadInvoicePdf(invoice: Invoice): Promise<void> {
   const pdf = await createInvoicePdf(invoice);
   const cancelled = invoice.status === "CANCELLED" ? "_CANCELLED" : "";
   pdf.save(`${invoice.invoice_number.replace(/[^a-zA-Z0-9_-]/g, "_")}${cancelled}.pdf`);
+}
+
+export async function downloadQuotationPdf(quotation: Quotation): Promise<void> {
+  const invoice: Invoice = {
+    id: quotation.id, company_id: quotation.company_id, store_id: quotation.store_id,
+    invoice_number: quotation.quotation_number, customer_party_id: quotation.customer_party_id,
+    customer_name: quotation.document_data.bill_to.name, invoice_date: quotation.quotation_date,
+    subtotal: Number(quotation.document_data.subtotal), gst_total: Number(quotation.document_data.gst_total),
+    total: Number(quotation.document_data.total), reference: quotation.reference || undefined,
+    status: "QUOTATION", collection_status: "UNPAID", amount_received: 0,
+    created_at: quotation.created_at, document_data: quotation.document_data,
+  };
+  const pdf = await createInvoicePdf(invoice, quotation.notes, true);
+  pdf.save(`${quotation.quotation_number.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
 }

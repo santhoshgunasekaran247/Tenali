@@ -13,7 +13,7 @@ import { BillingCustomer } from "../components/BillingCustomer";
 import { reissueInvoice } from "../features/invoiceReissue";
 import { CancelDocumentDialog } from "../components/CancelDocumentDialog";
 import type { InventoryProduct } from "../types";
-import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party } from "../types";
+import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party, Quotation } from "../types";
 
 type InvoiceForm = {
   customer_party_id: string;
@@ -70,6 +70,10 @@ export function BillingPage() {
   const [requestKey,setRequestKey]=useDraftState("BillingPage.requestKey", postingKey);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotationError, setQuotationError] = useState("");
+  const [quotationLoading, setQuotationLoading] = useState(true);
+  const [documentKind, setDocumentKind] = useDraftState<"invoice" | "quotation">("BillingPage.documentKind", "invoice");
   const [collectionStatus, setCollectionStatus] = useState("");
   const [form, setForm] = useDraftState<InvoiceForm>("BillingPage.form", EMPTY_FORM);
   const [lines, setLines] = useDraftState<InvoiceLineInput[]>("BillingPage.lines", [newLine()]);
@@ -103,6 +107,16 @@ export function BillingPage() {
     } finally {
       setPdfBusy(null);
     }
+  };
+
+  const exportQuotation = async (quotation: Quotation) => {
+    setPdfBusy(quotation.id); setError(null);
+    try {
+      const { downloadQuotationPdf } = await import("../features/invoicePdf");
+      await downloadQuotationPdf(quotation);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to generate quotation PDF.");
+    } finally { setPdfBusy(null); }
   };
 
   useEffect(() => {
@@ -139,6 +153,15 @@ export function BillingPage() {
 
   useEffect(() => {
     let active = true;
+    setQuotationError(""); setQuotationLoading(true);
+    api.quotations(storeFilter || undefined).then(result => { if (active) setQuotations(result.items); })
+      .catch(failure => { if (active) setQuotationError(failure instanceof Error ? failure.message : "Unable to load quotations."); })
+      .finally(() => { if (active) setQuotationLoading(false); });
+    return () => { active = false; };
+  }, [storeFilter, refreshVersion]);
+
+  useEffect(() => {
+    let active = true;
     setReconcileError("");
     api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset).then(result => {
       if (active) { setReconcileRuns(result.items); setReconcileTotal(result.total); }
@@ -164,46 +187,40 @@ export function BillingPage() {
       }
       if (!subtotal || subtotal < 0) throw new Error("Subtotal must be greater than or equal to zero.");
       if (total <= 0) throw new Error("Total must be greater than zero.");
-      if (amountReceived < 0) throw new Error("Amount received cannot be negative.");
-      if (amountReceived > total) throw new Error("Amount received cannot exceed total.");
-      if (amountReceived > 0 && !form.payment_mode) {
-        throw new Error("Payment mode is required when amount received is entered.");
-      }
-      if (amountReceived > 0 && !form.account_id) {
-        throw new Error("Select account where amount was received.");
-      }
-
-      await api.createInvoice({
+      const common = {
         idempotency_key:requestKey,
         store_id: storeContext.selectedId || undefined,
         customer_party_id: form.customer_party_id,
-        invoice_date: form.invoice_date || undefined,
-        subtotal,
-        gst_total: gstTotal,
-        total,
-        payment_mode: form.payment_mode || undefined,
-        account_id: form.account_id || undefined,
         reference: form.reference || undefined,
-        due_date: form.due_date || undefined,
-        reminder_date: form.reminder_date || undefined,
-        amount_received: amountReceived,
         notes: form.notes || undefined,
-        auto_create_receivable: form.auto_create_receivable,
         lines,
         billing_address: form.billing_address,
         place_of_supply: form.place_of_supply,
         shipping_name: sameShipping ? undefined : form.shipping_name,
         shipping_address: sameShipping ? undefined : form.shipping_address,
-      });
+      };
+      if (documentKind === "quotation") {
+        await api.createQuotation({ ...common, quotation_date: form.invoice_date || undefined });
+      } else {
+        if (amountReceived < 0) throw new Error("Amount received cannot be negative.");
+        if (amountReceived > total) throw new Error("Amount received cannot exceed total.");
+        if (amountReceived > 0 && !form.payment_mode) throw new Error("Payment mode is required when amount received is entered.");
+        if (amountReceived > 0 && !form.account_id) throw new Error("Select account where amount was received.");
+        await api.createInvoice({ ...common, invoice_date: form.invoice_date || undefined, subtotal, gst_total: gstTotal, total,
+          payment_mode: form.payment_mode || undefined, account_id: form.account_id || undefined,
+          due_date: form.due_date || undefined, reminder_date: form.reminder_date || undefined,
+          amount_received: amountReceived, auto_create_receivable: form.auto_create_receivable });
+      }
 
       setForm(EMPTY_FORM);
       setRequestKey(postingKey());
       setLines([newLine()]);
       setSameShipping(true);
-      setMessage("Invoice posted. PDF is available in the invoice list.");
+      setMessage(documentKind === "quotation" ? "Quotation saved. No stock, receivable or payment was posted; its PDF is available below." :
+        "Invoice posted. PDF is available in the invoice list.");
       setRefreshVersion(previous => previous + 1);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to create invoice.");
+      setError(saveError instanceof Error ? saveError.message : `Unable to create ${documentKind}.`);
     } finally {
       setSaving(false);
     }
@@ -281,15 +298,14 @@ export function BillingPage() {
         <p className="eyebrow">Operations</p>
         <h1>Billing</h1>
         <p>
-          Post sales invoices and automatically create receivables with collection status,
-          reminders, and account-mode confirmation when amount is received.
+          Create quotations without posting stock or payments, or post sales invoices with receivables.
         </p>
       </section>
 
       <section className="ops-grid">
         <article className="ops-card">
           <div className="ops-card-head">
-            <h2>Create Invoice</h2>
+            <h2>Create {documentKind === "invoice" ? "Invoice" : "Quotation"}</h2>
           </div>
 
           {error ? <FloatingAlert>{error}</FloatingAlert> : null}
@@ -309,6 +325,12 @@ export function BillingPage() {
           ) : null}
 
           <form className="ops-form" onSubmit={submit}>
+            <label>Document type
+              <select value={documentKind} disabled={saving} onChange={event => setDocumentKind(event.target.value as "invoice" | "quotation")}>
+                <option value="invoice">Sales invoice</option><option value="quotation">Quotation</option>
+              </select>
+            </label>
+            {documentKind === "quotation" ? <p className="ops-copy-note">A quotation is an offer, not a tax invoice. It does not change stock, accounts or receivables.</p> : null}
             <StoreSelect value={storeContext.selectedId} onChange={storeContext.setSelectedId} stores={storeContext.stockStores} label="Billing store" />
             <BillingCustomer parties={parties} value={form.customer_party_id} disabled={saving}
                 onChange={(id) =>
@@ -328,7 +350,7 @@ export function BillingPage() {
                 }} />
 
             <label>
-              Invoice Date
+              {documentKind === "quotation" ? "Quotation Date" : "Invoice Date"}
               <input
                 type="date"
                 value={form.invoice_date}
@@ -367,7 +389,7 @@ export function BillingPage() {
             </>}
             <TaxLinesEditor lines={lines} masters={hsnMasters} products={inventory} onChange={setLines} disabled={saving} pricesIncludeGst gstRegistered={company?.gst_registered !== false} />
 
-            <label>
+            {documentKind === "invoice" && <><label>
               Amount Received Now
               <input
                 type="number"
@@ -424,6 +446,7 @@ export function BillingPage() {
                 }
               />
             </label>
+            </>}
 
             <label>
               Reference
@@ -442,7 +465,7 @@ export function BillingPage() {
               />
             </label>
 
-            <label className="ops-toggle">
+            {documentKind === "invoice" && <label className="ops-toggle">
               <input
                 type="checkbox"
                 checked={form.auto_create_receivable}
@@ -451,12 +474,29 @@ export function BillingPage() {
                 }
               />
               Auto-create receivable for unpaid balance
-            </label>
+            </label>}
 
             <button className="btn" type="submit" disabled={saving || loading || !!referenceErrors.length || !!storeContext.error || !storeContext.selected || !hsnMasters.length}>
-              {saving ? "Saving..." : "Post Invoice"}
+              {saving ? "Saving..." : documentKind === "quotation" ? "Save Quotation" : "Post Invoice"}
             </button>
           </form>
+        </article>
+
+        <article className="ops-card ops-list-card">
+          <div className="ops-card-head"><h2>Quotations</h2><span className="catalog-count">{quotations.length} records</span></div>
+          {quotationError ? <FloatingAlert>{quotationError}</FloatingAlert> : null}
+          {quotationLoading ? <p role="status">Loading quotations...</p> : null}
+          <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
+            <th>Quotation #</th><th>Store</th><th>Date</th><th>Customer</th><th>Total</th><th>Actions</th>
+          </tr></thead><tbody>
+            {quotations.length ? quotations.map(item => <tr key={item.id}>
+              <td>{item.quotation_number}</td><td>{item.store_code}</td><td>{item.quotation_date}</td>
+              <td>{item.document_data.bill_to.name}</td><td>{Number(item.document_data.total).toFixed(2)}</td>
+              <td><button className="ops-link-btn" type="button" disabled={pdfBusy !== null}
+                onClick={() => void exportQuotation(item)} aria-label={`Download PDF for ${item.quotation_number}`}>
+                <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}</button></td>
+            </tr>) : !quotationLoading && !quotationError ? <tr><td colSpan={6}>No quotations found.</td></tr> : null}
+          </tbody></table></div>
         </article>
 
         <article className="ops-card ops-list-card">

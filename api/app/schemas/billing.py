@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.money import Money
 
@@ -46,6 +46,39 @@ class InvoiceCreate(BaseModel):
     shipping_name: str | None = Field(default=None, max_length=300)
     shipping_address: str | None = Field(default=None, max_length=2000)
     place_of_supply: str | None = Field(default=None, pattern=r"^\d{2} - .+")
+
+
+class QuotationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
+    store_id: UUID | None = None
+    customer_party_id: UUID
+    quotation_date: date | None = None
+    reference: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+    lines: list[InvoiceLineCreate] = Field(min_length=1, max_length=200)
+    billing_address: str | None = Field(default=None, max_length=2000)
+    shipping_name: str | None = Field(default=None, max_length=300)
+    shipping_address: str | None = Field(default=None, max_length=2000)
+    place_of_supply: str | None = Field(default=None, pattern=r"^\d{2} - .+")
+
+
+class QuotationOut(BaseModel):
+    id: UUID
+    company_id: UUID
+    store_id: UUID
+    store_code: str
+    customer_party_id: UUID
+    quotation_number: str
+    quotation_date: date
+    reference: str | None
+    notes: str | None
+    document_data: dict
+    created_at: datetime
+
+
+class QuotationListResponse(BaseModel):
+    items: list[QuotationOut]
 
 
 class InvoiceOut(BaseModel):

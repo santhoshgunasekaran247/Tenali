@@ -50,6 +50,7 @@ export type WorkflowStep = {
   labels: Record<string, { value: string; label: string }>;
   bindings: Record<string, { step_id: string; path: (string | number)[] }>;
   offer_steps?: Record<string, string>;
+  result?: Record<string, unknown>;
 };
 export type WorkflowNext = { action: string; target: string | null; payload: Record<string, unknown>;
   label: string; path?: string };

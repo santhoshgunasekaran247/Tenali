@@ -871,6 +871,7 @@ body {
 .ai-voice[data-active="true"] { flex: 1 1 100%; border-top: 1px solid var(--site-border); padding-top: 12px; }
 .ai-voice audio { width: 100%; max-width: 420px; }
 .ai-voice button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.ai-voice-controls { display: flex; align-items: center; gap: 8px; }
 .ai-voice > button { justify-self: start; }
 .ai-voice p { margin: 0; line-height: 1.6; }
 .ai-chat-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; border-bottom: 1px solid var(--site-border); padding-bottom: 8px; }

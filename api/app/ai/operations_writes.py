@@ -21,6 +21,8 @@ from app.services.period_lock_service import assert_period_open
 from app.services.purchases_service import PurchasesService
 from app.services.refund_settlements import RefundSettle, RefundSettlementsService
 from app.services.settlements_service import SettlementsService
+from app.services.stores_service import StoresService
+from app.schemas.stores import StoreInput
 from app.services.borrowing_ledger import LEDGER_SIDE, OPENING_DIRECTIONS, SETTLING_DIRECTIONS, available_repayment
 
 OPERATIONS_ACTIONS = set(ACTIONS) - {
@@ -298,6 +300,13 @@ def preview(db, company, action, target, values):
                       {"company": company, "code": values["code"]}).first():
             raise HTTPException(409, "This HSN/SAC code already exists; select it or reactivate it in Master Data.")
         result["stock_change"] = "0"
+    elif action == "store_create":
+        payload = StoreInput.model_validate(values)
+        StoresService(db, company)._validate(payload, None)
+        if db.execute(text("select 1 from stores where company_id=:company and code=:code limit 1"),
+                      {"company": company, "code": payload.code}).first():
+            raise HTTPException(409, "This store code already exists; select the existing store or use another code.")
+        result["stock_change"] = "0"
     elif action == "reorder_reminder":
         if values["variant_id"]:
             inventory._variant(str(target), values["variant_id"])
@@ -372,6 +381,8 @@ def apply(db, company, action, target, values):
         from app.services.masters_service import MastersService
         row = MastersService(db).create_hsn(HsnMasterCreate.model_validate(values), company, commit=False)
         return {"id": str(row["id"]), "code": row["code"]}
+    if action == "store_create":
+        return StoresService(db, company).create_store(StoreInput.model_validate(values), commit=False)
     if action == "reorder_reminder":
         inventory.remind(target, ReorderReminder.model_validate(values), commit=False)
         return {"id": values["variant_id"] or target}

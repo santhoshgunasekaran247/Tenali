@@ -29,6 +29,37 @@ NEW_READS = {"borrowing_entries", "stock_transfers", "stock_movements", "movemen
 
 
 class OperationsContractTests(unittest.TestCase):
+    def test_store_adapter_uses_non_committing_service_and_checks_duplicate_codes(self):
+        from app.ai.operations_writes import apply, preview
+        values = {"name": "Warehouse", "code": "WH", "kind": "warehouse"}
+        db = Mock()
+        db.info = {"tenant_context": {"role": "owner", "modules": None, "store_ids": None}}
+        db.execute.return_value.first.return_value = None
+        with patch("app.ai.operations_writes.StoresService") as stores:
+            result = preview(db, str(uuid4()), "store_create", None, values)
+            self.assertEqual(result["stock_change"], "0")
+            stores.return_value._validate.assert_called_once()
+            apply(db, str(uuid4()), "store_create", None, values)
+            self.assertFalse(stores.return_value.create_store.call_args.kwargs["commit"])
+            db.execute.return_value.first.return_value = (1,)
+            with self.assertRaises(HTTPException) as error:
+                preview(db, str(uuid4()), "store_create", None, values)
+            self.assertEqual(error.exception.status_code, 409)
+
+    def test_store_service_preserves_the_callers_transaction(self):
+        from app.schemas.stores import StoreInput
+        from app.services.stores_service import StoresService
+        db = Mock()
+        db.execute.return_value.scalar_one_or_none.return_value = str(uuid4())
+        db.execute.return_value.mappings.return_value.one.return_value = {"id": str(uuid4())}
+        service = StoresService(db, str(uuid4()))
+        payload = StoreInput(name="Warehouse", code="WH", kind="warehouse")
+        service.create_store(payload, commit=False)
+        db.commit.assert_not_called()
+        db.rollback.assert_not_called()
+        service.create_store(payload)
+        db.commit.assert_called_once()
+
     def test_report_exact_record_and_byte_limits(self):
         from app.ai.reports import MAX_REPORT_BYTES
         db = Mock()

@@ -3,6 +3,7 @@ import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ai, draftDescription, hasDuplicateDraft, type ActionDraft, type DraftAction, type AIExecution,
   type OperationWorkflow, type WorkflowEstimate, type WorkflowStep } from "../features/ai";
+import { api } from "../api";
 import { FloatingAlert } from "./Notifications";
 import { FieldCaption, WorkflowReference } from "./WorkflowReference";
 
@@ -24,7 +25,7 @@ const actionLabel = (key: string, payload: Record<string, unknown> = {}) => (
     customer: "Customer", vendor: "Vendor", customer_vendor: "Customer & vendor",
   } as Record<string, string>)[String(payload.party_type)] : null) || ({ purchase_create: "Purchase", invoice_create: "Sales billing",
   purchase_bundle_create: "Purchase · Vendor · Product · Stock", party_create: "Vendor or customer",
-  product_create: "Product", stock_adjust: "Stock adjustment" } as Record<string, string>)[key] || friendly(key);
+  product_create: "Product", quotation_create: "Quotation", stock_adjust: "Stock adjustment" } as Record<string, string>)[key] || friendly(key);
 const statusLabel = (status: ActionDraft["status"]) => ({ editing: "Needs review", validated: "Ready to save",
   approved: "Ready to save", executed: "Saved" })[status];
 const object = (value: unknown): Record<string, unknown> =>
@@ -254,6 +255,8 @@ function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = fa
     {(draft.status === "validated" || draft.status === "approved") && !action?.execution_enabled ? <p>Posting is disabled for this action. Contact the platform administrator.</p> : null}
     {outcome ? <div role="status"><p>{outcome.status === "succeeded" ? outcome.result.report_id ? "Private report generated" : "Saved business outcome" : "Operation rejected; no business changes saved"}</p>
       <Impact value={outcome.result} />
+      {outcome.status === "succeeded" && ["invoice_create", "quotation_create"].includes(draft.action_key) &&
+        typeof outcome.result.id === "string" ? <DocumentDownload action={draft.action_key} id={outcome.result.id} /> : null}
       {outcome.status === "succeeded" && typeof outcome.result.report_id === "string" ?
         <button disabled={busy} onClick={() => void onRun(() => ai.downloadReport(outcome.id))}>Download private CSV (expires in one hour)</button> : null}
       {outcome.validation_error ? <Impact value={outcome.validation_error} /> : null}
@@ -363,6 +366,58 @@ function WorkflowFields({ workflow, step, action, disabled, onRun }: {
   </section>;
 }
 
+function DocumentDownload({ action, id }: { action: string; id: string }) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const quotation = action === "quotation_create";
+  const download = async () => {
+    setBusy(true); setError("");
+    try {
+      if (quotation) {
+        const document = await api.quotation(id);
+        const { downloadQuotationPdf } = await import("../features/invoicePdf");
+        await downloadQuotationPdf(document);
+      } else {
+        const document = await api.invoice(id);
+        const { downloadInvoicePdf } = await import("../features/invoicePdf");
+        await downloadInvoicePdf(document);
+      }
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to download the document.");
+    } finally { setBusy(false); }
+  };
+  return <div><button type="button" disabled={busy} onClick={() => void download()}>
+    {busy ? "Generating PDF..." : `Download ${quotation ? "quotation" : "invoice"} PDF`}</button>
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}</div>;
+}
+
+function WorkflowDocumentDownload({ workflow }: { workflow: OperationWorkflow }) {
+  const [recoveredId, setRecoveredId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const root = workflow.plan.steps[0];
+  if (!root || root.draft_status !== "executed" || !["invoice_create", "quotation_create"].includes(root.action) ||
+      workflow.status !== "completed") return null;
+  const id = typeof root.result?.id === "string" ? root.result.id : recoveredId;
+  if (id) return <DocumentDownload action={root.action} id={id} />;
+  if (!root.draft_id) return <p>Saved document details are unavailable. Find the document in Billing.</p>;
+  const draftId = root.draft_id;
+  const recover = async () => {
+    setBusy(true); setError("");
+    try {
+      const draft = await ai.draft(draftId);
+      const { execution } = await ai.execution(draft);
+      if (execution?.status !== "succeeded" || typeof execution.result.id !== "string") {
+        throw new Error("Saved document details are unavailable. Find the document in Billing.");
+      }
+      setRecoveredId(execution.result.id);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to retrieve the saved document.");
+    } finally { setBusy(false); }
+  };
+  return <div><button type="button" disabled={busy} onClick={() => void recover()}>
+    {busy ? "Finding saved document..." : "Find saved document for PDF"}</button>
+    {error ? <FloatingAlert>{error}</FloatingAlert> : null}</div>;
+}
+
 export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
   conversationId: string; refreshKey: number; writable: boolean; aiEnabled: boolean;
 }) {
@@ -435,6 +490,7 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
       <div className="shop-actions ai-workflow-actions">
       {workflow.status === "active" ? <button disabled={busy || !writable || !aiEnabled} onClick={() => void run(() => ai.continueWorkflow(workflow))}>
         Refresh workflow</button> : <div role="status"><p>Completed. Would you like to make the next entry?</p>
+        <WorkflowDocumentDownload workflow={workflow} />
         {workflow.plan.next.map((next, index) => next.path ? <p key={index}><Link to={next.path}>{next.label}</Link></p> :
           <button key={index} disabled={busy || !writable || !actions.some(action => action.key === next.action)}
             onClick={() => void start(next.action, next.target, next.payload)}>{next.label}</button>)}

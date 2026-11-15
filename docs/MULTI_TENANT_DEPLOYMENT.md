@@ -447,10 +447,12 @@ The current supported voice contract is duration-billed `gpt-transcribe`, not th
 older token-priced transcription models. Check the provider's current pricing before
 enabling it; do not reuse chat/document token prices.
 
-Users select **Record voice**, allow microphone access, stop (maximum 60 seconds),
-review local audio, then explicitly **Transcribe recording**. Choose automatic
-English/Tamil hints or a single language. Review/correct the transcript and **Add to
-message**, then use the ordinary **Send** button separately. No automatic voice chat
+Users select **Record voice** and allow microphone access. **Stop and transcribe**
+sends the recording for transcription (automatic English/Tamil detection); **Discard
+recording** cancels without sending it. Recordings stop at 60 seconds. The transcript
+is added to the editable message, and the ordinary **Send** button is separate.
+The microphone remains visible when voice is unavailable and explains how to enable it.
+No automatic voice chat
 submission, action approval, audio-file uploads or spoken replies are included.
 Recording requires HTTPS or localhost, Web Audio/AudioWorklet support and browser
 microphone permission. Device/network transcription accuracy needs testing with real
@@ -880,10 +882,17 @@ scroll to their target, including sections rendered after an asynchronous load.
 The shared route-scroll handler disables native history scroll restoration while
 mounted so the browser cannot reapply another page's position.
 
-Apply revision `035_invoice_store_codes` before deploying the new API. It adds
+Apply migrations through `057_invoice_sequence_bigint` before deploying the new API. Revision `035_invoice_store_codes` adds
 immutable two-character store invoice IDs without renumbering existing invoices
-or resetting counters. New invoices use `I<STOREID>YYYYMMDDNNNNN` (16 characters).
-The store/month limit is 99999 invoices, and a workspace supports 1295 store IDs.
+or resetting counters. New invoices use `I<STOREID>-NNNNNNNNNNNN` (16 characters),
+with a lifetime per-store sequence initialized from existing history. Deploy all
+invoice writers together; old and new numbering code must not run concurrently.
+A workspace supports 1295 store IDs.
+
+Billing quotations are stored separately and labelled QUOTATION on their PDFs.
+They do not post invoices, inventory, receivables, account transactions or payments.
+Migration `056_quotations` is required. Existing quotations are listed for permitted
+stores and saved with their seller, customer, line and tax snapshot.
 
 Temporary messages use shared floating alerts throughout the app: success messages
 close after five seconds, errors remain until dismissed, and every alert has a close

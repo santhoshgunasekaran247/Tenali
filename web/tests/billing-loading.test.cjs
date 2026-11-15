@@ -32,7 +32,7 @@ function mountBilling() {
       }
     },
   };
-  const api = Object.fromEntries(["billingCustomers", "accounts", "hsnMasters", "inventoryProducts", "company", "invoices", "invoiceReconcileRuns"].map(name => [
+  const api = Object.fromEntries(["billingCustomers", "accounts", "hsnMasters", "inventoryProducts", "company", "invoices", "invoiceReconcileRuns", "quotations"].map(name => [
     name, (...args) => {
       const request = { ...deferred(), args };
       (requests[name] ||= []).push(request);
@@ -96,6 +96,21 @@ test("customers render before inventory, invoices, or reconciliation finish; fai
   const tree = render();
   assert.equal(nodes(tree).find(node => Array.isArray(node.props?.parties)).props.parties.length, 1);
   assert.ok(nodes(tree).some(node => String(node.props?.children).includes("Inventory unavailable")));
+});
+
+test("quotation mode hides payment and receivable controls", () => {
+  const { render } = mountBilling();
+  const first = render();
+  const selector = nodes(first).find(node => node.type === "select" &&
+    nodes(node).some(option => option.props?.value === "quotation"));
+  assert.ok(selector);
+  selector.props.onChange({ target: { value: "quotation" } });
+  const quote = nodes(render());
+  assert.ok(quote.some(node => node.props?.children === "Save Quotation"));
+  assert.ok(!quote.some(node => node.type === "input" && node.props?.required === true &&
+    node.props?.placeholder === "cash / bank / upi"));
+  assert.ok(quote.some(node => typeof node.props?.children === "string" &&
+    node.props.children.includes("does not change stock, accounts or receivables")));
 });
 
 test("invoice filters and audit pagination fetch only their own data and ignore stale results", async () => {

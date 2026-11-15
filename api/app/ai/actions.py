@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.schemas import ReadAssistantOutput
 from app.schemas.accounts import AccountCreate, AccountUpdate, AccountTransactionCreate, BusinessPaymentCreate, TransactionReverseCreate
-from app.schemas.billing import InvoiceCreate
+from app.schemas.billing import InvoiceCreate, QuotationCreate
 from app.schemas.collections import ReceivablePaymentCreate
 from app.schemas.masters import HsnMasterCreate
 from app.schemas.inventory import (ProductInput, StockAdjustment, StockTransferCreate, VariantInput,
@@ -17,6 +17,7 @@ from app.schemas.inventory import (ProductInput, StockAdjustment, StockTransferC
     ReorderReminder, InventoryLookupCreate)
 from app.schemas.parties import PartyCreate, PartyUpdate
 from app.schemas.purchases import PurchaseCreate, PurchasePaymentCreate, PurchaseReceiptConfirm
+from app.schemas.stores import StoreInput
 from app.schemas.money import PositiveMoney, SignedMoney
 from app.services.document_cancellation import Cancellation
 from datetime import date
@@ -204,7 +205,7 @@ ActionKey = Literal[
     "offer_create", "offer_update", "vendor_bulk_map", "brand_create", "brand_update",
     "category_create", "category_update", "reorder_reminder", "stock_transfer_reverse", "movement_attribute",
     "report_export", "gst_reconcile",
-    "business_payment_create", "hsn_create",
+    "business_payment_create", "hsn_create", "store_create", "quotation_create",
 ]
 
 
@@ -245,6 +246,8 @@ ACTIONS = {action.key: action for action in (
             "Prepare one reviewed chain for vendor (reuse an exact match or create if absent), new product, purchase, full payment and stock receipt. Resolve names in the server. HSN/SAC must be an active company master. No separate stock adjustment."),
     Action("invoice_create", "/billing", InvoiceCreate, None,
            "Customer and inventory → sales invoice → stock OUT and linked Collections receivable. Received payment also creates the account inflow in the same posting; never add a duplicate stock adjustment or account transaction."),
+    Action("quotation_create", "/billing", QuotationCreate, None,
+           "Prepare a customer quotation only; no invoice, stock, receivable, account transaction or payment."),
     Action("party_create", "/parties", PartyCreateDraft, None, "Draft a vendor/customer record, clarify possible duplicates."),
     Action("party_update", "/parties", PartyUpdateDraft, "parties", "Draft a patch to a resolved vendor/customer. Only supplied fields change."),
     Action("product_create", "/inventory", ProductInput, None, "Draft a product. No stock is added by product creation."),
@@ -283,6 +286,7 @@ ACTIONS = {action.key: action for action in (
     Action("brand_update", "/inventory", InventoryLookupCreate, "brands", "Replace the name/description/active fields of an inventory brand."),
     Action("category_create", "/inventory", InventoryLookupCreate, None, "Create an inventory category."),
     Action("hsn_create", "/masters", HsnMasterCreate, None, "Add an HSN/SAC code with its description and GST rate as printed on the user's document."),
+    Action("store_create", "/stores", StoreInput, None, "Create a store with an explicit code, name and kind. Does not add stock."),
     Action("category_update", "/inventory", InventoryLookupCreate, "product_categories", "Replace the name/description/active fields of an inventory category."),
     Action("reorder_reminder", "/inventory", ReorderReminder, "products", "Set a product/variant reorder reminder; no automatic order."),
     Action("stock_transfer_reverse", "/inventory", StockTransferReverse, "stock_transfers", "Separate high-impact reversal back to the original store, dated today; requires available destination stock."),

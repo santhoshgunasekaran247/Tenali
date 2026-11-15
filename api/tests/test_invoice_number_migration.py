@@ -33,9 +33,10 @@ class InvoiceNumberMigrationTests(unittest.TestCase):
                 with Session(bind=connection, join_transaction_mode="create_savepoint") as db:
                     main = get_store(db, company, store)
                     self.assertEqual(main["invoice_code"], "01")
-                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 11, 6)), "I012026110600005")
-                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 11, 7)), "I012026110700006")
-                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 12, 1)), "I012026120100001")
+                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 11, 6)), "I01-000000000005")
+                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 11, 7)), "I01-000000000006")
+                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2026, 12, 1)), "I01-000000000007")
+                    self.assertEqual(next_document_number(db, company, main, "invoice", date(2027, 4, 1)), "I01-000000000008")
                     self.assertEqual(db.execute(text("select invoice_number from invoices where company_id=:company"),
                                                 {"company": company}).scalar_one(), "INV-MAIN-202611-00004")
                     db.execute(text("select set_config('app.tenant_id',:company,true)"), {"company": company})

@@ -9,10 +9,10 @@ const src = file => readFileSync(path.join(__dirname, "..", "src", ...file.split
 
 function loadUI(file) {
   const exports = {};
-  vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, actionLabel, waitingForPrerequisites };" : ""), {
+  vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, actionLabel, waitingForPrerequisites, WorkflowDocumentDownload };" : ""), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports, require: name =>
-    name === "../features/ai" ? {} :
+    name === "../features/ai" || name === "../api" ? {} :
     name === "./WorkflowReference" ? loadUI("components/WorkflowReference.tsx") :
     name === "./Notifications" ? {} : require(name) });
   return exports;
@@ -43,6 +43,72 @@ test("forms mark filled and missing required fields without redundant selected c
   assert.match(html, /<option value="false" selected="">No<\/option>/);
   assert.doesNotMatch(html, /Selected:|value="id"/);
   assert.doesNotMatch(src("components/AIDrafts.tsx"), /Selected:/);
+});
+
+test("completed AI invoices and quotations expose the appropriate saved PDF download", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { WorkflowDocumentDownload } = loadUI("components/AIDrafts.tsx");
+  for (const [action, label] of [["invoice_create", "invoice"], ["quotation_create", "quotation"]]) {
+    const root = { action, draft_status: "executed", result: { id: "saved-id" } };
+    const render = value => renderToStaticMarkup(React.createElement(WorkflowDocumentDownload, { workflow: { status: "completed", plan: { steps: [value] } } }));
+    assert.match(render(root), new RegExp(`Download ${label} PDF`));
+    assert.equal(render({ ...root, draft_status: "editing" }), "");
+    assert.match(render({ ...root, result: {}, draft_id: "draft-id" }), /Find saved document for PDF/);
+    assert.match(render({ ...root, result: {} }), /Find the document in Billing/);
+  }
+});
+
+test("AI document downloads use saved records, show failures, and recover old workflow outcomes", async () => {
+  const state = [], calls = [];
+  let cursor = 0, rejectRead, fail = false;
+  const react = { useState(initial) {
+    const index = cursor++;
+    if (!(index in state)) state[index] = initial;
+    return [state[index], value => { state[index] = value; }];
+  } };
+  const api = Object.fromEntries(["invoice", "quotation"].map(kind => [kind, id => {
+    calls.push([kind, id]);
+    if (fail) return new Promise((_, reject) => { rejectRead = reject; });
+    return Promise.resolve({ id });
+  }]));
+  const ai = {
+    draft: async id => { calls.push(["draft", id]); return { id, version: 3 }; },
+    execution: async draft => { calls.push(["execution", draft.id]); return { execution: { status: "succeeded", result: { id: "saved" } } }; },
+  };
+  const pdf = {
+    downloadInvoicePdf: doc => calls.push(["invoice-pdf", doc.id]),
+    downloadQuotationPdf: doc => calls.push(["quotation-pdf", doc.id]),
+  };
+  const exports = {};
+  const compiled = ts.transpileModule(src("components/AIDrafts.tsx") + "\nexport { DocumentDownload, WorkflowDocumentDownload };", {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  vm.runInNewContext(compiled, { exports, Error, require: name =>
+    name === "react" ? react : name === "../api" ? { api } : name === "../features/ai" ? { ai } :
+    name === "../features/invoicePdf" ? pdf : name === "./Notifications" ? { FloatingAlert: () => null } :
+    name === "./WorkflowReference" ? {} : require(name) });
+  const render = (component, props) => { cursor = 0; return component(props); };
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  for (const [action, kind] of [["invoice_create", "invoice"], ["quotation_create", "quotation"]]) {
+    state.length = 0;
+    render(exports.DocumentDownload, { action, id: "saved" }).props.children[0].props.onClick();
+    await flush();
+    assert.deepEqual(calls.splice(0), [[kind, "saved"], [`${kind}-pdf`, "saved"]]);
+  }
+  state.length = 0; fail = true;
+  const props = { action: "invoice_create", id: "saved" };
+  render(exports.DocumentDownload, props).props.children[0].props.onClick();
+  assert.equal(render(exports.DocumentDownload, props).props.children[0].props.disabled, true);
+  rejectRead(new Error("Billing access denied"));
+  await flush();
+  assert.equal(render(exports.DocumentDownload, props).props.children[1].props.children, "Billing access denied");
+  state.length = 0;
+  const workflow = { status: "completed", plan: { steps: [{ action: "invoice_create", draft_status: "executed", draft_id: "old" }] } };
+  render(exports.WorkflowDocumentDownload, { workflow }).props.children[0].props.onClick();
+  await flush();
+  const recovered = render(exports.WorkflowDocumentDownload, { workflow });
+  assert.equal(recovered.props.id, "saved");
+  assert.deepEqual(calls.slice(-2), [["draft", "old"], ["execution", "old"]]);
 });
 
 test("sales retain their label and completed customer prerequisites no longer show waiting", () => {

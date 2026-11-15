@@ -80,7 +80,7 @@ class StoresService:
             if not account:
                 raise HTTPException(422, "Settlement account must be an active account of this company")
 
-    def create_store(self, payload: StoreInput) -> dict:
+    def create_store(self, payload: StoreInput, *, commit: bool = True) -> dict:
         self._validate(payload, None)
         values = payload.model_dump()
         values.update(company=self.company_id, holds_stock=payload.kind != "online")
@@ -96,13 +96,15 @@ class StoresService:
                 values,
             ).mappings().one()
         except IntegrityError as error:
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
             if "limit of 1295 store invoice identifiers" in str(error):
                 raise HTTPException(422, "This workspace has reached the limit of 1295 store invoice identifiers.") from error
             if "stores_company_id_code_key" in str(error):
                 raise HTTPException(409, f"Store code {payload.code} already exists") from error
             raise HTTPException(422, "Store could not be saved; check the code, GSTIN and contact details") from error
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return dict(row)
 
     def update_store(self, store_id: str, payload: StoreInput) -> dict:

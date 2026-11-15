@@ -85,6 +85,8 @@ def available_actions(db, identity):
     for item in action_policies(db, identity["company_id"])["items"]:
         if not item["enabled"] or not item["compatible"] or not item["tenant_allowed"]:
             continue
+        if item["key"] == "store_create" and identity.get("role") not in {"owner", "admin"}:
+            continue
         if ACTIONS[item["key"]].high_impact and (identity.get("role") not in {"owner", "admin"} or allowed_stores(identity) is not None):
             continue
         try:
@@ -103,7 +105,7 @@ def available_actions(db, identity):
                     raise
                 continue
         if allowed_stores(identity) == [] and item["key"] in {
-            "purchase_create", "invoice_create", "stock_adjust", "stock_transfer", "purchase_payment", "collection_payment",
+            "purchase_create", "invoice_create", "quotation_create", "stock_adjust", "stock_transfer", "purchase_payment", "collection_payment",
         }:
             continue
         result.append(item)
@@ -304,6 +306,8 @@ class DraftService:
                 raise HTTPException(422, "Select an explicit store and at least one document line.")
             from app.ai.business_writes import document_preview
             normalized, preview = document_preview(self.db, self.scope["company"], action.key, normalized)
+        if action.key == "quotation_create" and (not normalized["lines"] or not normalized.get("store_id") or not normalized.get("quotation_date")):
+            raise HTTPException(422, "Select a store, quotation date and at least one line.")
         if action.high_impact:
             from app.ai.business_writes import destructive_preview
             preview = destructive_preview(self.db, self.scope["company"], action.key, row["target_id"], normalized)
@@ -327,6 +331,7 @@ class DraftService:
         mappings = {"vendor_party_id": "parties", "customer_party_id": "parties", "related_party_id": "parties",
                     "vendor_id": "parties", "preferred_vendor_id": "parties", "account_id": "accounts", "from_account_id": "accounts",
                     "store_id": "stores", "stock_store_id": "stores", "from_store_id": "stores", "to_store_id": "stores",
+                    "fulfilment_store_id": "stores", "settlement_account_id": "accounts",
                     "product_id": "products", "variant_id": "product_variants", "brand_id": "brands", "category_id": "product_categories",
                     "party_id": "parties", "to_account_id": "accounts", "invoice_id": "invoices",
                     "target_product_id": "products", "target_variant_id": "product_variants"}

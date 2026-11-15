@@ -504,7 +504,8 @@ class BillingService:
 
     def list_invoices(self, company_id: str | None, collection_status: str | None = None, store_id: str | None = None,
                       *, search: str = "", limit: int | None = None, from_date: date | None = None,
-                      to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False) -> dict:
+                      to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False,
+                      invoice_id: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -541,6 +542,9 @@ class BillingService:
             where i.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
+        if invoice_id:
+            query += " and i.id = :invoice_id"
+            params["invoice_id"] = invoice_id
         if store_id:
             query += " and i.store_id = :store_id"
             params["store_id"] = store_id

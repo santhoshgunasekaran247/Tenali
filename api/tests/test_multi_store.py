@@ -117,8 +117,8 @@ class MultiStoreTests(unittest.TestCase):
             invoice_date=date(2026, 10, 5), lines=[{"product_id": self.product, "description": "x", "hsn": "8516", "quantity": 1, "rate": 1180}]))
         second = billing.create_invoice(self.company, InvoiceCreate(customer_party_id=self.party, store_id=self.shop["id"], place_of_supply="33 - Tamil Nadu",
             invoice_date=date(2026, 10, 5), subtotal=100))
-        self.assertEqual(first["invoice_number"], "I012026100500001")
-        self.assertEqual(second["invoice_number"], "I022026100500001")
+        self.assertEqual(first["invoice_number"], "I01-000000000001")
+        self.assertEqual(second["invoice_number"], "I02-000000000001")
         self.assertEqual((first["subtotal"], first["gst_total"], first["total"]), (Decimal("1000.00"), Decimal("180.00"), Decimal("1180.00")))
         self.assertEqual(self.stock(self.main), Decimal("9"))
         purchase = PurchasesService(self.db).create_purchase(self.company, PurchaseCreate(vendor_party_id=self.party, store_id=self.shop["id"],

@@ -142,11 +142,14 @@ class ExecutionService:
                     if any(Decimal(str(result[name])) != Decimal(str(approved_purchase[name]))
                            for name in ("subtotal", "gst_total", "total")):
                         raise HTTPException(409, "Purchase totals changed from the approved preview. No changes saved.")
+                elif row["action_key"] == "quotation_create":
+                    if result["document_data"] != report["preview"]["document"]:
+                        raise HTTPException(409, "Quotation details changed from the approved preview. No changes saved.")
                 # Recovery only needs durable references, not copies of business/contact data.
                 outcome = {name: result[name] for name in ("id", "status", "deleted", "deletion_id", "borrowing_id",
                     "subtotal", "gst_total", "total", "refunds", "mapped_count", "reversal_of_transaction_id",
                     "reversal_of_transfer_id", "report_id", "report_rows", "product_id", "vendor_created",
-                    "product_name", "stock_received", "code") if name in result}
+                    "product_name", "stock_received", "code", "quotation_number") if name in result}
                 if "account_transaction" in result:
                     outcome["id"] = result["account_transaction"]["id"]
                 self.record(row, execution_id, key, "succeeded", outcome)

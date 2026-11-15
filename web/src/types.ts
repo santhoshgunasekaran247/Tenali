@@ -707,6 +707,34 @@ export type InvoiceListResponse = {
   items: Invoice[];
 };
 
+export type Quotation = {
+  id: string;
+  company_id: string;
+  store_id: string;
+  store_code: string;
+  customer_party_id: string;
+  quotation_number: string;
+  quotation_date: string;
+  reference: string | null;
+  notes: string | null;
+  document_data: InvoiceDocument;
+  created_at: string;
+};
+
+export type QuotationCreateInput = {
+  idempotency_key?: string;
+  store_id?: string;
+  customer_party_id: string;
+  quotation_date?: string;
+  reference?: string;
+  notes?: string;
+  lines: InvoiceLineInput[];
+  billing_address?: string;
+  shipping_name?: string;
+  shipping_address?: string;
+  place_of_supply?: string;
+};
+
 export type InvoiceReconcileResponse = {
   healed_count: number;
 };

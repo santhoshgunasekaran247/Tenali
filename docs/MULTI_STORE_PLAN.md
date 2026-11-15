@@ -123,14 +123,14 @@ Add nullable `store_id` (backfilled to the default store, then set `not null`) t
 `invoice_sequences` becomes `document_sequences(company_id, store_id, kind, year, month, last_number)`
 with `kind in ('invoice','purchase')`. Formats:
 
-- Invoice: `I<STOREID>YYYYMMDDNNNNN` (for example `I012026110600001`, exactly
+- Invoice: `I<STOREID>-NNNNNNNNNNNN` (for example `I01-000000000001`, exactly
   16 characters). Revision `035_invoice_store_codes` assigns each store a permanent
   two-character alphanumeric invoice ID, distinct from its longer editable display
   code. IDs are unique per company and cannot be changed; new stores receive the
   next available ID automatically, including stores created during registration.
-  The full date is the invoice date, not the posting date. The existing per-store,
-  per-month counter continues across days and format changes; it is not reset daily.
-  At 99999 invoices per store/month the API rejects new invoices explicitly rather
+  The date-free sequence continues across financial years and is initialized from
+  legacy counters and invoices; existing invoice numbers are never changed.
+  At 999999999999 invoices per store the API rejects new invoices rather
   than truncating or exceeding 16 characters. Two-character IDs support 1295 stores
   per workspace (`01` through `ZZ`; `00` reserved).
 - Purchase voucher: `PUR-<STORECODE>-YYYYMM-NNNNN` stored in a new

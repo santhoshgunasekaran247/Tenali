@@ -284,8 +284,8 @@ export function TenaliAIPage() {
               <Paperclip size={19} aria-hidden="true" />
               <input className="ai-sr-only" aria-label="Attach text PDF, text file or image (2 MB; up to two files)" type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
                 onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /></label> : null}
-            {features?.voice_inputs_enabled && canSend && selected.status === "active" ? <AIVoiceInput key={selected.id}
-              conversationId={selected.id} disabled={operationBusy || !!submission} onBusy={setVoiceBusy}
+            {canSend && selected.status === "active" ? <AIVoiceInput key={selected.id}
+              conversationId={selected.id} available={!!features?.voice_inputs_enabled} disabled={operationBusy || !!submission} onBusy={setVoiceBusy}
               onTranscript={transcript => {
                 const combined = [text.trim(), transcript].filter(Boolean).join("\n");
                 if (combined.length > 4000) { setError("Message plus transcript exceeds 4,000 characters. Shorten the message or transcript first."); return false; }

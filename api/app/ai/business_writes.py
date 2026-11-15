@@ -28,6 +28,13 @@ from app.services.access import check_module
 
 
 def operational_preview(db, company, action, target, values):
+    if action == "quotation_create":
+        from app.schemas.billing import QuotationCreate
+        from app.services.quotation_service import QuotationService
+        _, doc = QuotationService(db).prepare(company, QuotationCreate.model_validate(values))
+        return {"operation": action, "subtotal": doc["subtotal"], "gst_total": doc["gst_total"],
+                "total": doc["total"], "lines": doc["lines"], "document": doc,
+                "stock_change": "0", "payment": "None", "receivable": "None"}
     from app.ai.operations_writes import OPERATIONS_ACTIONS, preview
     if action in OPERATIONS_ACTIONS:
         return preview(db, company, action, target, values)
@@ -310,6 +317,10 @@ def purchase_bundle_preview(db, company: str, values: dict, draft_id: str):
 
 
 def apply_action(db, company: str, action: str, target: str | None, values: dict, key: str, preview=None, confirm_text=None):
+    if action == "quotation_create":
+        from app.schemas.billing import QuotationCreate
+        from app.services.quotation_service import QuotationService
+        return QuotationService(db).create(company, QuotationCreate.model_validate({**values, "idempotency_key": key}), commit=False)
     if action == "business_payment_create":
         return AccountsService(db).create_business_payment(company, BusinessPaymentCreate.model_validate({**values, "idempotency_key": key}), commit=False)
     if action in {"report_export", "gst_reconcile"}:

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -9,13 +11,33 @@ from app.schemas.billing import (
     InvoiceOut,
     InvoiceReconcileResponse,
     InvoiceReconcileRunListResponse,
+    QuotationCreate, QuotationOut, QuotationListResponse,
 )
 from app.services.billing_service import BillingService
+from app.services.quotation_service import QuotationService
 from app.services.document_cancellation import Cancellation,cancel_document
 from app.schemas.parties import PartyCreate, PartyOut
 from app.services.parties_service import PartiesService
 
 router = APIRouter()
+
+
+@router.get("/quotations", response_model=QuotationListResponse)
+def list_quotations(company_id: str | None = None, store_id: str | None = None, db: Session = Depends(get_db)):
+    return QuotationService(db).list(company_id, store_id)
+
+
+@router.post("/quotations", response_model=QuotationOut, status_code=201)
+def create_quotation(payload: QuotationCreate, company_id: str | None = None, db: Session = Depends(get_db)):
+    return QuotationService(db).create(company_id, payload)
+
+
+@router.get("/quotations/{quotation_id}", response_model=QuotationOut)
+def get_quotation(quotation_id: UUID, company_id: str | None = None, db: Session = Depends(get_db)):
+    items = QuotationService(db).list(company_id, quotation_id=str(quotation_id))["items"]
+    if not items:
+        raise HTTPException(404, "Quotation not found")
+    return items[0]
 
 
 @router.get("/customers")
@@ -97,3 +119,11 @@ def export_sales_register_csv(
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="sales_register.csv"'},
     )
+
+
+@router.get("/invoices/{invoice_id}", response_model=InvoiceOut)
+def get_invoice(invoice_id: UUID, company_id: str | None = None, db: Session = Depends(get_db)):
+    items = BillingService(db).list_invoices(company_id, invoice_id=str(invoice_id), limit=1)["items"]
+    if not items:
+        raise HTTPException(404, "Invoice not found")
+    return items[0]

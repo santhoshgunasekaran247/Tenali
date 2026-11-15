@@ -20,7 +20,7 @@ from app.schemas.money import Money
 
 # capability, exact-match labels, identifier, prerequisite action, seed field
 REFERENCES = {
-    "store_id": ("stores", ("name", "code"), "id", None, None),
+    "store_id": ("stores", ("name", "code"), "id", "store_create", "name"),
     "account_id": ("accounts", ("account_name",), "account_id", "account_create", "nickname"),
     "party_id": ("parties", ("legal_name", "nickname"), "id", "party_create", "legal_name"),
     "product_id": ("products", ("name", "sku"), "id", "product_create", "name"),
@@ -30,9 +30,9 @@ REFERENCES = {
     "invoice_id": ("invoices", ("invoice_number",), "id", None, None),
     "hsn": ("hsn", ("code",), "code", "hsn_create", "code"),
 }
-for alias in ("stock_store_id", "from_store_id", "to_store_id"):
+for alias in ("stock_store_id", "from_store_id", "to_store_id", "fulfilment_store_id"):
     REFERENCES[alias] = REFERENCES["store_id"]
-for alias in ("from_account_id", "to_account_id"):
+for alias in ("from_account_id", "to_account_id", "settlement_account_id"):
     REFERENCES[alias] = REFERENCES["account_id"]
 for alias in ("vendor_party_id", "customer_party_id", "vendor_id", "preferred_vendor_id", "related_party_id"):
     REFERENCES[alias] = REFERENCES["party_id"]
@@ -57,6 +57,7 @@ REPLACEMENTS = {"product_update", "variant_update", "offer_update", "brand_updat
 EXPLICIT = {
     "purchase_create": ("store_id", "purchase_date", "received_now", "amount_paid", "lines"),
     "invoice_create": ("store_id", "invoice_date", "amount_received", "lines", "billing_address", "place_of_supply"),
+    "quotation_create": ("store_id", "quotation_date", "lines", "billing_address", "place_of_supply"),
     "stock_adjust": ("store_id",),
     "stock_transfer": ("transfer_date",),
     "purchase_payment": ("payment_date",),
@@ -242,12 +243,6 @@ def search_reference(action, field):
     if not current.get("x-workflow-reference"):
         raise HTTPException(422, "This field is not a searchable record reference.")
     spec = REFERENCES["product_id"] if field.split(".")[-1].isdigit() else REFERENCES[field.split(".")[-1]]
-    return reference_spec(action, spec)
-
-
-def reference_spec(action, spec):
-    if action == "invoice_create" and spec[0] == "products":
-        return (*spec[:3], None, None)
     return spec
 
 
@@ -429,6 +424,24 @@ def preserve_bindings(item, payload):
         set_path(payload, binding["path"], old)
 
 
+def prerequisite_would_cycle(parent, child, steps):
+    by_id = {item["id"]: item for item in steps}
+    pending = [child["id"]]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if current == parent["id"]:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        node = by_id.get(current)
+        if node:
+            pending.extend(binding["step_id"] for binding in node["bindings"].values())
+            pending.extend(node.get("offer_steps", {}).values())
+    return False
+
+
 def required_fields(action, payload):
     required = list(EXPLICIT.get(action, ()))
     if action in {"purchase_create", "invoice_create"} and payload.get("fully_paid") is True:
@@ -547,6 +560,9 @@ def next_entries(action, payload, result):
             Decimal(str(result.get("amount_received", 0))) < Decimal(str(result.get("total", 0)))):
         entries.append({"action": "collection_payment", "target": None, "payload": {},
                         "label": "Review collections?", "path": "/portal/receivables"})
+    if action == "quotation_create" and record_id:
+        entries.append({"action": "quotation_create", "target": None, "payload": {},
+                        "label": "View and download quotation in Billing", "path": "/portal/billing"})
     if action in {"product_create", "product_update", "product_confirm", "purchase_receive"}:
         entries.append({"action": "offer_create", "target": None,
                         "payload": {"product_id": record_id} if action.startswith("product_") and record_id else {},
@@ -630,7 +646,7 @@ class WorkflowService:
         self.policies()
         if payload.action not in self.actions:
             raise HTTPException(403, "This Operations workflow is not permitted.")
-        if payload.action in {"purchase_create", "invoice_create"}:
+        if payload.action in {"purchase_create", "invoice_create", "quotation_create"}:
             payload = payload.model_copy(update={"payload": normalize_document_proposal(payload.action, payload.payload)})
         validate_workflow_payload(payload.action, payload.payload)
         old = self.db.execute(text("""select * from ai_operation_workflows where company_id=:company
@@ -697,7 +713,7 @@ class WorkflowService:
         if not isinstance(values, dict):
             raise HTTPException(422, "The workflow proposal must be a JSON object.")
         self.line_images = self.document_photos(values)
-        if proposal.action in {"purchase_create", "invoice_create"}:
+        if proposal.action in {"purchase_create", "invoice_create", "quotation_create"}:
             values = normalize_document_proposal(proposal.action, values)
         coerce_payload(proposal.action, values)
         if "workflow_id" in proposal.model_fields_set:
@@ -784,7 +800,6 @@ class WorkflowService:
         return self.cache[key]
 
     def resolve(self, item, path, value, spec, steps, *, target=False, force_create=False):
-        spec = reference_spec(item["action"], spec)
         if uuid_value(value) and spec[0] != "hsn":
             return uuid_value(value)
         location = ".".join(map(str, path))
@@ -808,16 +823,13 @@ class WorkflowService:
                     item["issues"].append({"field": location,
                         "message": f"The existing party is not a {expected}. Update its type in Parties, then continue."})
                     return value
-            if spec[0] == "hsn" and item["action"] in {"purchase_create", "invoice_create"} and path[0] == "lines":
+            if spec[0] == "hsn" and item["action"] in {"purchase_create", "invoice_create", "quotation_create"} and path[0] == "lines":
                 line = item["payload"]["lines"][path[1]]
                 if line.get("gst_rate") is None and exact[0].get("gst_rate") is not None:
                     line["gst_rate"] = exact[0]["gst_rate"]
             item["labels"][location] = {"value": identifier, "label": str(value)}
             return identifier
         if (not rows or force_create) and not result["more_matches"] and not target and spec[3] in self.actions:
-            if len(steps) >= MAX_STEPS:
-                item["issues"].append({"field": location, "message": "Too many prerequisites; split this entry."})
-                return value
             seed = {spec[4]: value}
             container = item["payload"]
             for key in path[:-1]:
@@ -849,12 +861,34 @@ class WorkflowService:
             shared = next((child for child in steps if child["action"] == spec[3] and
                            normalize(child["payload"].get(spec[4])) == normalize(value) and
                            (spec[0] != "variants" or child["payload"].get("product_id") == seed.get("product_id"))), None)
+            if shared and prerequisite_would_cycle(item, shared, steps):
+                item["issues"].append({"field": location, "message":
+                    "This prerequisite would depend on itself. Select a different existing record or enter another name."})
+                return value
+            if shared and spec[0] == "parties":
+                existing_type = shared["payload"].get("party_type")
+                required_type = seed.get("party_type")
+                if required_type and existing_type not in {required_type, "customer_vendor"}:
+                    message = ("This saved party has a different type. Update it in Parties, then refresh."
+                               if shared.get("draft_status") == "executed" else
+                               f"This party is already being created. Choose {required_type} or Customer + Vendor in its step before continuing.")
+                    item["issues"].append({"field": location, "message":
+                        message})
+                    return value
+            if not shared and len(steps) >= MAX_STEPS:
+                item["issues"].append({"field": location, "message": "Too many prerequisites; split this entry."})
+                return value
             child = shared or step(spec[3], seed)
             if not shared:
                 steps.append(child)
             elif photo and not child.get("draft_id") and not child["payload"].get("image_url"):
                 child["payload"]["image_url"] = photo
             item["bindings"][location] = {"step_id": child["id"], "path": list(path)}
+            message = "Complete the prerequisite step first."
+            if child["action"] == "product_create" and item["action"] == "invoice_create":
+                message = ("Complete the product prerequisite first. Creating a product does not add stock; "
+                           "record stock separately before selling it.")
+            item["issues"].append({"field": location, "message": message})
             return value
         item["choices"].append({"field": location, "query": value, "capability": spec[0],
             "options": record_options(rows, spec), "more_matches": result["more_matches"],
@@ -897,7 +931,7 @@ class WorkflowService:
             if not isinstance(line, dict):
                 return None
             inclusive = line.get("price_includes_gst")
-            if inclusive is None and action == "invoice_create":
+            if inclusive is None and action in {"invoice_create", "quotation_create"}:
                 inclusive = bool(company["prices_include_gst"])
             try:
                 quantity, rate = Decimal(str(line["quantity"])), Decimal(str(line["rate"]))
@@ -1085,7 +1119,7 @@ class WorkflowService:
             if item["action"] not in self.actions:
                 item["issues"].append({"field": "", "message": "This prerequisite action is no longer permitted."})
                 continue
-            if item["action"] in {"purchase_create", "invoice_create"}:
+            if item["action"] in {"purchase_create", "invoice_create", "quotation_create"}:
                 item["payload"] = normalize_document_proposal(item["action"], item["payload"])
             coerce_payload(item["action"], item["payload"])
             normalize_choices(item["payload"], item["issues"])
@@ -1101,8 +1135,12 @@ class WorkflowService:
                     item["labels"][".".join(map(str, binding["path"]))] = {
                         "value": str(bound), "label": str(name or "Selected record")}
                 else:
+                    message = "Complete the prerequisite step first."
+                    if child and child["action"] == "product_create" and item["action"] == "invoice_create":
+                        message = ("Complete the product prerequisite first. Creating a product does not add stock; "
+                                   "record stock separately before selling it.")
                     item["issues"].append({"field": ".".join(map(str, binding["path"])),
-                                           "message": "Complete the prerequisite step first."})
+                                           "message": message})
             action = ACTIONS[item["action"]]
             if not action.target:
                 # Older model proposals sometimes put a vendor name in a create action's target.
@@ -1131,7 +1169,7 @@ class WorkflowService:
                                          ("account_name", "account_id")):
                     if item["payload"].get(name) and not item["payload"].get(identifier):
                         item["payload"][identifier] = item["payload"][name]
-            if action.key in {"purchase_create", "invoice_create"}:
+            if action.key in {"purchase_create", "invoice_create", "quotation_create"}:
                 self.document_products(item)
                 self.own_business_party(item)
             references = list(reference_fields(item["payload"]))
@@ -1140,20 +1178,20 @@ class WorkflowService:
                 if location not in item["bindings"] or uuid_value(value):
                     set_path(item["payload"], path, self.resolve(item, path, value, spec, steps,
                         force_create=create_request == (item["id"], location)))
-            if action.key in {"purchase_create", "invoice_create"}:
+            if action.key in {"purchase_create", "invoice_create", "quotation_create"}:
                 # A name may have resolved to a product in this pass.
                 self.document_products(item)
                 for index, line in enumerate(item["payload"].get("lines") or []):
                     if (isinstance(line, dict) and line.get("hsn") and
                             not any(path == ("lines", index, "hsn") for path, _, _ in references)):
                         self.resolve(item, ("lines", index, "hsn"), line["hsn"], REFERENCES["hsn"], steps)
-            if action.key == "invoice_create":
+            if action.key in {"invoice_create", "quotation_create"}:
                 self.invoice_context(item)
             if action.key == "borrowing_create":
                 self.loan_direction(item)
             if action.key == "purchase_create":
                 self.purchase_offers(item, steps)
-            if action.key in {"purchase_create", "invoice_create"}:
+            if action.key in {"purchase_create", "invoice_create", "quotation_create"}:
                 item["estimate"] = self.document_estimate(item)
             # One clear message per field; linked fields wait on their prerequisite step instead of showing UUID errors.
             noted = {issue["field"] for issue in item["issues"]} | set(item["bindings"])
@@ -1248,7 +1286,7 @@ class WorkflowService:
                 option = next((option for option in choice["options"] if option["value"] == selected), None)
                 if option:
                     item["labels"][choice["field"]] = {"value": option["value"], "label": option["label"]}
-            if item["action"] in {"purchase_create", "invoice_create"}:
+            if item["action"] in {"purchase_create", "invoice_create", "quotation_create"}:
                 edit.payload = normalize_document_proposal(item["action"], edit.payload)
             validate_workflow_payload(item["action"], edit.payload)
             preserve_bindings(item, edit.payload)

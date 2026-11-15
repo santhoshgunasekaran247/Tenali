@@ -34,7 +34,7 @@ class DraftUnitTests(unittest.TestCase):
         self.assertIn("HSN/SAC is required", str(error.exception.detail))
 
     def test_operational_allowlist_separates_high_impact_and_excludes_admin(self):
-        self.assertEqual(len(ACTIONS), 44)
+        self.assertEqual(len(ACTIONS), 46)
         self.assertEqual({key for key, action in ACTIONS.items() if action.high_impact},
                          {"invoice_cancel", "purchase_cancel", "product_delete", "transaction_delete",
                           "account_transaction_reverse", "stock_transfer_reverse", "product_merge", "receivable_status"})
@@ -123,6 +123,16 @@ class DraftUnitTests(unittest.TestCase):
         with patch("app.ai.drafts.action_policies", return_value={"items": items}):
             offered = available_actions(Mock(), {"company_id": uuid4(), "role": "staff", "modules": ["parties"], "store_ids": []})
         self.assertEqual({item["key"] for item in offered}, {"party_create", "party_update"})
+
+    def test_store_creation_is_offered_only_to_administrators(self):
+        items = [{"key": key, "enabled": True, "compatible": True, "tenant_allowed": True} for key in ACTIONS]
+        with patch("app.ai.drafts.action_policies", return_value={"items": items}):
+            for role in ("staff", "viewer"):
+                offered = available_actions(Mock(), {"company_id": uuid4(), "role": role, "modules": None, "store_ids": None})
+                self.assertNotIn("store_create", {item["key"] for item in offered})
+            for role in ("owner", "admin"):
+                offered = available_actions(Mock(), {"company_id": uuid4(), "role": role, "modules": None, "store_ids": None})
+                self.assertIn("store_create", {item["key"] for item in offered})
 
     def test_party_drafts_reject_empty_null_and_invalid_required_values(self):
         assistant = Mock()

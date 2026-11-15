@@ -41,6 +41,7 @@ import type {
   PartyCreateInput,
   Invoice,
   InvoiceCreateInput,
+  Quotation, QuotationCreateInput,
   InvoiceListResponse,
   InvoiceReconcileResponse,
   InvoiceReconcileRunListResponse,
@@ -463,6 +464,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+  invoice(id: string) {
+    return request<Invoice>(`/billing/invoices/${encodeURIComponent(id)}`);
+  },
+  quotations(storeId?: string) {
+    const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : "";
+    return request<{ items: Quotation[] }>(`/billing/quotations${query}`);
+  },
+  createQuotation(payload: QuotationCreateInput) {
+    return request<Quotation>("/billing/quotations", { method: "POST", body: JSON.stringify(payload) });
+  },
+  quotation(id: string) {
+    return request<Quotation>(`/billing/quotations/${encodeURIComponent(id)}`);
   },
   async exportSalesRegisterCsv(filters?: { from_date?: string; to_date?: string }) {
     const params = new URLSearchParams();
