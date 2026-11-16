@@ -48,7 +48,7 @@ export function PartiesPage() {
       const response = await api.parties({ search: search.trim() || undefined, active_only: activeOnly });
       setItems(response.items);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load parties");
+      setError(e instanceof Error ? e.message : "Failed to load contacts");
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export function PartiesPage() {
     loadParties();
   }, [activeOnly]);
 
-  const title = useMemo(() => (editingId ? "Edit party" : "Add party"), [editingId]);
+  const title = useMemo(() => (editingId ? "Edit contact" : "Add contact"), [editingId]);
 
   function onEdit(party: Party) {
     setEditingId(party.id);
@@ -101,7 +101,7 @@ export function PartiesPage() {
       resetForm();
       await loadParties();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save party");
+      setError(err instanceof Error ? err.message : "Failed to save contact");
     } finally {
       setSaving(false);
     }
@@ -112,9 +112,9 @@ export function PartiesPage() {
       <main className="ops-page">
         <section className="ops-hero">
           <PortalHomeLink />
-          <p className="eyebrow">OPERATIONS · PARTIES</p>
-          <h1>Customers and vendors</h1>
-          <p>Capture and maintain your party master for billing, purchases, settlements and reporting.</p>
+          <p className="eyebrow">OPERATIONS · CONTACTS</p>
+          <h1>Contacts</h1>
+          <p>Manage customers, vendors and other business contacts for billing, purchases, settlements and reporting.</p>
         </section>
         {user && ["owner", "admin"].includes(user.role) ? <p><Link className="ops-inline-link" to="/portal/online-customers">Manage online customer accounts separately</Link></p> : null}
 
@@ -130,7 +130,7 @@ export function PartiesPage() {
             </div>
             <form className="ops-form" onSubmit={onSubmit}>
               <label>
-                Party type
+                Contact type
                 <select
                   value={form.party_type}
                   onChange={(event) => setForm((prev) => ({ ...prev, party_type: event.target.value as PartyType }))}
@@ -204,14 +204,14 @@ export function PartiesPage() {
                 />
               </label>
               <button className="btn" type="submit" disabled={saving}>
-                {saving ? "Saving..." : editingId ? "Update party" : "Create party"}
+                {saving ? "Saving..." : editingId ? "Update contact" : "Create contact"}
               </button>
             </form>
           </article>
 
           <article className="ops-card ops-list-card">
             <div className="ops-card-head">
-              <h2>Party list</h2>
+              <h2>Contact list</h2>
             </div>
             <div className="ops-list-tools">
               <input
@@ -265,7 +265,7 @@ export function PartiesPage() {
                   ))}
                   {!items.length && !loading && (
                     <tr>
-                      <td colSpan={5}>No parties found.</td>
+                      <td colSpan={5}>No contacts found.</td>
                     </tr>
                   )}
                 </tbody>

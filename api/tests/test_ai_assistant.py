@@ -22,6 +22,24 @@ from test_tenancy import TenantDatabaseCase
 
 
 class AssistantUnitTests(unittest.TestCase):
+    def test_app_help_is_grounded_and_does_not_authorize_writes(self):
+        from app.ai.service import APP_HELP, SYSTEM
+        self.assertIn("How-to: explain steps;draft=null;no reads.", SYSTEM)
+        self.assertIn("UI approval posts", SYSTEM)
+        for path in ("/portal/parties", "/portal/inventory", "/portal/billing", "/portal/purchases"):
+            self.assertIn(path, APP_HELP)
+        db = Mock()
+        db.execute.side_effect = [
+            Mock(mappings=Mock(return_value=Mock(one=Mock(return_value={"company_name": "Example", "gst_registered": False})))),
+            Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[])))),
+            Mock(mappings=Mock(return_value=Mock(all=Mock(return_value=[{"role": "user", "content": "How do I create a quotation?"}])))),
+        ]
+        context = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()}).context(uuid4())
+        data = json.loads(context[len(SYSTEM):])
+        self.assertEqual(data["app_help"], APP_HELP)
+        self.assertIn("How do I create a quotation?", context)
+        db.commit.assert_not_called()
+
     def test_conversation_title_is_short_and_collapses_whitespace(self):
         self.assertEqual(conversation_title("  Create a\n purchase  "), "Create a purchase")
         self.assertEqual(conversation_title("x" * 80), "x" * 57 + "...")

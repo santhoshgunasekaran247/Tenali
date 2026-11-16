@@ -13,7 +13,7 @@ export const navigation: NavItem[] = [
   { key: "sales", label: "Sales & Invoices", description: "Sales, billing and invoices" },
   { key: "purchases", label: "Purchases, Expenses & Documents", description: "Purchases, expenses and files" },
   { key: "accounts", label: "Money & Accounts", description: "Money movement and settlements" },
-  { key: "parties", label: "Customers & Vendors", description: "Party master" },
+  { key: "parties", label: "Contacts", description: "Customers, vendors & business contacts" },
   { key: "employees", label: "Employees & Payroll", description: "Employees and salary" },
   { key: "reports", label: "Reports & Tally", description: "Reports and reconciliation" },
   { key: "company", label: "Company Configuration", description: "Company and system configuration" },

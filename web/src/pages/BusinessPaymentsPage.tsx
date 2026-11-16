@@ -81,7 +81,7 @@ export function BusinessPaymentsPage() {
       if (!form.from_account_id) throw new Error("Select source account");
       if (!amount || amount <= 0) throw new Error("Amount must be greater than zero");
       if ((form.purpose === "purchase" || form.purpose === "billing") && !form.related_party_id) {
-        throw new Error("Select related party for purchase or billing payments.");
+        throw new Error("Select a related contact for purchase or billing payments.");
       }
 
       const result = await api.createBusinessPayment({
@@ -176,7 +176,7 @@ export function BusinessPaymentsPage() {
               </select>
             </label>
 
-            <PartySelect parties={parties} value={form.related_party_id} label="Related party"
+            <PartySelect parties={parties} value={form.related_party_id} label="Related contact"
               required={form.purpose === "purchase" || form.purpose === "billing"}
               onChange={id => setForm(previous => ({ ...previous, related_party_id: id }))} />
 

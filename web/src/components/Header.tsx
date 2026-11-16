@@ -9,6 +9,7 @@ import { tenantBase } from "../features/tenantTransport";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { useCart } from "../features/cart";
+import { PortalNavigation } from "./PortalNavigation";
 
 type HeaderProps = {
   menuOpen: boolean;
@@ -58,10 +59,13 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
       <Link className="brand" to={brandHref} aria-label={companyName||(platformBrand?'Tenali':'Workspace home')}>
         {logo ? <img src={logoSrc} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : companyName?<strong>{companyName}</strong>:<span className="brand-loading" aria-hidden="true"/>}
       </Link>
-      <nav className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onClick={(event)=>{if(menuOpen&&(event.target as HTMLElement).closest("a,button"))onMenuToggle();}}>
+      <nav id="header-navigation" className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onKeyDown={event => {
+        if (event.key === "Escape" && menuOpen) { onMenuToggle(); document.querySelector<HTMLButtonElement>(".header .menu")?.focus(); }
+      }} onClick={(event)=>{if(menuOpen&&(event.target as HTMLElement).closest("a,button"))onMenuToggle();}}>
         {auth.user ? <div className="workspace-nav-links">
           {inPortal ? <>
             <Link to="/portal">{navText("operations_portal","Operations Portal")}</Link>
+            <PortalNavigation mobile />
             {auth.storefront?.id === auth.user.company_id ? <Link to="/">{navText("storefront","Storefront")}</Link> : <a href={storefrontHref}>{navText("storefront","Storefront")}</a>}
           </> : storefrontCompany&&storefrontOpen ? <>
             <Link to="/#collection-special">{navText("collection","Collection")}</Link>
@@ -84,7 +88,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
         {!auth.user?<Link to="/login" onClick={()=>menuOpen&&onMenuToggle()}>{navText("sign_in","Workspace Staff Sign In")}</Link>:null}
         <WorkspaceBar/>
       </nav>
-      <button className="menu" aria-label={menuOpen?"Close menu":"Open menu"} aria-expanded={menuOpen} onClick={onMenuToggle}>{menuOpen?"×":"☰"}</button>
+      <button className="menu" aria-label={menuOpen?"Close menu":"Open menu"} aria-controls="header-navigation" aria-expanded={menuOpen} onClick={onMenuToggle}>{menuOpen?"×":"☰"}</button>
     </header>
   );
 }

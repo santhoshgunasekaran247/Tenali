@@ -7,7 +7,7 @@ import { authRequest,useAuth } from "../features/auth";
 import type { Store } from "../types";
 
 type Member={id:string;email:string;display_name:string;role:string;is_active:boolean;store_ids:string[]|null;modules:string[]|null};
-const MODULES:[string,string][]=[["billing","Sales Billing"],["purchases","Purchases"],["inventory","Inventory"],["receivables","Receivables"],["accounts","Accounts & Payments"],["settlements","Borrowings"],["reports","Reports"],["parties","Parties"],["masters","Master Data"],["orders","Online Orders"]];
+const MODULES:[string,string][]=[["billing","Sales & Quotations"],["purchases","Purchases"],["inventory","Inventory"],["receivables","Receivables"],["accounts","Accounts & Payments"],["settlements","Borrowings"],["reports","Reports"],["parties","Contacts"],["masters","Master Data"],["orders","Online Orders"]];
 
 export function TeamPage(){
   const auth=useAuth();const[items,setItems]=useState<Member[]>([]);const[stores,setStores]=useState<Store[]>([]);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[message,setMessage]=useState('');

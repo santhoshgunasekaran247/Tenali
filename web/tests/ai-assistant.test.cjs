@@ -295,7 +295,7 @@ test("assistant page renders text safely and requires explicit operation submiss
   assert.match(page, /Chat sends your messages/);
   assert.match(page, /permission-scoped business lookups/);
   assert.match(page, /Confirm &amp; save records your approval and submits the reviewed values/);
-  assert.match(page, /<p>\{message\.role === "assistant" \? readableMessage\(message\.content\) : message\.content\}<\/p>/);
+  assert.match(page, /<AssistantMessage content=\{readableMessage\(message\.content\)\} \/>/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
   assert.match(page, /crypto\.randomUUID\(\)/);

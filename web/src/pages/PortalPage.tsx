@@ -17,14 +17,14 @@ type WorkflowSection = {
 
 const operationsLinks: (PortalLink & { module: string })[] = [
   { label: "Tenali AI", path: "/portal/ai", status: "live", module: "" },
-  { label: "Parties", path: "/portal/parties", status: "live", module: "parties" },
+  { label: "Contacts", path: "/portal/parties", status: "live", module: "parties" },
   { label: "Accounts", path: "/portal/accounts", status: "live", module: "accounts" },
   { label: "Reports & Exports", path: "/portal/reports", status: "live", module: "reports" },
   { label: "Borrowing & Settlements", path: "/portal/settlements", status: "live", module: "settlements" },
   { label: "Refund Settlements", path: "/portal/settlements/refunds", status: "live", module: "settlements" },
   { label: "Business Payments", path: "/portal/business-payments", status: "live", module: "accounts" },
   { label: "Receivables & Collections", path: "/portal/receivables", status: "live", module: "receivables" },
-  { label: "Sales Billing", path: "/portal/billing", status: "live", module: "billing" },
+  { label: "Sales & Quotations", path: "/portal/billing", status: "live", module: "billing" },
   { label: "Purchases", path: "/portal/purchases", status: "live", module: "purchases" },
   { label: "Product Inventory", path: "/portal/inventory", status: "live", module: "inventory" },
 ];

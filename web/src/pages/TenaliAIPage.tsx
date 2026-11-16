@@ -9,6 +9,7 @@ import { FloatingAlert } from "../components/Notifications";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { AIDrafts } from "../components/AIDrafts";
 import { AIVoiceInput } from "../components/AIVoiceInput";
+import { AssistantMessage } from "../components/AssistantMessage";
 import type { CompanyFeatures } from "../types";
 
 export function TenaliAIPage() {
@@ -264,14 +265,14 @@ export function TenaliAIPage() {
             <button className="ai-icon-button" title="Older messages" aria-label="Older messages" disabled={busy || loadingMessages || messages.length < 50} onClick={() => setMessageOffset(messageOffset + 50)}><ChevronUp size={18} /></button>
             <button className="ai-icon-button" title="Newer messages" aria-label="Newer messages" disabled={busy || loadingMessages || !messageOffset} onClick={() => setMessageOffset(Math.max(0, messageOffset - 50))}><ChevronDown size={18} /></button></div> : null}
           <div className="ai-message-list" aria-live="polite">
-            {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe what you need help with.</p> : messages.map(message =>
+            {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe an operation, or ask how to use Tenali. For example: How do I create a quotation? Where do I add a product?</p> : messages.map(message =>
               <article key={message.id} aria-label={message.role === "user" ? "Your message" : "Assistant reply"} className={`ai-message ai-message-${message.role}`}>
-                <p>{message.role === "assistant" ? readableMessage(message.content) : message.content}</p>{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
+                <p>{message.role === "assistant" ? <AssistantMessage content={readableMessage(message.content)} /> : message.content}</p>{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
             {busy && submission ? <p role="status">Waiting for a reply. Your message reference is preserved for recovery.</p> : null}
             <div ref={messageEnd} />
           </div>
           <form className="ops-form ai-message-form" onSubmit={send}>
-            <label><span className="ai-sr-only">Message</span><textarea placeholder="Ask anything about your business..." rows={2} maxLength={4000}
+            <label><span className="ai-sr-only">Message</span><textarea placeholder="Ask about your business or how to use Tenali..." rows={2} maxLength={4000}
               disabled={busy || !canSend || selected.status !== "active" || !!submission} value={submission?.content ?? text} onChange={event => setText(event.target.value)}
               onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /></label>
             {attachments.map(file => <div key={file.id} className="shop-actions"><span>{file.file_name}</span>

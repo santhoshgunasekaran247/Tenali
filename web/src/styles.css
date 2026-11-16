@@ -110,6 +110,42 @@ body {
   font-size: 20px;
 }
 
+.portal-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); align-items: start; }
+.portal-shell-home { grid-template-columns: minmax(0, 1fr); }
+.portal-shell > aside { position: sticky; top: 96px; height: calc(100dvh - 96px); overflow-y: auto; border-right: 1px solid var(--site-border); background: var(--site-surface); }
+.portal-sidebar { display: grid; gap: 3px; padding: 18px 12px 32px; }
+.portal-sidebar a, .portal-mobile-links a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--site-text); text-decoration: none; font-size: 14px; }
+.portal-sidebar a:hover, .portal-sidebar a.portal-nav-active, .portal-mobile-links a.portal-nav-active { background: color-mix(in srgb, var(--site-accent) 15%, transparent); color: var(--site-text); }
+.portal-nav-group { border-top: 1px solid var(--site-border); margin-top: 6px; padding-top: 6px; }
+.portal-nav-group > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 600; color: var(--site-muted); }
+.portal-nav-group > summary::-webkit-details-marker { display: none; }
+.portal-group-chevron { font-size: 20px; line-height: 1; }
+.portal-nav-group[open] > summary .portal-group-chevron { transform: rotate(90deg); }
+.portal-group-links { display: grid; gap: 2px; padding-left: 10px; }
+.portal-nav-group > summary:focus-visible { outline: 2px solid var(--site-accent); outline-offset: -2px; }
+.portal-content { min-width: 0; padding-bottom: 90px; }
+.portal-content .ops-page { width: 100%; padding-left: 24px; padding-right: 24px; }
+.portal-mobile-links { display: none; }
+.tenali-launcher { position: fixed; right: 20px; bottom: max(20px, env(safe-area-inset-bottom)); z-index: 19; display: block; width: 64px; height: 64px; padding: 0; border: 0; background: transparent; color: var(--site-on-primary, white); text-decoration: none; font-weight: 600; }
+.tenali-launcher img { display: block; width: 100%; height: 100%; object-fit: contain; transform-origin: bottom right; transition: transform 450ms cubic-bezier(0.2, 0.8, 0.2, 1); pointer-events: none; }
+.tenali-launcher:hover img, .tenali-launcher:focus-visible img { transform: scale(2.5); }
+.tenali-launcher span { position: absolute; right: 0; bottom: calc(250% + 10px); padding: 8px 12px; border-radius: 8px; background: var(--site-primary, #253650); color: var(--site-on-primary, white); white-space: nowrap; visibility: hidden; opacity: 0; pointer-events: none; }
+.tenali-launcher:hover span, .tenali-launcher:focus-visible span { visibility: visible; opacity: 1; }
+.tenali-launcher:focus-visible, .portal-sidebar a:focus-visible { outline: 3px solid var(--site-accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .tenali-launcher img { transition: none; }
+}
+@media (max-width: 1280px) {
+  .portal-shell { display: block; }
+  .portal-shell > aside { display: none; }
+  .portal-mobile-links { display: grid; gap: 2px; }
+  .header .portal-mobile-links a { font-size: 13px; letter-spacing: normal; text-transform: none; white-space: normal; }
+}
+@media (max-width: 600px) {
+  .portal-content .ops-page { padding-left: 16px; padding-right: 16px; }
+  .tenali-launcher { right: 12px; }
+}
+
 .eyebrow {
   font-size: 9px;
   letter-spacing: 0.27em;

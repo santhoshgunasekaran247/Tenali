@@ -134,7 +134,7 @@ export function SettlementsPage() {
             <h2>Record Borrow / Lend</h2>
           </div>
           <form className="ops-form" onSubmit={submit}>
-            <PartySelect parties={parties} value={form.party_id} label="Party" required
+            <PartySelect parties={parties} value={form.party_id} label="Contact" required
               onChange={id => setForm(previous => ({ ...previous, party_id: id }))} />
 
             <label>
@@ -223,13 +223,13 @@ export function SettlementsPage() {
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
             <h2>Outstanding by Party</h2>
-            <span className="catalog-count">{summary.length} parties</span>
+            <span className="catalog-count">{summary.length} contacts</span>
           </div>
 
           {error ? <FloatingAlert>{error}</FloatingAlert> : null}
 
           <div className="ops-list-tools">
-            <PartySelect parties={parties} value={selectedParty} onChange={setSelectedParty} label="Party filter" placeholder="All parties" />
+            <PartySelect parties={parties} value={selectedParty} onChange={setSelectedParty} label="Contact filter" placeholder="All contacts" />
             <button className="btn" type="button" onClick={() => void load()}>
               Refresh
             </button>
@@ -239,7 +239,7 @@ export function SettlementsPage() {
             <table className="ops-table">
               <thead>
                 <tr>
-                  <th>Party</th>
+                  <th>Contact</th>
                   <th>Borrowed</th>
                   <th>Repaid</th>
                   <th>You owe</th>
@@ -288,7 +288,7 @@ export function SettlementsPage() {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Party</th>
+                  <th>Contact</th>
                   <th>Direction</th>
                   <th>Amount</th>
                   <th>Reference</th>

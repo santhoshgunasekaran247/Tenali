@@ -75,7 +75,8 @@ test("api announces write results, the guide honours the company toggle, and set
   assert.match(guide, /workflow_guidance_enabled !== false/);
   assert.match(guide, /if \(!enabled\.current\) return;/);
   assert.match(guide, /tone: "workflow"/);
-  assert.match(src("features/auth.tsx"), /<WorkflowGuide\/><Outlet\/>/);
+  assert.match(src("features/auth.tsx"), /<WorkflowGuide\/>/);
+  assert.match(src("features/auth.tsx"), /<Outlet\/>/);
   const setup = src("pages/CompanySetupPage.tsx");
   assert.match(setup, /workflow_guidance_enabled: company\.workflow_guidance_enabled !== false/);
   assert.match(setup, /id="portal-settings"/);

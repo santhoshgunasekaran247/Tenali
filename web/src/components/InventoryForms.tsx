@@ -43,6 +43,17 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   }));
   const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
   const [gallery, setGallery] = useDraftState(`${draftKey}gallery`, (!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
+  const [createdLookups, setCreatedLookups] = useState<Pick<InventoryLookups, "brands" | "categories">>({ brands: [], categories: [] });
+  const lookupOptions = {
+    brands: [...lookups.brands, ...createdLookups.brands],
+    categories: [...lookups.categories, ...createdLookups.categories],
+  };
+  const [lookupNames, setLookupNames] = useDraftState(`${draftKey}lookupNames`, {
+    brands: lookups.brands.find(item => item.id === draft.brand_id)?.name ||
+      (draft.brand_id && draft.brand_id === product?.brand_id ? product.brand_name : "") || "",
+    categories: lookups.categories.find(item => item.id === draft.category_id)?.name ||
+      (draft.category_id && draft.category_id === product?.category_id ? product.category_name : "") || "",
+  });
   const [saving, setSaving] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [error, setError] = useState("");
@@ -63,9 +74,24 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       const entries = attributes.filter(([key,value]) => key.trim() || value.trim());
       if (entries.some(([key]) => !key.trim()) || new Set(entries.map(([key])=>key.trim())).size !== entries.length) throw new Error("Custom attributes need unique, non-empty names.");
       const item = itemPayload({...draft, attributes:Object.fromEntries(entries.map(([key,value])=>[key.trim(),value.trim()]))});
+      const lookupIds = { brand_id: draft.brand_id, category_id: draft.category_id };
+      if (!variantMode) {
+        for (const [kind, field] of [["brands", "brand_id"], ["categories", "category_id"]] as const) {
+          const name = lookupNames[kind].trim();
+          const existing = lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.toLowerCase());
+          let id = !name ? draft[field] || null : existing?.id || draft[field];
+          if (name && !id) {
+            const created = await api.inventoryCreateLookup(kind, name);
+            id = created.id;
+            setCreatedLookups(previous => ({ ...previous, [kind]: [...previous[kind], created] }));
+          }
+          lookupIds[field] = id || null;
+          patch({ [field]: lookupIds[field] });
+        }
+      }
       const result = variantMode && product
         ? await api.inventorySaveVariant(product.id,{...item,variant_name:draft.variant_name.trim() || [draft.size,draft.colour].filter(Boolean).join(" / ")},variant?.id)
-        : await api.inventorySaveProduct({...draft,...item,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
+        : await api.inventorySaveProduct({...draft,...item,...lookupIds,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
       clearDrafts(draftKey);
       onSaved(result);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to save product."); }
@@ -88,8 +114,14 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       <label>{variantMode?"Variant Name":"Product Name"}<input required={!variantMode} maxLength={200} value={variantMode?draft.variant_name:draft.name} onChange={event=>patch(variantMode?{variant_name:event.target.value}:{name:event.target.value})}/></label>
       <label>Item Name<input maxLength={200} value={draft.item_name||""} onChange={event=>patch({item_name:event.target.value})}/></label>
       <label>SKU<input maxLength={100} value={draft.sku||""} onChange={event=>patch({sku:event.target.value})}/></label>
-      {!variantMode?<><label>Brand<select value={draft.brand_id||""} onChange={event=>patch({brand_id:event.target.value||null})}><option value="">No brand</option>{lookups.brands.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Category<select value={draft.category_id||""} onChange={event=>patch({category_id:event.target.value||null})}><option value="">No category</option>{lookups.categories.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      {!variantMode?<>{([["brands", "brand_id", "Brand"], ["categories", "category_id", "Category"]] as const).map(([kind, field, label]) =>
+        <label key={kind}>{label}<input list={`${draftKey}${kind}`} maxLength={150} value={lookupNames[kind]}
+          placeholder={`Select or type a new ${label.toLowerCase()}`} onChange={event => {
+            const name = event.target.value;
+            setLookupNames(previous => ({ ...previous, [kind]: name }));
+            patch({ [field]: lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.trim().toLowerCase())?.id || null });
+          }} /><datalist id={`${draftKey}${kind}`}>{lookupOptions[kind].map(entry => <option key={entry.id} value={entry.name}/>)}</datalist>
+          <small>New {label.toLowerCase()} names are created when you save the product.</small></label>)}
         <label>HSN / SAC<select value={draft.hsn_code||""} onChange={event=>patch({hsn_code:event.target.value||null})}><option value="">Not set</option>{draft.hsn_code&&!hsn.some(item=>item.code===draft.hsn_code)?<option value={draft.hsn_code}>{draft.hsn_code} (inactive)</option>:null}{hsn.map(item=><option key={item.id} value={item.code}>{item.code} - {item.description} ({item.gst_rate}%)</option>)}</select></label></>:null}
       <label>Size<input maxLength={100} value={draft.size||""} onChange={event=>patch({size:event.target.value})}/></label>
       <label>Colour<input maxLength={100} value={draft.colour||""} onChange={event=>patch({colour:event.target.value})}/></label>

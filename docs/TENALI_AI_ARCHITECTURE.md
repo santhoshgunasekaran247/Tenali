@@ -5,6 +5,36 @@ voice are implemented. Revision 049 extends Operations coverage; revision 051 ad
 text-triggered workflow preparation. Scope and activation gates are documented in
 sections 19-20. Live migrations require approval.
 
+### Workspace navigation and app guidance
+
+The workspace provides a grouped left module menu above 1280px and the same
+permission-filtered expandable groups in the top menu on smaller screens.
+Dashboard and Tenali AI are direct links; the expandable groups are Operations,
+Admin and My Workspace. Grouping does not change module or administrator permissions.
+Only the
+current module's group opens automatically; other groups expand on demand. The
+Operations Portal home omits the sidebar because its module cards already provide
+navigation. "Contacts" is the
+display name for customers, vendors and other business contacts; existing party
+IDs, routes and API contracts remain unchanged.
+
+A floating launcher using the supplied Tenali avatar without a circular crop opens
+Tenali AI from workspace pages. On hover or keyboard focus, the image grows to 2.5
+times its size from the bottom-right corner, with "Ask Tenali" above it. The label
+is otherwise hidden. Reduced-motion preferences disable the growth transition.
+How-to questions are informational: explain steps without proposing a write or
+requiring business-data lookups. A static app guide is included when the bounded
+context has room, after recent user messages and before older history. Compact
+how-to instructions remain in the system prompt even when that guide cannot fit.
+Known internal app links are rendered as links; arbitrary URLs and HTML remain text.
+Existing AI enablement, role permissions, budgets and posting approval still apply.
+
+The product editor accepts Brand and Category names as searchable free text.
+Case-insensitive existing matches are reused; new entries are created on product
+save, using the existing inventory endpoints and permissions. If product saving
+fails after a lookup was created, the editor retains its ID for the retry. These
+are separate saves: closing the editor does not delete already-created lookups.
+
 Phase 1A implementation is now present: platform defaults/limits page, tenant
 entitlements, platform-aware storefront status, tenant AI opt-in, version checks,
 and database permissions. Revision `041_ai_feature_controls` must be applied before

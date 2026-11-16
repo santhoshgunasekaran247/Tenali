@@ -130,11 +130,11 @@ function loadModule(file, mocks) {
   const exports = {};
   const stub = new Proxy({}, { get: (_, name) => name === "__esModule" ? false : String(name) });
   const base = { "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "Fragment" } };
-  vm.runInNewContext(compiled, { exports, require: name => mocks[name] || base[name] || stub });
+  vm.runInNewContext(compiled, { exports, Error, require: name => mocks[name] || base[name] || stub });
   return exports;
 }
 
-function editorHarness(product) {
+function editorHarness(product, api = {}, lookups = { brands: [], categories: [], vendors: [] }) {
   const state = {};
   const hook = (key, initial) => {
     if (!(key in state)) state[key] = typeof initial === "function" ? initial() : initial;
@@ -142,13 +142,65 @@ function editorHarness(product) {
   };
   let slot = 0;
   const { ProductEditor } = loadModule(["components", "InventoryForms.tsx"], {
+    "../api": { api },
     "../features/drafts": { useDraftState: hook, useClearDrafts: () => () => {} },
     react: { useState: initial => hook(`useState${slot++}`, initial) },
   });
-  const render = () => { slot = 0; return ProductEditor({ product, lookups: { brands: [], categories: [], vendors: [] }, hsn: [], onSaved: () => {}, onClose: () => {} }); };
+  const render = () => { slot = 0; return ProductEditor({ product, lookups, hsn: [], onSaved: () => {}, onClose: () => {} }); };
   const form = () => Object.entries(state).find(([key]) => key.endsWith("form"))[1];
   return { render, form };
 }
+
+test("typed brand/category names are created on save and retries reuse saved lookup IDs", async () => {
+  const calls = [];
+  let first = true;
+  const editor = editorHarness(undefined, {
+    inventoryCreateLookup: async (kind, name) => { calls.push([kind, name]); return { id: kind, name, code: kind }; },
+    inventorySaveProduct: async payload => {
+      calls.push(["product", payload.brand_id, payload.category_id]);
+      if (first) { first = false; throw new Error("Product validation failed"); }
+      return payload;
+    },
+  });
+  const input = (tree, kind) => find(tree, node => node.type === "input" && node.props.list?.endsWith(kind))[0];
+  input(editor.render(), "brands").props.onChange({ target: { value: "  New brand  " } });
+  input(editor.render(), "categories").props.onChange({ target: { value: "New category" } });
+  assert.equal(calls.length, 0, "Typing must not create records");
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.match(text(editor.render()), /Product validation failed/);
+  input(editor.render(), "brands").props.onChange({ target: { value: "" } });
+  input(editor.render(), "brands").props.onChange({ target: { value: "New brand" } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(calls, [["brands", "New brand"], ["categories", "New category"],
+    ["product", "brands", "categories"], ["product", "brands", "categories"]]);
+});
+
+test("existing brand/category names are matched case-insensitively and may be cleared", async () => {
+  const saved = [];
+  const editor = editorHarness(undefined, { inventorySaveProduct: async payload => { saved.push(payload); return payload; } },
+    { brands: [{ id: "b1", name: "Acme" }], categories: [{ id: "c1", name: "Home" }], vendors: [] });
+  const input = (tree, kind) => find(tree, node => node.type === "input" && node.props.list?.endsWith(kind))[0];
+  input(editor.render(), "brands").props.onChange({ target: { value: " acme " } });
+  input(editor.render(), "categories").props.onChange({ target: { value: "HOME" } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual([saved[0].brand_id, saved[0].category_id], ["b1", "c1"]);
+  input(editor.render(), "brands").props.onChange({ target: { value: "" } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(saved[1].brand_id, null);
+});
+
+test("lookup creation errors stop product saving and remain visible", async () => {
+  let posted = false;
+  const editor = editorHarness(undefined, {
+    inventoryCreateLookup: async () => { throw new Error("Brand access denied"); },
+    inventorySaveProduct: async () => { posted = true; },
+  });
+  find(editor.render(), node => node.type === "input" && node.props.list?.endsWith("brands"))[0]
+    .props.onChange({ target: { value: "New brand" } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(posted, false);
+  assert.match(text(editor.render()), /Brand access denied/);
+});
 
 test("setting a reorder level turns reorder alerts on and keeps the target valid", () => {
   const product = { id: "p1", name: "HD9270/70", attributes: {}, image_urls: "", offers: [], variants: [], reorder_enabled: false, reorder_level: 0, reorder_target: 0 };

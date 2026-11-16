@@ -162,7 +162,7 @@ function productReady(): WorkflowGuidance {
 
 function partyReady(): WorkflowGuidance {
   return {
-    title: "Party saved",
+    title: "Contact saved",
     steps: [
       { label: "Create an invoice for this customer", path: "/portal/billing" },
       { label: "Record a purchase from this vendor", path: "/portal/purchases" },

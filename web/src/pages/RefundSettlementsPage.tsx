@@ -88,7 +88,7 @@ export function RefundSettlementsPage() {
           <div className="ops-list-tools"><select aria-label="Refund status" value={status} onChange={event => setStatus(event.target.value as "PENDING" | "SETTLED")}>
             <option value="PENDING">Pending</option><option value="SETTLED">Settled</option></select></div></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
-          <th>Document</th><th>Party</th><th>Direction</th><th>Amount</th><th>Originally</th><th>{status === "PENDING" ? "Reversed on" : "Settled"}</th><th></th></tr></thead>
+          <th>Document</th><th>Contact</th><th>Direction</th><th>Amount</th><th>Originally</th><th>{status === "PENDING" ? "Reversed on" : "Settled"}</th><th></th></tr></thead>
           <tbody>{loading ? <tr><td colSpan={7}>Loading refunds...</td></tr> : !items.length ? <tr><td colSpan={7}>{status === "PENDING" ? "No refunds are waiting for confirmation." : "No settled refunds yet."}</td></tr> :
             items.map(item => <tr key={item.id}>
               <td><Link className="ops-inline-link" to={item.document_type === "invoice" ? "/portal/billing" : "/portal/purchases"}>{item.document_type === "invoice" ? "Invoice" : "Bill"} {item.document_number || ""}</Link>{item.reason ? <><br /><small>{item.reason}</small></> : null}</td>

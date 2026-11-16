@@ -351,7 +351,7 @@ export function ReceivablesPage() {
             <h2>Create Receivable</h2>
           </div>
           <form className="ops-form" onSubmit={createReceivable}>
-            <PartySelect parties={parties} value={receivableForm.party_id} label="Party" required
+            <PartySelect parties={parties} value={receivableForm.party_id} label="Contact" required
               onChange={id => setReceivableForm(previous => ({ ...previous, party_id: id }))} />
             <label>
               Reference
@@ -560,7 +560,7 @@ export function ReceivablesPage() {
             <table className="ops-table">
               <thead>
                 <tr>
-                  <th>Party</th>
+                  <th>Contact</th>
                   <th>Reference</th>
                   <th>Due</th>
                   <th>Received</th>
@@ -624,7 +624,7 @@ export function ReceivablesPage() {
             <table className="ops-table">
               <thead>
                 <tr>
-                  <th>Party</th>
+                  <th>Contact</th>
                   <th>Reference</th>
                   <th>Balance</th>
                   <th>Reminder Date</th>
