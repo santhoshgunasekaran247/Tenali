@@ -50,8 +50,8 @@ class WorkflowTests(unittest.TestCase):
                 root = row["plan"]["steps"][0]
                 self.assertTrue(root["issues"] or root["draft_id"])
                 service.assistant.db.commit.assert_not_called()
-        self.assertIn("For EVERY Operations add/update", SYSTEM)
-        self.assertIn("No conversational interrogation", SYSTEM)
+        self.assertIn("Operations add/update: propose NOW", SYSTEM)
+        self.assertIn("How-to: steps first;add/update=>optional new draft", SYSTEM)
 
     def test_named_creatable_references_use_the_shared_prerequisite_resolver(self):
         for field, spec in REFERENCES.items():

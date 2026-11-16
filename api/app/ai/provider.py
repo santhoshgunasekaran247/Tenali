@@ -57,7 +57,7 @@ class OperationProposal(BaseModel):
 
 
 class OperationAssistantOutput(ReadAssistantOutput):
-    draft: OperationProposal | None = Field(description="Required for supported operations, even incomplete; otherwise null.")
+    draft: OperationProposal | None = Field(description="Supported operations/how-to: propose even incomplete; other info=null.")
 
 
 def response_schema(output_schema):

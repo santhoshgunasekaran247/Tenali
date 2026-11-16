@@ -3,6 +3,7 @@ import os
 import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
@@ -22,9 +23,95 @@ from test_tenancy import TenantDatabaseCase
 
 
 class AssistantUnitTests(unittest.TestCase):
+    def test_explicit_how_to_preserves_guidance_intent(self):
+        from app.ai.service import is_app_help_request
+        for content in (
+            "can you tell me how do i add a product?",
+            "How do I add a product?",
+            "How do I add products and create categories?",
+            "Please show me how to update a contact",
+            "Could you explain how I should use the app?",
+            "Where can I create a quotation?",
+            "Walk me through adding stock",
+            "Steps to cancel an invoice",
+        ):
+            with self.subTest(content=content):
+                self.assertTrue(is_app_help_request(content))
+        for content in (
+            "Add a product called Copper Cup",
+            "Can you add a product?",
+            "Create a quotation",
+            "How much stock do I have?",
+            "How do I add a product? Also create Copper Cup for me.",
+            "Explain how to add a product and then create Copper Cup",
+            "Yes, use that category",
+        ):
+            with self.subTest(content=content):
+                self.assertFalse(is_app_help_request(content))
+
+    def test_how_to_turn_offers_optional_workflow_without_business_lookups(self):
+        from app.ai.service import APP_HELP
+        db = MagicMock()
+        db.execute.return_value.mappings.return_value.first.return_value = None
+        db.execute.return_value.first.return_value = None
+        service = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()})
+        config = {"routine_model": "fixture", "timeout_seconds": 30, "max_output_tokens": 200, "version": 1}
+        result = ProviderResult(AssistantOutput(reply="Open Product Inventory, then Add Product.", clarification=None),
+                                20, 0, 10, "fixture")
+        with patch.object(service, "lock_conversation"), \
+                patch.object(service, "conversation", return_value={"status": "active"}), \
+                patch.object(service, "require_enabled", return_value=config), \
+                patch.object(service, "context", return_value=APP_HELP) as context, \
+                patch.object(service, "recheck_before_provider", return_value=config), \
+                patch.object(service, "finish") as finish, \
+                patch.object(service, "read_results", side_effect=lambda *args: args[2]), \
+                patch.object(service, "messages", return_value={"items": []}), \
+                patch("app.ai.media.MediaService") as media, \
+                patch("app.ai.service.current_identity"), \
+                patch("app.ai.service.available_actions", return_value=[{"key": "product_create"}]) as actions, \
+                patch("app.ai.service.available_capabilities") as reads, \
+                patch("app.ai.service.OpenAIProvider.respond", return_value=result) as provider, \
+                patch("app.ai.service.WorkflowService") as workflows:
+            media.return_value.attachments.return_value = []
+            service.send(uuid4(), MessageCreate(content="can you tell me how do i add a product?", client_key=uuid4()))
+            actions.assert_called_once()
+            reads.assert_not_called()
+            self.assertEqual(context.call_args.args[1], [])
+            self.assertEqual(context.call_args.kwargs["actions"], [{"key": "product_create"}])
+            self.assertEqual(provider.call_args.args[2]["_draft_actions"], [{"key": "product_create"}])
+            self.assertEqual(provider.call_args.args[2]["_read_capabilities"], [])
+            self.assertEqual(finish.call_args.args[4], result)
+            self.assertTrue(finish.call_args.kwargs["help_request"])
+            workflows.assert_not_called()
+            provider.return_value = replace(result, draft=DraftProposal(
+                action="product_create", payload_json="{}", target_id=None, workflow_id=uuid4()))
+            service.send(uuid4(), MessageCreate(content="How do I add a product?", client_key=uuid4()))
+            prepared = finish.call_args.args[4]
+            self.assertIsNone(prepared.error)
+            self.assertEqual(prepared.output.reply, result.output.reply)
+            self.assertEqual(prepared.draft.action, "product_create")
+            self.assertIsNone(prepared.draft.workflow_id)
+            self.assertIn("workflow_id", prepared.draft.model_fields_set)
+            workflows.assert_not_called()
+            provider.return_value = replace(result, lookups=(ReadLookup(
+                capability="products", arguments=LookupArguments(query="Copper", store_id=None, limit=3)),))
+            service.send(uuid4(), MessageCreate(content="How do I add a product?", client_key=uuid4()))
+            rejected = finish.call_args.args[4]
+            self.assertEqual(rejected.error, "help_intent_mismatch")
+            self.assertIsNone(rejected.output)
+            self.assertFalse(rejected.lookups)
+            reads.return_value = [{"key": "products"}]
+            workflow_id = uuid4()
+            provider.return_value = replace(result, draft=DraftProposal(
+                action="product_create", payload_json="{}", target_id=None, workflow_id=workflow_id))
+            service.send(uuid4(), MessageCreate(content="Add a product called Copper Cup", client_key=uuid4()))
+            self.assertFalse(finish.call_args.kwargs["help_request"])
+            self.assertEqual(finish.call_args.args[4].draft.workflow_id, workflow_id)
+            self.assertEqual(provider.call_args.args[2]["_read_capabilities"], [{"key": "products"}])
+
     def test_app_help_is_grounded_and_does_not_authorize_writes(self):
         from app.ai.service import APP_HELP, SYSTEM
-        self.assertIn("How-to: explain steps;draft=null;no reads.", SYSTEM)
+        self.assertIn("How-to: steps first;add/update=>optional new draft;no reads/questions.", SYSTEM)
         self.assertIn("UI approval posts", SYSTEM)
         for path in ("/portal/parties", "/portal/inventory", "/portal/billing", "/portal/purchases"):
             self.assertIn(path, APP_HELP)
@@ -156,6 +243,48 @@ class AssistantUnitTests(unittest.TestCase):
                        if len(call.args) > 1 and "answer" in call.args[1]]
             self.assertEqual(len(answers), 1)
             self.assertIn("Operations workflow prepared: party create" if proposal else draft_status(None), answers[0])
+
+    def test_how_to_finish_keeps_steps_and_only_announces_persisted_optional_workflows(self):
+        for action_key in ("product_create", "product_update", "party_create", "purchase_create", "quotation_create", None):
+            for permitted in (True, False):
+                with self.subTest(action=action_key, permitted=permitted):
+                    db = MagicMock()
+                    reservation = {"input_rate": Decimal("1"), "output_rate": Decimal("1"), "model": "fixture"}
+                    conversation = {"status": "active", "expires_at": datetime.max.replace(tzinfo=timezone.utc)}
+                    db.execute.return_value.mappings.return_value.one.side_effect = [reservation, conversation]
+                    service = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4()})
+                    service.lock_conversation = Mock()
+                    service.require_enabled = Mock(return_value={"version": 1})
+                    service.audit = Mock()
+                    action = {"key": action_key}
+                    proposal = DraftProposal(action=action_key, target_id=None, payload_json="{}") if action_key else None
+                    steps = "1. Open the module.\n2. Enter the details.\n3. Review and save."
+                    result = ProviderResult(AssistantOutput(reply=steps, clarification=None), 10, 0, 5, "fixture", draft=proposal)
+                    with patch("app.ai.service.lock_policy"), \
+                            patch("app.ai.service.current_identity", return_value=service.identity), \
+                            patch("app.ai.service.available_actions", return_value=[action] if permitted else []), \
+                            patch("app.ai.service.WorkflowService.from_proposal") as create:
+                        create.return_value = {"action_key": action_key, "status": "active"}
+                        service.finish(uuid4(), uuid4(), uuid4(), uuid4(), result,
+                                       offered_actions=[action], reserved_version=1, help_request=True)
+                    answers = [call.args[1]["answer"] for call in db.execute.call_args_list
+                               if len(call.args) > 1 and "answer" in call.args[1]]
+                    if proposal and not permitted:
+                        create.assert_not_called()
+                        self.assertEqual(answers, [])
+                        self.assertTrue(any(call.args[1].get("error") == "draft_rejected"
+                                            for call in db.execute.call_args_list if len(call.args) > 1))
+                    else:
+                        self.assertEqual(len(answers), 1)
+                        self.assertTrue(answers[0].startswith(steps))
+                        self.assertNotIn(draft_status(None), answers[0])
+                        self.assertEqual(create.call_count, int(proposal is not None))
+                        if proposal:
+                            self.assertIn("optional workflow: " + action_key.replace("_", " "), answers[0])
+                            self.assertIn("No business records have been changed", answers[0])
+                            self.assertIn("Review and submit", answers[0])
+                        else:
+                            self.assertEqual(answers[0], steps)
 
     def test_strict_inputs_reject_identity_injection_and_empty_messages(self):
         for values in ({"content": " ", "client_key": uuid4()}, {"content": "x", "client_key": uuid4(), "company_id": uuid4()},

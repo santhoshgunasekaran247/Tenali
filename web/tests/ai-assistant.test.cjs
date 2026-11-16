@@ -7,6 +7,22 @@ const vm = require("node:vm");
 
 const src = file => readFileSync(path.join(__dirname, "..", "src", ...file.split("/")), "utf8");
 
+test("assistant history has compact accessible controls and an actionable empty state", () => {
+  const page = src("pages/TenaliAIPage.tsx"), css = src("styles.css");
+  assert.match(page, /aria-label="Close conversations"/);
+  assert.match(page, /Search conversations/);
+  assert.match(page, /title=\{conversationLabel\(conversation\)\}/);
+  assert.match(page, /aria-current=\{selected\?\.id === conversation.id/);
+  assert.match(page, /<time dateTime=\{conversation.created_at\}/);
+  assert.match(page, /What can I help you with\?/);
+  assert.match(page, /Start a new chat/);
+  assert.match(page, /Browse previous conversations/);
+  assert.match(css, /\.ai-sidebar nav button strong\s*\{[^}]*-webkit-line-clamp: 2/);
+  assert.match(css, /\.ai-sidebar nav\s*\{[^}]*grid-auto-rows: max-content;[^}]*align-content: start/);
+  assert.match(css, /\.ai-sidebar nav button\s*\{[^}]*height: auto;[^}]*min-height: max-content/);
+  assert.match(css, /@media \(max-width: 900px\)\s*\{\s*\.ai-workspace, \.ai-workspace.ai-history-open \{ grid-template-columns: minmax\(0, 1fr\)/);
+});
+
 function loadUI(file) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, actionLabel, waitingForPrerequisites, WorkflowDocumentDownload };" : ""), {

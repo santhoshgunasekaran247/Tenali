@@ -306,7 +306,7 @@ class DraftProposal(BaseModel):
 
 
 class ActionAssistantOutput(ReadAssistantOutput):
-    draft: DraftProposal | None = Field(description="Required for any supported operational request, even with missing information. Null only for informational or unsupported requests. Prerequisite creation is handled by the server.")
+    draft: DraftProposal | None = Field(description="Required for supported operations, including optional workflows alongside how-to steps, even incomplete. Other info or unsupported requests: null. Server handles prerequisites.")
 
 
 class DraftCreate(BaseModel):

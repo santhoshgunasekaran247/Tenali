@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUp, ChevronDown, ChevronUp, History, Paperclip, SquarePen } from "lucide-react";
+import { ArrowUp, Bot, ChevronDown, ChevronUp, History, MessageSquare, Paperclip, Search, SquarePen, X } from "lucide-react";
 import { ai, conversationLabel, messageStatus, type AIUsage, type ChatMessage, type Conversation, type Preference, type ReadCapability, type AIAttachment } from "../features/ai";
 import { readableMessage } from "../features/aiMessages";
 import { featureExplanation } from "../features/featureControls";
@@ -206,9 +206,9 @@ export function TenaliAIPage() {
   };
 
   return <main className="ops-page ai-page"><PortalHomeLink />
-    <div className="ai-toolbar"><h1>Assistant</h1><div className="shop-actions">
+    <div className="ai-toolbar"><div><h1>Tenali AI</h1><p className="social-caption">Guidance when you need it. Workflows when you're ready.</p></div><div className="shop-actions">
       <button className="ai-icon-button" title="Conversations" aria-label="Conversations" disabled={busy || titleSaving} aria-expanded={historyOpen} aria-controls="ai-history" onClick={() => setHistoryOpen(!historyOpen)}><History size={19} /></button>
-      <button className="ai-icon-button" title="New chat" aria-label="New chat" disabled={busy || titleSaving || viewer} onClick={() => void create()}><SquarePen size={19} /></button></div></div>
+      <button className="ai-new-chat" title="New chat" aria-label="New chat" disabled={busy || titleSaving || viewer} onClick={() => void create()}><SquarePen size={17} />New chat</button></div></div>
     <details className="ai-help"><summary>Privacy, preferences & available tools</summary>
     <p className="ops-copy-note">Private assistant with platform-approved, permission-scoped business lookups.
       Operations need review, then Confirm &amp; save records your approval and submits the reviewed values. Cancellation and deletion are separate, high-impact operations.
@@ -238,17 +238,26 @@ export function TenaliAIPage() {
     </section> : null}
     {viewer ? <p>Read-only members can view their own history but cannot create conversations or send messages.</p> : null}
     <div className={`ai-workspace${historyOpen ? " ai-history-open" : ""}`}>
-      <aside id="ai-history" className="ops-card ai-sidebar"><h2>Conversations</h2>
-        <label>Search titles<input maxLength={120} disabled={busy} value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} /></label>
+      <aside id="ai-history" className="ops-card ai-sidebar"><div className="ai-history-heading"><h2>Conversations</h2>
+        <button className="ai-icon-button" type="button" aria-label="Close conversations" disabled={busy || titleSaving} onClick={() => setHistoryOpen(false)}><X size={17} /></button></div>
+        <label className="ai-history-search"><span className="ai-sr-only">Search conversations</span><Search size={16} aria-hidden="true" /><input placeholder="Search conversations" maxLength={120} disabled={busy} value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} /></label>
         <label className="ops-toggle"><input type="checkbox" disabled={busy} checked={archived} onChange={event => { setArchived(event.target.checked); setOffset(0); }} />Archived history</label>
         <nav aria-label="Private conversation history">{conversations.map(conversation =>
-          <button type="button" key={conversation.id} disabled={busy || titleSaving} aria-current={selected?.id === conversation.id ? "page" : undefined} onClick={() => void choose(conversation)}>{conversationLabel(conversation)}</button>)}</nav>
+          <button type="button" key={conversation.id} disabled={busy || titleSaving} title={conversationLabel(conversation)} aria-current={selected?.id === conversation.id ? "page" : undefined} onClick={() => void choose(conversation)}>
+            <MessageSquare size={16} aria-hidden="true" /><span><strong>{conversation.title === "New conversation" ? "New chat" : conversation.title}</strong>
+              <time dateTime={conversation.created_at}>{new Date(conversation.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time></span>
+          </button>)}</nav>
         {!conversations.length ? <p>No conversations in this view.</p> : null}
-        <div className="shop-actions"><button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</button>
+        <div className="shop-actions ai-history-pagination"><button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</button>
           <button disabled={busy || conversations.length < 30} onClick={() => setOffset(offset + 30)}>Next</button></div>
       </aside>
       <section className="ops-card ai-chat" aria-label="Conversation">
-        {!selected ? <p>Select a conversation or start a new one.</p> : <>
+        {!selected ? <div className="ai-welcome"><span className="ai-welcome-icon"><Bot size={34} aria-hidden="true" /></span>
+          <h2>What can I help you with?</h2><p>Learn how to use Tenali, find business records, or prepare an operation for review.</p>
+          <button className="ai-new-chat" disabled={busy || titleSaving || viewer} onClick={() => void create()}><SquarePen size={17} />Start a new chat</button>
+          <button className="ai-history-link" disabled={busy || titleSaving} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "Hide conversations" : "Browse previous conversations"}</button>
+          <small>Private to you. You review and approve before anything is saved.</small>
+        </div> : <>
           <header className="ai-chat-header"><label><span className="ai-sr-only">Conversation title</span><input maxLength={120} disabled={busy || viewer} value={title}
             onChange={event => { setTitle(event.target.value); currentTitle.current = event.target.value; setTitleError(""); }}
             onBlur={() => { if (!busy && !titleRequest.current && !viewer) void saveTitle(); }} /></label>

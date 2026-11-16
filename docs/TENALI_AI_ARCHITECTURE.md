@@ -22,12 +22,24 @@ A floating launcher using the supplied Tenali avatar without a circular crop ope
 Tenali AI from workspace pages. On hover or keyboard focus, the image grows to 2.5
 times its size from the bottom-right corner, with "Ask Tenali" above it. The label
 is otherwise hidden. Reduced-motion preferences disable the growth transition.
-How-to questions are informational: explain steps without proposing a write or
-requiring business-data lookups. A static app guide is included when the bounded
+How-to answers explain the steps first. For supported Operations add/update guidance
+(including "Can you tell me how do I add a product?"), AI also proposes an optional
+workflow with only known values. General app/navigation help needs no workflow.
+Explicit English how-to questions offer permitted action contracts but no business
+read capabilities; unexpected business lookups fail explicitly. The existing
+workflow coordinator handles search/create prerequisites after the user chooses
+to proceed. How-to proposals start a new workflow rather than modifying an existing
+entry. The server preserves the explanation and announces the optional workflow
+only after successful preparation. No business records are posted by the reply.
+Direct operation requests and workflow continuations retain their existing behavior.
+A static app guide is included when the bounded
 context has room, after recent user messages and before older history. Compact
 how-to instructions remain in the system prompt even when that guide cannot fit.
 Known internal app links are rendered as links; arbitrary URLs and HTML remain text.
 Existing AI enablement, role permissions, budgets and posting approval still apply.
+The assistant starts with an actionable welcome state. Conversation history is
+toggleable, with searchable, two-line titles and separate dates in a scrollable
+list. On narrow screens history stacks above the chat instead of squeezing it.
 
 The product editor accepts Brand and Category names as searchable free text.
 Case-insensitive existing matches are reused; new entries are created on product
