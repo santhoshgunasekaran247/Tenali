@@ -793,6 +793,14 @@ a sleeping/free instance cannot promise prompt background processing.
    it only when Render instructs you to use a different load-balancer address.
    Keep `TENALI_CREDENTIAL_KEY` stable: it also encrypts short-lived social-login
    handoff results.
+   If custom-domain login returns HTTP 503 with "Social login encryption is not
+   configured", set a valid Fernet key on the **API** service, then redeploy it.
+   Restore the existing production key if encrypted payment/provider credentials
+   already exist; generating a replacement makes those credentials unreadable.
+   Only for a fresh installation with no existing encrypted credentials, generate
+   a key privately with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+   Store the resulting value in Render Environment without quotes; never commit
+   or send the key in chat. This setting is not a Supabase or Google OAuth key.
 3. Keep the existing platform `TENALI_API_HOST` / `TENALI_PUBLIC_ORIGIN` mapping
    and static `/api/*` rewrite for `tenali.biz`. **Do not remove them** for this
    split-service mode. Do not set wildcard CORS.

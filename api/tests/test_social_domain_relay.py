@@ -41,6 +41,15 @@ class SocialDomainRelayTests(unittest.TestCase):
             relay.relay_row(self.db, self.row["id"], "wrong-key")
         self.assertEqual(error.exception.status_code, 410)
 
+    def test_missing_or_invalid_encryption_key_explains_required_api_configuration(self):
+        for value in ["", "not-a-fernet-key"]:
+            with self.subTest(value=value), patch.dict(os.environ, {"TENALI_CREDENTIAL_KEY": value}):
+                with self.assertRaises(HTTPException) as error:
+                    relay.create_relay(self.db, self.row["company_id"], self.row["hostname"])
+                self.assertEqual(error.exception.status_code, 503)
+                self.assertIn("TENALI_CREDENTIAL_KEY", error.exception.detail)
+                self.db.execute.assert_not_called()
+
     def test_pending_result_never_returns_a_token_and_secrets_are_hashed(self):
         response = relay.poll_relay(self.db, self.row["id"], "fixture-secret", self.row["company_id"], "sourcedbysru.in")
         self.assertEqual(response, {"pending": True})

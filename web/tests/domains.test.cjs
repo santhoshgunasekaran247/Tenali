@@ -76,3 +76,29 @@ test("custom-domain social login uses the central callback and a one-time API re
   assert.equal(calls[1].url, "/api/auth/social-relays/relay-fixture/poll");
   assert.deepEqual(JSON.parse(calls[1].options.body), { key: "secret-fixture" });
 });
+
+test("social login reports API configuration failures and closes the unused popup", async () => {
+  for (const [body, expected] of [
+    [JSON.stringify({ detail: "Social login encryption is not configured on the platform" }), /Social login encryption is not configured on the platform/],
+    ["<html>Service unavailable</html>", /Unable to start secure social login\. \(HTTP 503\)/],
+  ]) {
+    let popupClosed = false, channelClosed = false;
+    const module = compile("features/shopperFederation.ts", {
+      URL, URLSearchParams, crypto: { randomUUID: () => "nonce-fixture" },
+      BroadcastChannel: class { close() { channelClosed = true; } },
+      window: {
+        location: { origin: "https://sourcedbysru.in" },
+        open: () => ({ location: {}, close() { popupClosed = true; } }),
+      },
+      require: () => ({
+        tenantApiOrigin: () => "https://api.sourcedbysru.in",
+        tenantFetch: async () => new Response(body, { status: 503 }),
+      }),
+    });
+    await assert.rejects(module.socialLogin({
+      enabled: true, providers: ["google"], callbackOrigin: "https://tenali.biz",
+    }, "google"), expected);
+    assert.equal(popupClosed, true);
+    assert.equal(channelClosed, true);
+  }
+});

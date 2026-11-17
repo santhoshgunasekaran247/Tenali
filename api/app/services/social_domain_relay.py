@@ -13,7 +13,7 @@ def relay_cipher():
     try:
         return Fernet(os.getenv("TENALI_CREDENTIAL_KEY", "").encode("ascii"))
     except (ValueError, UnicodeEncodeError) as error:
-        raise HTTPException(503, "Social login encryption is not configured on the platform") from error
+        raise HTTPException(503, "Social login encryption is not configured. Ask the platform administrator to configure a valid TENALI_CREDENTIAL_KEY on the API service.") from error
 
 
 def create_relay(db, company_id, hostname):

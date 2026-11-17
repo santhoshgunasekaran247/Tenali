@@ -3,6 +3,21 @@ export type SocialUser = { email: string; getIdToken: () => Promise<string> };
 export const PROVIDER_LABELS: Record<string, string> = { google: "Google", facebook: "Facebook", "custom:yahoo": "Yahoo", azure: "Microsoft", apple: "Apple" };
 const pending = new Set<() => void>();
 
+async function socialLoginError(response: Response, fallback: string): Promise<Error> {
+  const text = await response.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return new Error(`${fallback} (HTTP ${response.status})`);
+  }
+  if (body && typeof body === "object" && "detail" in body && typeof body.detail === "string") {
+    return new Error(body.detail);
+  }
+  return new Error(`${fallback} (HTTP ${response.status})`);
+}
+
 export async function socialLogin(config: FederationConfig, provider: string): Promise<SocialUser> {
   if (!config.enabled || !config.providers.includes(provider)) throw new Error("This login provider is not configured.");
   const nonce = crypto.randomUUID();
@@ -19,7 +34,7 @@ export async function socialLogin(config: FederationConfig, provider: string): P
   if (remote) {
     try {
       const response = await tenantFetch("/api/auth/social-relays", { method: "POST" });
-      if (!response.ok) throw new Error("Unable to start secure social login. Refresh the storefront and try again.");
+      if (!response.ok) throw await socialLoginError(response, "Unable to start secure social login.");
       relay = await response.json() as { id: string; key: string };
       url.hash = new URLSearchParams({ relay_id: relay.id, relay_key: relay.key }).toString();
       popup.location.href = url.toString();
@@ -52,7 +67,7 @@ export async function socialLogin(config: FederationConfig, provider: string): P
         void tenantFetch(`/api/auth/social-relays/${ticket.id}/poll`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: ticket.key }),
         }).then(async response => {
-          if (!response.ok) throw new Error("Social login expired or could not be completed. Start again.");
+          if (!response.ok) throw await socialLoginError(response, "Social login expired or could not be completed. Start again.");
           const body = await response.json();
           if (!body.pending) accept({ ...body.result, nonce });
         }).catch(error => {
