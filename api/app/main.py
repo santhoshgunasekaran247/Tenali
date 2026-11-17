@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.services.tenant_context import TenantBoundary
 from app.services.tenant_context import company_by_slug
 from app.services.public_origin import PublicOriginMiddleware
+from app.services.custom_domain_routing import CustomDomainRouting
+from app.services.domain_onboarding import domain_lifespan
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import JSONResponse
 from fastapi import Query,HTTPException
@@ -19,6 +21,7 @@ from app.core.database import SessionLocal
 
 def create_app() -> FastAPI:
     app = FastAPI(
+        lifespan=domain_lifespan,
         title=settings.app_title,
         version=settings.app_version,
         description=settings.app_description,
@@ -37,6 +40,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(TenantBoundary)
     app.add_middleware(PublicOriginMiddleware)
+    app.add_middleware(CustomDomainRouting)
 
     @app.get('/domain-authorization',include_in_schema=False)
     def authorize_tls_domain(domain:str=Query(max_length=253)):

@@ -32,6 +32,14 @@ def apply_self_shipping_migration(connection):
         migration["upgrade"]()
 
 
+def apply_render_domains_migration(connection):
+    if "hosting_status" in {column["name"] for column in inspect(connection).get_columns("tenant_domains")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "060_render_domains.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def ensure_default_store(db, company_id: str, code: str = "MAIN") -> str:
     """Test companies are inserted directly, so give them the default store the migration gives real ones."""
     from sqlalchemy import text

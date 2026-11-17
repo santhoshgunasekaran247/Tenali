@@ -2,6 +2,7 @@ import { FloatingAlert } from "../components/Notifications";
 import { useEffect, useState } from "react";
 import type { Provider } from "@supabase/supabase-js";
 import type { FederationConfig } from "../features/shopperFederation";
+import { tenantFetch } from "../features/tenantTransport";
 
 let completion: Promise<void> | undefined;
 
@@ -9,15 +10,42 @@ async function completeLogin() {
   const params = new URLSearchParams(window.location.search);
   const nonce = params.get("nonce") || "";
   const provider = params.get("provider") || "";
+  const returnOrigin = params.get("return_origin") || "";
   if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(nonce)) throw new Error("Invalid social login request. Start again from the login page.");
   const channel = new BroadcastChannel(`tenali-social-${nonce}`);
   const storageKey = `tenali-social-${nonce}`;
+  const relayStorageKey = storageKey + "-relay";
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  if (fragment.has("relay_id") && fragment.has("relay_key")) {
+    sessionStorage.setItem(relayStorageKey, JSON.stringify({
+      id: fragment.get("relay_id"), key: fragment.get("relay_key"),
+    }));
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+  const relay: { id: string; key: string } | null = JSON.parse(sessionStorage.getItem(relayStorageKey) || "null");
   let redirecting = false;
+  let returnVerified = false;
+  const deliver = async (data: object) => {
+    if (returnOrigin) {
+      if (!returnVerified) return;
+      if (!relay) throw new Error("Social login state is missing. Start again from your storefront.");
+      const response = await tenantFetch(`/api/auth/social-relays/${relay.id}/complete`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: relay.key, origin: returnOrigin, result: data }),
+      });
+      if (!response.ok) throw new Error("Unable to return social login to your storefront. Start again.");
+    } else channel.postMessage(data);
+  };
   try {
-    const response = await fetch("/api/auth/social-config", { credentials: "same-origin" });
+    const response = await tenantFetch("/api/auth/social-config");
     if (!response.ok) throw new Error("Unable to load social login configuration.");
     const config: FederationConfig = await response.json();
     if (!config.enabled || !config.providers.includes(provider)) throw new Error("This social provider is disabled or not configured.");
+    if (returnOrigin) {
+      const allowed = await tenantFetch(`/api/auth/social-return-origin?${new URLSearchParams({ origin: returnOrigin })}`);
+      if (!allowed.ok) throw new Error("The social login return domain is not authorized.");
+      returnVerified = true;
+    }
     const error = params.get("error_description") || params.get("error");
     if (error) throw new Error(error);
     const { createClient } = await import("@supabase/supabase-js");
@@ -37,10 +65,11 @@ async function completeLogin() {
     });
     const code = params.get("code");
     if (!code) {
-      sessionStorage.setItem(storageKey + "-flow", provider);
+      sessionStorage.setItem(storageKey + "-flow", JSON.stringify({ provider, returnOrigin }));
       const redirect = new URL("/social-login", window.location.origin);
       redirect.searchParams.set("nonce", nonce);
       redirect.searchParams.set("provider", provider);
+      if (returnOrigin) redirect.searchParams.set("return_origin", returnOrigin);
       const { data, error: startError } = await client.auth.signInWithOAuth({
         provider: provider as Provider,
         options: { redirectTo: redirect.toString(), skipBrowserRedirect: true,
@@ -52,16 +81,16 @@ async function completeLogin() {
       redirecting = true;
       return;
     }
-    if (sessionStorage.getItem(storageKey + "-flow") !== provider) throw new Error("Social login state is missing. Start again from the login page.");
+    if (sessionStorage.getItem(storageKey + "-flow") !== JSON.stringify({ provider, returnOrigin })) throw new Error("Social login state is missing. Start again from the login page.");
     const { data, error: exchangeError } = await client.auth.exchangeCodeForSession(code);
     if (exchangeError) throw exchangeError;
     if (!data.session) throw new Error("Supabase did not return a session.");
     window.history.replaceState(null, "", "/social-login");
-    channel.postMessage({ nonce, accessToken: data.session.access_token,
+    await deliver({ nonce, accessToken: data.session.access_token,
       email: data.session.user.email || "", expiresAt: data.session.expires_at });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to complete social login.";
-    channel.postMessage({ nonce, error: message });
+    await deliver({ nonce, error: message });
     throw new Error(message);
   } finally {
     if (!redirecting) {

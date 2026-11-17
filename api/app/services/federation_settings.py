@@ -78,9 +78,15 @@ def public_config(db):
         settings = FederationSettings(**settings_for(db))
     except ValueError as error:
         raise HTTPException(503, "Supabase social-login settings are invalid. Contact the platform administrator.") from error
-    return {"enabled": settings.enabled,
+    result = {"enabled": settings.enabled,
             "supabase": {"url": settings.supabase_url, "publicKey": settings.public_key},
             "providers": settings.providers}
+    if os.getenv("TENALI_CUSTOM_DOMAINS_ENABLED", "").lower() == "true":
+        base = os.getenv("TENALI_BASE_DOMAIN", "").lower().strip(".")
+        if not base:
+            raise HTTPException(503, "Custom-domain social login requires the platform base domain")
+        result["callbackOrigin"] = "https://" + base
+    return result
 
 
 def save_settings(db, payload, admin_id):

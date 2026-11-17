@@ -58,6 +58,8 @@ class TenantDatabaseCase(unittest.TestCase):
         apply_feature_controls_migration(self.connection)
         from schema_support import apply_self_shipping_migration
         apply_self_shipping_migration(self.connection)
+        from schema_support import apply_render_domains_migration
+        apply_render_domains_migration(self.connection)
         self.stack=ExitStack()
         self.addCleanup(self.stack.close)
         connection=self.connection
@@ -78,7 +80,8 @@ class TenantDatabaseCase(unittest.TestCase):
                     connection.exec_driver_sql('RESET ROLE')
                     connection.exec_driver_sql("select set_config('app.tenant_id','',true),set_config('app.actor_user_id','',true)")
         self.factory=lambda:FixtureSession(bind=self.connection,join_transaction_mode='rollback_only')
-        for target in ['app.core.database.SessionLocal','app.services.tenant_context.SessionLocal','app.api.routes.auth.SessionLocal','app.api.routes.shop.SessionLocal','app.main.SessionLocal']:
+        for target in ['app.core.database.SessionLocal','app.services.tenant_context.SessionLocal','app.api.routes.auth.SessionLocal','app.api.routes.shop.SessionLocal','app.main.SessionLocal',
+                       'app.services.custom_domain_routing.SessionLocal','app.services.domain_onboarding.SessionLocal']:
             self.stack.enter_context(patch(target,self.factory))
         self.stack.enter_context(patch.dict(os.environ,{'TENALI_ENV':'development','TENALI_BASE_DOMAIN':'tenali-business.com',
             'TENALI_SUPABASE_URL':'https://abcdefghijklmnopqrst.supabase.co','TENALI_SUPABASE_STORAGE_KEY':'server-fixture-secret'}))
@@ -187,7 +190,7 @@ class TenantBoundaryTests(TenantDatabaseCase):
         self.assertEqual(self.client.get('/catalog/company',headers={'Host':host}).status_code,404)
         class Txt:
             strings=[domain['verification_token'].encode()]
-        with patch('app.api.routes.auth.dns.resolver.resolve',return_value=[Txt()]):
+        with patch('app.services.domain_onboarding.dns.resolver.resolve',return_value=[Txt()]):
             verified=self.client.post('/auth/domains/'+domain['id']+'/verify',headers=self.headers(cookies))
         self.assertEqual(verified.status_code,200,verified.text)
         public=self.client.get('/catalog/company',headers={'Host':host})

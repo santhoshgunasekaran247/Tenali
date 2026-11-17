@@ -758,6 +758,119 @@ Alternatively run with `api` on `PYTHONPATH` from the repository root.
 The command prompts privately for the password twice. Do not put passwords in command
 arguments or chat. It refuses to overwrite an existing owner or existing email account.
 
+## Self-service tenant domains on two Render services
+
+This mode keeps the existing Render Static Site and Python Web Service separate.
+Tenants never need Render access: they add a domain in **Storefront Domains** and
+copy the generated records into their DNS provider. A persistent API background
+job verifies ownership, registers hostnames through Render's API, requests
+verification and checks DNS/HTTPS readiness. Jobs continue after the portal closes
+and are reconciled after API restarts. Allow the API service to remain running;
+a sleeping/free instance cannot promise prompt background processing.
+
+### One-time platform configuration
+
+1. Deploy migration `060_render_domains` before the updated API. No tenant
+   business records or existing manual domain configurations are changed.
+2. Create a Render API key for the account/workspace that owns both existing
+   services. Set these **only on the API Web Service**, never in the static site
+   build, browser or tenant portal:
+
+   ```text
+   TENALI_CUSTOM_DOMAINS_ENABLED=true
+   TENALI_RENDER_API_KEY=<Render API secret>
+   TENALI_RENDER_WEB_SERVICE_ID=<existing static site service ID>
+   TENALI_RENDER_API_SERVICE_ID=<existing Python web service ID>
+   TENALI_RENDER_WEB_HOST=<existing-static-site>.onrender.com
+   TENALI_RENDER_API_HOST=<existing-api-service>.onrender.com
+   TENALI_BASE_DOMAIN=tenali.biz
+   TENALI_DOMAIN_TARGET=<existing-static-site>.onrender.com
+   ```
+
+   The service IDs and their `onrender.com` hosts must refer to the same services.
+   The API key must have access to those services. The optional
+   `TENALI_RENDER_APEX_IP` defaults to Render's documented `216.24.57.1`; change
+   it only when Render instructs you to use a different load-balancer address.
+   Keep `TENALI_CREDENTIAL_KEY` stable: it also encrypts short-lived social-login
+   handoff results.
+3. Keep the existing platform `TENALI_API_HOST` / `TENALI_PUBLIC_ORIGIN` mapping
+   and static `/api/*` rewrite for `tenali.biz`. **Do not remove them** for this
+   split-service mode. Do not set wildcard CORS.
+4. On the existing Render Static Site, configure these **build-time** variables:
+
+   ```text
+   VITE_TENALI_CUSTOM_DOMAINS_ENABLED=true
+   VITE_TENALI_PLATFORM_HOSTS=tenali.biz,www.tenali.biz,app.tenali.biz,<existing-static-site>.onrender.com
+   ```
+
+   List every existing platform/frontend hostname that must retain same-origin
+   `/api` behaviour. Other HTTPS storefront hosts use `https://api.<hostname>`.
+   Rebuild/redeploy the frontend after changing these values.
+5. In Supabase Auth's allowed redirect URLs, ensure the single central callback
+   `https://tenali.biz/social-login` (including its flow query parameters, according
+   to Supabase's URL matching rules) is allowed. Existing OAuth providers still
+   redirect through Supabase as before. Custom tenants use this platform callback
+   and an encrypted, expiring, single-use API relay; no per-tenant Supabase redirect
+   entry, third-party cookie, shared parent-domain cookie or cross-origin
+   `window.opener` is required.
+6. Test one domain completely before advertising self-service onboarding. Never
+   claim live readiness from passing mocked tests or from TXT verification alone.
+
+The feature is off by default. Local development continues to use its existing
+same-origin proxy. Existing verified/manual domains are not automatically adopted
+or removed from Render; **Verify & connect** is the explicit migration action.
+Render domains already configured outside this workflow must not be deleted as
+though they were created by Tenali.
+
+### Tenant onboarding: sourcedbysru.in with GoDaddy
+
+1. Sign in to the existing SourcedBySru workspace on `https://tenali.biz`.
+2. Open **Storefront Domains**, enter `sourcedbysru.in` (without a scheme, path,
+   `www.` or `api.` prefix), and click **Add domain**.
+3. Open GoDaddy **Domain Portfolio → sourcedbysru.in → DNS → DNS Records**.
+   If its nameservers point to another DNS host, edit records there instead.
+4. Copy the exact values from Tenali into GoDaddy:
+
+   | Type | GoDaddy Name | Value |
+   | --- | --- | --- |
+   | TXT | `_tenali-verification` | Tenant-specific token shown by Tenali |
+   | A | `@` | Render address shown by Tenali, normally `216.24.57.1` |
+   | CNAME | `www` | Existing frontend service's `onrender.com` hostname |
+   | CNAME | `api` | Existing API service's `onrender.com` hostname |
+
+   Use the default TTL. Do not put `https://`, `/api` or a tenant path in a DNS
+   value. Replace only conflicting website A/AAAA/CNAME records and forwarding
+   for these hostnames; preserve MX and email-related TXT/CNAME records. The
+   portal shows full record names; GoDaddy's Name field normally uses the
+   relative names in this table. This changes any website currently using the
+   root domain and `www`. A pre-existing `api` service must be moved or a
+   different storefront hostname chosen.
+5. Click **Verify & connect** in Tenali. Missing DNS is reported explicitly and
+   retried automatically. Tenali verifies the ownership token before reserving
+   frontend/API names or making Render changes.
+6. Wait for **Active**. Render provisions certificates; no separate GoDaddy SSL
+   purchase is needed. DNS propagation and certificate issuance can take time.
+7. Test `https://sourcedbysru.in`, its `www` redirect, shopper/staff login, images,
+   nested-page refresh, cart and checkout. Existing workspace-path URLs remain
+   available; users sign in separately on the new domain.
+
+The frontend calls `https://api.sourcedbysru.in/api/...` with credentials. The API
+accepts only the exact paired HTTPS frontend origin and binds requests to the
+verified tenant before existing authorization/CSRF checks. Session cookies remain
+host-only, Secure, HttpOnly and SameSite=Lax. CSRF values are exposed only through
+the paired origin's credentialed response headers, not through shared-domain
+cookies. Another tenant's Origin or workspace header cannot select this tenant.
+
+Removing a managed domain disables its tenant routing immediately and queues
+Render cleanup. Keep it listed as **Removing hosting** until cleanup succeeds;
+then remove obsolete DNS records. Failed provider calls never display success,
+and uncertain registrations are reconciled before another create attempt.
+
+Render's custom-domain allowances, extra-domain fees and existing service usage
+charges still apply. Root/`www` aliases may consume more than one hostname; check
+the current account billing. No extra gateway or per-tenant Render service is
+required.
+
 ## Production environment
 
 Configure these on the API process, not in browser JavaScript:

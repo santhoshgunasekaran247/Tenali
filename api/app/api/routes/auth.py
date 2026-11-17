@@ -4,10 +4,8 @@ from urllib.parse import urlparse
 from typing import Literal
 from uuid import UUID
 
-import dns.exception
-import dns.resolver
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -18,6 +16,9 @@ from app.services.tenant_security import Login, MemberCreate, Registration, norm
 from app.services.tenant_security import password_hash,password_matches
 from app.services.federation_settings import public_config
 from app.services.shopper_federation import verified_identity
+from app.services import domain_onboarding
+from app.services.custom_domain_routing import custom_domains_enabled
+from app.services import social_domain_relay
 
 router = APIRouter()
 
@@ -95,6 +96,85 @@ class WorkspaceSocialLogin(BaseModel):
 def social_config(request: Request, db=Depends(identity_db)):
     check_origin(request)
     return public_config(db)
+
+
+@router.get("/domain-health")
+def domain_health(request: Request, db=Depends(identity_db)):
+    company = host_company(db, request)
+    if not company:
+        raise HTTPException(404, "Verified tenant domain required")
+    return {"company_id": str(company["id"])}
+
+
+@router.get("/social-return-origin")
+def social_return_origin(origin: str, request: Request, db=Depends(identity_db)):
+    check_origin(request)
+    if not platform_host(request):
+        raise HTTPException(403, "Use the platform social login callback")
+    parsed = urlparse(origin)
+    if parsed.scheme != "https" or not parsed.hostname or origin != "https://" + parsed.hostname:
+        raise HTTPException(422, "Invalid social login return origin")
+    base = os.getenv("TENALI_BASE_DOMAIN", "").lower().strip(".")
+    allowed = parsed.hostname in {base, "app." + base}
+    if not allowed:
+        allowed = bool(db.execute(text("""
+            select domain.id from tenant_domains domain
+            join companies company on company.id=domain.company_id and company.is_active=true
+            where domain.hostname=:host and domain.verified_at is not null
+              and domain.hosting_status in ('provisioning','tls_pending','active')
+        """), {"host": parsed.hostname}).scalar_one_or_none())
+    if not allowed:
+        raise HTTPException(403, "Social login return domain is not a verified storefront")
+    return {"allowed": True}
+
+
+class RelayKey(BaseModel):
+    key: str = Field(min_length=32, max_length=128, repr=False)
+
+
+class RelayResult(BaseModel):
+    accessToken: str | None = Field(default=None, max_length=10000, repr=False)
+    email: str | None = Field(default=None, max_length=254)
+    expiresAt: int | None = None
+    error: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def complete_result(self):
+        if not self.error and not (self.accessToken and self.email and self.expiresAt):
+            raise ValueError("A completed social login or explicit error is required")
+        return self
+
+
+class RelayCompletion(RelayKey):
+    origin: str = Field(max_length=261)
+    result: RelayResult
+
+
+@router.post("/social-relays", status_code=201)
+def create_social_relay(request: Request, db=Depends(identity_db)):
+    check_origin(request)
+    tenant = host_company(db, request)
+    if not custom_domains_enabled() or not tenant:
+        raise HTTPException(403, "Social login relay requires a verified storefront")
+    TenantAuth(db).throttle("social-relay:" + (request.client.host if request.client else "unknown"), 30)
+    return social_domain_relay.create_relay(db, str(tenant["id"]), request.url.hostname)
+
+
+@router.post("/social-relays/{relay_id}/complete")
+def complete_social_relay(relay_id: UUID, payload: RelayCompletion, request: Request, db=Depends(identity_db)):
+    social_return_origin(payload.origin, request, db)
+    return social_domain_relay.complete_relay(
+        db, relay_id, payload.key, payload.result.model_dump(exclude_none=True), urlparse(payload.origin).hostname,
+    )
+
+
+@router.post("/social-relays/{relay_id}/poll")
+def poll_social_relay(relay_id: UUID, payload: RelayKey, request: Request, db=Depends(identity_db)):
+    check_origin(request)
+    tenant = host_company(db, request)
+    if not tenant:
+        raise HTTPException(403, "Open the storefront that started this login")
+    return social_domain_relay.poll_relay(db, relay_id, payload.key, str(tenant["id"]), request.url.hostname)
 
 
 @router.post("/register-social", status_code=201)
@@ -246,18 +326,30 @@ class DomainInput(BaseModel):
 
 @router.get("/domains")
 def domains(identity=Depends(administrator), db=Depends(identity_db)):
-    rows = db.execute(text("select id,hostname,verification_token,verified_at from tenant_domains where company_id=:company order by created_at"), {"company": str(identity["company_id"])}).mappings().all()
-    return {"items": [dict(row) for row in rows], "cname_target": os.getenv("TENALI_DOMAIN_TARGET", ""), "base_domain": os.getenv("TENALI_BASE_DOMAIN", "")}
+    rows = db.execute(text(f"select {domain_onboarding.DOMAIN_COLUMNS} from tenant_domains where company_id=:company order by created_at"), {"company": str(identity["company_id"])}).mappings().all()
+    enabled = custom_domains_enabled()
+    config = None
+    if enabled:
+        from app.services.render_domains import get_config
+        config = get_config()
+        if config is None:
+            raise HTTPException(503, "Automatic domain hosting is not configured by the platform administrator")
+    items = []
+    for row in rows:
+        item = dict(row)
+        if config:
+            item["dns_records"] = domain_onboarding.dns_records(
+                row["hostname"], row["verification_token"], config.web_host, config.api_host, config.apex_ip,
+            )
+        items.append(item)
+    return {"items": items, "automatic_hosting": enabled,
+            "cname_target": os.getenv("TENALI_DOMAIN_TARGET", ""), "base_domain": os.getenv("TENALI_BASE_DOMAIN", "")}
 
 
 @router.post("/domains", status_code=201)
 def add_domain(payload: DomainInput, identity=Depends(administrator), db=Depends(identity_db)):
-    base = os.getenv("TENALI_BASE_DOMAIN", "").lower().strip(".")
-    if base and (payload.hostname == base or payload.hostname.endswith("."+base)):
-        raise HTTPException(422, "Platform domains cannot be claimed as custom domains")
     try:
-        db.execute(text("insert into tenant_domains(company_id,hostname,verification_token) values(:company,:host,:token)"),
-                   {"company": str(identity["company_id"]), "host": payload.hostname, "token": secrets.token_urlsafe(32)})
+        domain_onboarding.create_claim(db, str(identity["company_id"]), payload.hostname)
         TenantAuth(db).audit(str(identity['company_id']),str(identity['user_id']),'DOMAIN_CLAIMED',details={'hostname':payload.hostname})
         db.commit()
     except IntegrityError as error:
@@ -268,18 +360,15 @@ def add_domain(payload: DomainInput, identity=Depends(administrator), db=Depends
 
 @router.post("/domains/{domain_id}/verify")
 def verify_domain(domain_id: UUID, identity=Depends(administrator), db=Depends(identity_db)):
-    row = db.execute(text("select hostname,verification_token from tenant_domains where id=:id and company_id=:company"), {"id": str(domain_id), "company": str(identity["company_id"])}).mappings().first()
+    row = db.execute(text(f"select {domain_onboarding.DOMAIN_COLUMNS} from tenant_domains where id=:id and company_id=:company for update"), {"id": str(domain_id), "company": str(identity["company_id"])}).mappings().first()
     if not row:
         raise HTTPException(404, "Domain not found")
+    if row["hosting_status"] != "manual" and not custom_domains_enabled():
+        raise HTTPException(503, "Automatic hosting is disabled; ask the platform operator to enable domain provisioning")
+    if row["hosting_status"] == "removing":
+        raise HTTPException(409, "Domain removal is in progress")
     try:
-        answers = dns.resolver.resolve("_tenali-verification."+row["hostname"], "TXT", lifetime=5)
-        values = [b"".join(answer.strings).decode() for answer in answers]
-    except (dns.exception.DNSException, UnicodeDecodeError) as error:
-        raise HTTPException(422, "Verification TXT record is not visible yet. Check DNS and try again.") from error
-    if row["verification_token"] not in values:
-        raise HTTPException(422, "DNS ownership token does not match")
-    try:
-        db.execute(text("update tenant_domains set verified_at=now() where id=:id and company_id=:company"), {"id": str(domain_id), "company": str(identity["company_id"])})
+        domain_onboarding.verify_ownership(db, row)
         TenantAuth(db).audit(str(identity['company_id']),str(identity['user_id']),'DOMAIN_VERIFIED',str(domain_id),{'hostname':row['hostname']})
         db.commit()
     except IntegrityError as error:
@@ -290,7 +379,21 @@ def verify_domain(domain_id: UUID, identity=Depends(administrator), db=Depends(i
 
 @router.delete("/domains/{domain_id}")
 def delete_domain(domain_id: UUID, identity=Depends(administrator), db=Depends(identity_db)):
-    db.execute(text("delete from tenant_domains where id=:id and company_id=:company"), {"id": str(domain_id), "company": str(identity["company_id"])})
+    row = db.execute(text("select hosting_status from tenant_domains where id=:id and company_id=:company for update"),
+                     {"id": str(domain_id), "company": str(identity["company_id"])}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Domain not found")
+    if row["hosting_status"] != "manual" and not custom_domains_enabled():
+        raise HTTPException(503, "Automatic hosting is disabled; ask the platform operator to enable managed domain cleanup")
+    retained = db.execute(text("""select hostname from tenant_domain_bindings
+        where domain_id=:id and render_id is not null and provider_owned=false"""),
+        {"id": str(domain_id)}).scalars().all()
+    if row["hosting_status"] != "manual":
+        db.execute(text("""update tenant_domains set hosting_status='removing',verified_at=null,
+            hosting_error=null,next_check_at=now() where id=:id"""), {"id": str(domain_id)})
+    else:
+        db.execute(text("delete from tenant_domains where id=:id"), {"id": str(domain_id)})
     TenantAuth(db).audit(str(identity['company_id']),str(identity['user_id']),'DOMAIN_REMOVED',str(domain_id))
     db.commit()
-    return {"removed": True}
+    return {"removed": row["hosting_status"] == "manual", "removing": row["hosting_status"] != "manual",
+            "retained_hosting": retained}
