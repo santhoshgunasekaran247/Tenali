@@ -174,6 +174,8 @@ def dispatch_order(db: Session, company_id: str, order_id: str, payload: Dispatc
         raise HTTPException(409, f"An order in status {order['status']} cannot be dispatched")
     if order["payment_method"] == "prepaid" and not order["advance_transaction_id"]:
         raise HTTPException(409, order["review_reason"] or "Post the online payment advance before dispatching")
+    if (payload.courier or payload.awb) and (order["shipping_provider"] != "self" or order["fulfilment_method"] != "delivery"):
+        raise HTTPException(422, "Manual courier and tracking details apply only to self-shipped delivery orders.")
     online = get_store(db, company_id, str(order["store_id"]))
     ship_from = stock_store(db, company_id, str(payload.ship_from_store_id) if payload.ship_from_store_id else str(online["fulfilment_store_id"]))
     if order["fulfilment_method"] == "pickup":
@@ -186,8 +188,11 @@ def dispatch_order(db: Session, company_id: str, order_id: str, payload: Dispatc
     try:
         # Leave the stock-holding statuses first so the order's own reservation does not block its booking;
         # create_invoice commits, so a later failure is recoverable by re-running dispatch.
-        db.execute(text("update shop_orders set status='dispatched',ship_from_store_id=:store,dispatched_at=coalesce(dispatched_at,now()) where id=:id"),
-                   {"store": str(ship_from["id"]), "id": order_id})
+        db.execute(text("""update shop_orders set status='dispatched',ship_from_store_id=:store,
+            dispatched_at=coalesce(dispatched_at,now()),courier=coalesce(:courier,courier),awb=coalesce(:awb,awb)
+            where company_id=:company and id=:id"""),
+                   {"store": str(ship_from["id"]), "id": order_id, "company": company_id,
+                    "courier": payload.courier, "awb": payload.awb})
         invoice = _create_order_invoice(db, company_id, order, invoice_store=online, stock_store_id=str(ship_from["id"]), supply=supply,
                                         amount_received=Decimal("0"), account_id=None, payment_mode=None,
                                         reference=f"Online order {str(order['id'])[:8]}")

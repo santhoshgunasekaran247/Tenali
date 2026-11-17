@@ -259,7 +259,7 @@ def shopper_reconcile_payment(order_id: UUID, company=Depends(store), identity=D
 
 
 POLICY_FIELDS = ["prepaid_enabled", "shipping_sac", "shipping_gst_rate", "cod_enabled", "cod_limit", "cod_approval_hours", "cod_overdue_days",
-                 "cod_serviceable_pincodes", "pickup_enabled", "pickup_hold_hours", "pickup_reminder_hours", "prepaid_hold_minutes"]
+                 "cod_serviceable_pincodes", "pickup_enabled", "pickup_hold_hours", "pickup_reminder_hours", "prepaid_hold_minutes", "shipping_provider"]
 
 
 @admin_router.get("/settings")
@@ -269,11 +269,15 @@ def read_settings(identity=Depends(administrator), db=Depends(identity_db)):
     if not settings:
         return {"configured": False, "payment_mode": None}
     payment_mode = None
+    credentials = {}
     if settings["credentials"]:
         credentials = providers.decrypt_credentials(str(identity["company_id"]), settings["credentials"])
-        payment_mode = "test" if credentials.get("razorpay_key_id", "").startswith("rzp_test_") else "live"
+        if credentials.get("razorpay_key_id"):
+            payment_mode = "test" if credentials["razorpay_key_id"].startswith("rzp_test_") else "live"
     return {"configured": True, "enabled": settings["enabled"], "shipping_paise": settings["shipping_paise"],
             "pickup_location": settings["pickup_location"], "payment_mode": payment_mode, "credentials_saved": bool(settings["credentials"]),
+            "razorpay_saved": all(credentials.get(key) for key in ("razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret")),
+            "shiprocket_saved": bool(settings["credentials"] and credentials.get("shiprocket_email") and credentials.get("shiprocket_password")),
             **{field: settings[field] for field in POLICY_FIELDS}}
 
 
@@ -289,17 +293,19 @@ def save_settings(payload: CheckoutSettingsInput, identity=Depends(administrator
                 else getattr(payload, key) for key in keys if getattr(payload, key) is not None}
     credentials = {} if len(supplied) == len(keys) or not stored else providers.decrypt_credentials(str(identity["company_id"]), stored)
     credentials.update(supplied)
-    if payload.prepaid_enabled and any(not credentials.get(key) for key in keys):
-        raise HTTPException(422, "Online payment requires the Razorpay key ID, key secret, webhook secret and Shiprocket API-user email and password; or disable online payment to run cash-on-delivery and pickup only.")
+    if payload.prepaid_enabled and any(not credentials.get(key) for key in keys[:3]):
+        raise HTTPException(422, "Online payment requires the Razorpay key ID, key secret and webhook secret.")
+    if payload.shipping_provider == "shiprocket" and payload.prepaid_enabled and any(not credentials.get(key) for key in keys[3:]):
+        raise HTTPException(422, "Shiprocket delivery requires its API-user email and password, or choose self-shipping.")
     if payload.enabled and not (payload.prepaid_enabled or payload.cod_enabled or payload.pickup_enabled):
         raise HTTPException(422, "Enable at least one of online payment, cash on delivery or store pickup")
     encrypted = providers.encrypt_credentials(str(identity["company_id"]), credentials) if credentials else ""
     policy = {field: getattr(payload, field) for field in POLICY_FIELDS}
     db.execute(text("""insert into checkout_settings(company_id,enabled,shipping_paise,pickup_location,credentials,
             prepaid_enabled,shipping_sac,shipping_gst_rate,cod_enabled,cod_limit,cod_approval_hours,cod_overdue_days,cod_serviceable_pincodes,
-            pickup_enabled,pickup_hold_hours,pickup_reminder_hours,prepaid_hold_minutes)
+            pickup_enabled,pickup_hold_hours,pickup_reminder_hours,prepaid_hold_minutes,shipping_provider)
         values(:company,:enabled,:shipping,:pickup,:credentials,:prepaid_enabled,:shipping_sac,:shipping_gst_rate,:cod_enabled,:cod_limit,
-            :cod_approval_hours,:cod_overdue_days,:cod_serviceable_pincodes,:pickup_enabled,:pickup_hold_hours,:pickup_reminder_hours,:prepaid_hold_minutes)
+            :cod_approval_hours,:cod_overdue_days,:cod_serviceable_pincodes,:pickup_enabled,:pickup_hold_hours,:pickup_reminder_hours,:prepaid_hold_minutes,:shipping_provider)
         on conflict(company_id) do update set
         enabled=excluded.enabled,shipping_paise=excluded.shipping_paise,pickup_location=excluded.pickup_location,
         credentials=excluded.credentials,prepaid_enabled=excluded.prepaid_enabled,shipping_sac=excluded.shipping_sac,
@@ -307,11 +313,11 @@ def save_settings(payload: CheckoutSettingsInput, identity=Depends(administrator
         cod_approval_hours=excluded.cod_approval_hours,cod_overdue_days=excluded.cod_overdue_days,
         cod_serviceable_pincodes=excluded.cod_serviceable_pincodes,pickup_enabled=excluded.pickup_enabled,
         pickup_hold_hours=excluded.pickup_hold_hours,pickup_reminder_hours=excluded.pickup_reminder_hours,
-        prepaid_hold_minutes=excluded.prepaid_hold_minutes,updated_at=now()"""),
+        prepaid_hold_minutes=excluded.prepaid_hold_minutes,shipping_provider=excluded.shipping_provider,updated_at=now()"""),
         {"company": identity["company_id"], "enabled": payload.enabled, "shipping": payload.shipping_paise,
          "pickup": payload.pickup_location, "credentials": encrypted, **policy})
     TenantAuth(db).audit(str(identity["company_id"]), str(identity["user_id"]), "CHECKOUT_SETTINGS_UPDATED",
-                         details={"enabled": payload.enabled})
+                         details={"enabled": payload.enabled, "shipping_provider": payload.shipping_provider})
     db.commit()
     return {"saved": True}
 

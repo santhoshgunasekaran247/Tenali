@@ -80,6 +80,9 @@ def captured_payment(credentials: dict, order_id: str, payment_id: str, amount: 
 
 
 def check_connection(provider: str, credentials: dict, pickup_location: str) -> str:
+    required = ("razorpay_key_id", "razorpay_key_secret") if provider == "razorpay" else ("shiprocket_email", "shiprocket_password")
+    if any(not credentials.get(key) for key in required):
+        raise HTTPException(409, f"Save {provider.title()} credentials before checking its connection.")
     if provider == "razorpay":
         response = provider_request("razorpay", "GET", "/orders?count=1", credentials)
         if response.get("entity") != "collection" or not isinstance(response.get("items"), list):

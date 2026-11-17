@@ -4,6 +4,7 @@ import { useAuth } from "../features/auth";
 
 type PortalLink = {
   label: string;
+  admin?: boolean;
   path?: string;
   status?: "live" | "coming";
 };
@@ -16,6 +17,7 @@ type WorkflowSection = {
 };
 
 const operationsLinks: (PortalLink & { module: string })[] = [
+  { label: "Online Orders", path: "/portal/checkout", status: "live", module: "orders", admin: true },
   { label: "Tenali AI", path: "/portal/ai", status: "live", module: "" },
   { label: "Contacts", path: "/portal/parties", status: "live", module: "parties" },
   { label: "Accounts", path: "/portal/accounts", status: "live", module: "accounts" },
@@ -38,7 +40,7 @@ const adminMaintenanceLinks: PortalLink[] = [
   { label: "Storefront Domains",path:"/portal/domains",status:"live" },
   { label: "Audit Events", path:"/portal/audit",status:"live" },
   { label: "Master Data", path: "/portal/masters", status: "live" },
-  { label: "Shopper Checkout & Orders", path: "/portal/checkout", status: "live" },
+  { label: "Payments & Delivery Setup", path: "/portal/checkout-setup", status: "live" },
 ];
 
 const workflowSections: WorkflowSection[] = [
@@ -167,7 +169,9 @@ export function PortalPage() {
   const canAccess = (path?: string) => {
     const base = path?.split(/[?#]/)[0];
     if (adminMaintenanceLinks.some(item => item.path === base)) return showAdminMaintenance;
-    const module = operationsLinks.find(item => item.path === base)?.module;
+    const operation = operationsLinks.find(item => item.path === base);
+    if (operation?.admin) return showAdminMaintenance;
+    const module = operation?.module;
     return !module || showAdminMaintenance || !auth.user?.modules || auth.user.modules.includes(module);
   };
   const storageKey = (section: WorkflowSection["key"]) => checkpointStorageKey(auth.user!.company_id, auth.user!.user_id, section);
@@ -279,7 +283,7 @@ export function PortalPage() {
             <span>Daily execution modules</span>
           </div>
           <div className="portal-grid">
-            {operationsLinks.filter((item) => !item.module || !auth.user?.modules || ["owner", "admin"].includes(auth.user.role) || auth.user.modules.includes(item.module)).map((item) => (
+            {operationsLinks.filter((item) => (!item.admin || showAdminMaintenance) && (!item.module || !auth.user?.modules || ["owner", "admin"].includes(auth.user.role) || auth.user.modules.includes(item.module))).map((item) => (
               <LinkTile key={item.label} item={item} />
             ))}
           </div>

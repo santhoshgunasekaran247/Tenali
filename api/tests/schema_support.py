@@ -24,6 +24,14 @@ def apply_product_minimum_migration(connection):
         migration["upgrade"]()
 
 
+def apply_self_shipping_migration(connection):
+    if "shipping_provider" in {column["name"] for column in inspect(connection).get_columns("checkout_settings")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "059_self_shipping.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def ensure_default_store(db, company_id: str, code: str = "MAIN") -> str:
     """Test companies are inserted directly, so give them the default store the migration gives real ones."""
     from sqlalchemy import text

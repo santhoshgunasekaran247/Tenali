@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 ORDER_COLUMNS = """id,status,items,address,subtotal_paise,shipping_paise,total_paise,provider_key_id,
     razorpay_order_id,razorpay_payment_id,shiprocket_order_id,shipment_id,awb,courier,shipping_error,created_at,paid_at,
     channel,payment_method,fulfilment_method,store_id,pickup_store_id,ship_from_store_id,invoice_id,advance_transaction_id,expires_at,
-    approved_at,dispatched_at,delivered_at,ready_at,collected_at,cancelled_at,cancellation_reason,review_reason"""
+    approved_at,dispatched_at,delivered_at,ready_at,collected_at,cancelled_at,cancellation_reason,review_reason,shipping_provider"""
 PREPAID_LIMIT_PAISE = 100_000_000
 
 
@@ -29,7 +29,7 @@ def settings_for(db, company_id: str, require_enabled=True):
 
 POLICY_COLUMNS = """company_id, enabled, shipping_paise, pickup_location, prepaid_enabled, shipping_sac, shipping_gst_rate, cod_enabled,
     cod_limit, cod_approval_hours, cod_overdue_days, cod_serviceable_pincodes, pickup_enabled, pickup_hold_hours,
-    pickup_reminder_hours, prepaid_hold_minutes"""
+    pickup_reminder_hours, prepaid_hold_minutes, shipping_provider"""
 
 
 def checkout_policy(db, company_id: str) -> dict:
@@ -169,7 +169,7 @@ def create_order(db, identity_db, company_id: str, shopper_id: str, payload):
               "key_id": None, "credentials": None, "pickup": settings["pickup_location"], "provider_id": None,
               "status": None, "payment": payload.payment_method, "fulfilment": payload.fulfilment_method,
               "store": str(quote["store"]["id"]), "pickup_store": str(quote["pickup"]["id"]) if quote["pickup"] else None,
-              "expires": None}
+              "expires": None, "shipping_provider": settings["shipping_provider"]}
     if payload.payment_method == "prepaid":
         credentials = providers.decrypt_credentials(company_id, settings["credentials"])
         provider_order = providers.provider_request("razorpay", "POST", "/orders", credentials,
@@ -185,9 +185,9 @@ def create_order(db, identity_db, company_id: str, shopper_id: str, payload):
         values.update(status="confirmed", expires=now + timedelta(hours=settings["pickup_hold_hours"]))
     row = db.execute(text("""insert into shop_orders(id,company_id,shopper_id,request_key,request_hash,items,address,
         subtotal_paise,shipping_paise,total_paise,provider_key_id,credentials,pickup_location,razorpay_order_id,
-        status,payment_method,fulfilment_method,store_id,pickup_store_id,expires_at)
+        status,payment_method,fulfilment_method,store_id,pickup_store_id,expires_at,shipping_provider)
         values(:id,:company,:shopper,:key,:hash,cast(:items as jsonb),cast(:address as jsonb),:subtotal,:shipping,:total,
-        :key_id,:credentials,:pickup,:provider_id,:status,:payment,:fulfilment,:store,:pickup_store,:expires) returning *"""),
+        :key_id,:credentials,:pickup,:provider_id,:status,:payment,:fulfilment,:store,:pickup_store,:expires,:shipping_provider) returning *"""),
         values).mappings().one()
     db.commit()
     identity_db.commit()
@@ -253,6 +253,8 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
                      {"company": company_id, "id": order_id}).mappings().first()
     if not row:
         raise HTTPException(404, "Order not found")
+    if row["shipping_provider"] != "shiprocket":
+        raise HTTPException(409, "This order uses self-shipping. Dispatch it with your own courier instead.")
     if row["status"] == "shipment_booked":
         return public_order(row)
     if row["fulfilment_method"] != "delivery" or row["status"] not in {"paid", "confirmed"} or (row["status"] == "confirmed" and row["payment_method"] != "cod"):
@@ -260,6 +262,8 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
     if (row["provider_key_id"] or "").startswith("rzp_test_"):
         raise HTTPException(409, "This is a Razorpay test payment. Test orders cannot create real Shiprocket shipments.")
     credentials = providers.decrypt_credentials(company_id, row["credentials"] or settings_for(identity_db, company_id, False)["credentials"])
+    if not credentials.get("shiprocket_email") or not credentials.get("shiprocket_password"):
+        raise HTTPException(409, "Save Shiprocket API-user credentials before booking this order.")
     shopper_email = identity_db.execute(text("select email from shopper_accounts where company_id=:company and id=:shopper"),
                                         {"company": company_id, "shopper": row["shopper_id"]}).scalar_one()
     address = row["address"]
@@ -279,8 +283,9 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
     if not isinstance(token, str) or not token:
         raise HTTPException(502, "Shiprocket authentication failed")
     # Persist uncertainty before the external side effect; never automatically duplicate a shipment.
-    db.execute(text("update shop_orders set status='shipping_pending',shipping_error=null where company_id=:company and id=:id"),
-               {"company": company_id, "id": order_id})
+    db.execute(text("update shop_orders set status='shipping_pending',shipping_error=null,credentials=:credentials where company_id=:company and id=:id"),
+               {"company": company_id, "id": order_id,
+                "credentials": providers.encrypt_credentials(company_id, credentials)})
     db.commit()
     try:
         shipment = providers.provider_request("shiprocket", "POST", "/orders/create/adhoc", {"token": token}, payload)
@@ -301,7 +306,7 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
 def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: int):
     row = db.execute(text("select * from shop_orders where company_id=:company and id=:id for update"),
                      {"company": company_id, "id": order_id}).mappings().first()
-    if not row or row["status"] not in {"shipping_pending", "shipment_booked"}:
+    if not row or row["shipping_provider"] != "shiprocket" or row["status"] not in {"shipping_pending", "shipment_booked"}:
         raise HTTPException(409, "No shipment is pending reconciliation")
     credentials = providers.decrypt_credentials(company_id, row["credentials"])
     token = providers.provider_request("shiprocket", "POST", "/auth/login", {}, {

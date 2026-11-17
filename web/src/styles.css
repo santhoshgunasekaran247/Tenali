@@ -1369,6 +1369,8 @@ body {
 .checkout-switch input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; margin-top: 3px; }
 .checkout-switch strong { display: block; margin-bottom: 6px; font-size: 14px; }
 .checkout-save-bar, .checkout-orders-heading, .checkout-order-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.checkout-admin-page .shop-account-content, .checkout-orders-section, .checkout-orders-heading > div, .checkout-orders-heading label { min-width: 0; max-width: 100%; }
+.checkout-orders-heading select { width: 100%; min-width: 0; max-width: 100%; }
 .checkout-save-bar > span, .checkout-fine-print { font-size: 12px; color: var(--site-muted); }
 .checkout-check-result { border-left: 3px solid var(--site-primary); margin-top: 16px; padding: 12px; background: var(--site-background); overflow-wrap: anywhere; font-size: 13px; }
 .checkout-check-result.failed { border-left-color: var(--site-accent); }

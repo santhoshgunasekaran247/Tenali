@@ -13,11 +13,94 @@ function load(file, overrides = {}) {
   const compiled = ts.transpileModule(source(file), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(compiled, { exports, require: name => overrides[name] || require(name) });
+  vm.runInNewContext(compiled, { exports, window: overrides.window, require: name => overrides[name] || require(name) });
   return exports;
 }
 const navigation = load("features/portalNavigation.ts");
 const Link = ({ to, children, ...props }) => React.createElement("a", { ...props, href: to }, children);
+
+test("online operations come first and provider setup has a separate admin menu", () => {
+  const owner = navigation.visiblePortalEntries({ role: "owner", modules: [] });
+  assert.equal(owner.filter(entry => entry.group === "Operations")[0].path, "/portal/checkout");
+  assert.equal(owner.find(entry => entry.path === "/portal/checkout-setup").group, "Admin");
+  const staff = navigation.visiblePortalEntries({ role: "staff", modules: ["orders"] });
+  assert.ok(!staff.some(entry => ["/portal/checkout", "/portal/checkout-setup"].includes(entry.path)));
+  assert.match(source("App.tsx"), /path="\/portal\/checkout-setup" element={<CheckoutAdminPage key="setup" setupOnly/);
+  assert.match(source("pages/PortalPage.tsx"), /const operationsLinks[^=]*= \[\s*{ label: "Online Orders"/);
+  assert.match(source("styles.css"), /\.checkout-orders-heading select \{ width: 100%; min-width: 0; max-width: 100%; \}/);
+});
+
+test("order management and provider setup render separately and retain administrator access", () => {
+  const render = (setupOnly, role = "owner", shipping = "shiprocket") => {
+    const { CheckoutAdminPage } = load("pages/CheckoutAdminPage.tsx", {
+      "../features/auth": { useAuth: () => ({ user: { role, company_name: "Example", tenant_slug: "example" } }) },
+      "../features/shop": { orderStatus: value => value },
+      "../components/OrderActions": { useStoresAndAccounts: () => ({ stores: [], accounts: [] }) },
+      "../components/DeleteTransactionDialog": { DeleteTransactionDialog: () => null },
+      "../components/Notifications": { FloatingAlert: () => null },
+      "react-router-dom": { Link },
+      react: { ...React, useState: initial => [
+        initial && typeof initial === "object" && "shipping_provider" in initial ? { ...initial, shipping_provider: shipping } : initial,
+        () => {},
+      ] },
+      window: { location: { origin: "https://example.test", hostname: "example.test", protocol: "https:" } },
+    });
+    return renderToStaticMarkup(React.createElement(CheckoutAdminPage, { setupOnly }));
+  };
+  const orders = render(false);
+  assert.match(orders, /<h1>Online Orders<\/h1>/);
+  assert.match(orders, /aria-pressed="true"[^>]*>[\s\S]*?Manage orders/);
+  assert.match(orders, /COD settlements/);
+  assert.match(orders, /Enquiries/);
+  assert.doesNotMatch(orders, /Connect Razorpay payments|Razorpay key secret|Setup &amp; activation/);
+  const setup = render(true);
+  assert.match(setup, /Payments &amp; Delivery Setup/);
+  assert.match(setup, /Connect Razorpay payments/);
+  assert.match(setup, /href="\/portal\/checkout"/);
+  assert.doesNotMatch(setup, /Loading orders|Shopper orders|aria-pressed/);
+  assert.match(render(true, "staff"), /Workspace administrator access is required/);
+  assert.match(render(false, "staff"), /Workspace administrator access is required/);
+  const self = render(true, "owner", "self");
+  assert.match(self, /No Shiprocket account is required/);
+  assert.match(self, /Flat shipping charge/);
+  assert.doesNotMatch(self, /Shiprocket API-user password|Shiprocket API-user email|Check Shiprocket connection/);
+});
+
+test("self-shipping dispatch sends optional manual tracking without calling a shipping provider", async () => {
+  const calls = [], errors = [];
+  const { OrderActions } = load("components/OrderActions.tsx", {
+    react: { ...React, useState: initial => [initial, () => {}], useEffect: () => {} },
+    "../features/shop": { paymentLabel: value => value, accountRequest: async (...args) => { calls.push(args); } },
+    "../api": {},
+  });
+  const order = { id: "order", status: "confirmed", payment_method: "cod", fulfilment_method: "delivery",
+    shipping_provider: "self", ship_from_store_id: "warehouse", courier: "Own courier", awb: "TRACK-1" };
+  const props = { order, stores: [{ id: "warehouse", holds_stock: true, is_active: true }], accounts: [],
+    locked: false, onDone: async () => {}, onError: message => errors.push(message) };
+  const element = OrderActions(props);
+  const find = node => {
+    if (!node || typeof node !== "object") return null;
+    if (node.type === "button" && node.props.children === "Dispatch & invoice") return node;
+    for (const child of React.Children.toArray(node.props?.children)) {
+      const found = find(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const button = find(element);
+  assert.ok(button);
+  button.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "/orders/order/dispatch");
+  assert.deepEqual(JSON.parse(calls[0][1].body), { ship_from_store_id: "warehouse", courier: "Own courier", awb: "TRACK-1" });
+  assert.deepEqual(errors, []);
+  const html = renderToStaticMarkup(element);
+  assert.match(html, /Self-shipping \/ own courier/);
+  assert.match(html, /Courier \/ delivery service \(optional\)/);
+  const providerHtml = renderToStaticMarkup(OrderActions({ ...props, order: { ...order, shipping_provider: "shiprocket" } }));
+  assert.doesNotMatch(providerHtml, /Courier \/ delivery service \(optional\)/);
+});
 
 test("desktop and mobile navigation share direct links and respect module/role access", () => {
   const owner = navigation.visiblePortalEntries({ role: "owner", modules: [] });

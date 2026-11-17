@@ -81,7 +81,8 @@ export default function App() {
         <Route path="/portal/company" element={<CompanySetupPage />} />
         <Route path="/portal/policies" element={<TenantPoliciesPage />} />
         <Route path="/portal/stores" element={<StoresPage />} />
-        <Route path="/portal/checkout" element={<CheckoutAdminPage />} />
+        <Route path="/portal/checkout" element={<CheckoutAdminPage key="orders" />} />
+        <Route path="/portal/checkout-setup" element={<CheckoutAdminPage key="setup" setupOnly />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />

@@ -81,6 +81,8 @@ class DispatchInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     ship_from_store_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=500)
+    courier: str | None = Field(default=None, min_length=1, max_length=80)
+    awb: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class CollectInput(BaseModel):
@@ -129,6 +131,7 @@ class PaymentConfirmation(BaseModel):
 class CheckoutSettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     enabled: bool = False
+    shipping_provider: Literal["shiprocket", "self"] = "shiprocket"
     shipping_paise: int = Field(ge=0, le=1_000_000, strict=True)
     pickup_location: str = Field(default="", max_length=100)
     prepaid_enabled: bool = True

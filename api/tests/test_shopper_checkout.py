@@ -452,6 +452,48 @@ class ShopperCheckoutTests(TenantDatabaseCase):
             self.assertEqual(tuple(inflows), (1, Decimal("105.00")))
             self.assertEqual(db.execute(text("select collection_status from invoices where id=:id"), {"id": invoice_id}).scalar_one(), "SETTLED")
 
+    def test_self_shipping_prepaid_orders_keep_mode_and_dispatch_without_shiprocket(self):
+        setup = {key: value for key, value in CREDENTIALS.items() if key.startswith("razorpay_")}
+        setup.update(enabled=True, shipping_provider="self", shipping_paise=500)
+        configured = self.client.put("/checkout-admin/settings", json=setup, headers=self.staff_headers())
+        self.assertEqual(configured.status_code, 200, configured.text)
+        # Configure the ordinary online warehouse and clearing account through the existing fixture.
+        self.online_store()
+        product_id = self.product()
+        self.create_shopper()
+        order, _ = self.checkout(product_id)
+        self.assertEqual(order["shipping_provider"], "self")
+        self.assertEqual(self.client.post(f"/checkout-admin/orders/{order['id']}/ship",
+            json={"weight": 1, "length": 10, "width": 10, "height": 10},
+            headers=self.staff_headers()).status_code, 409)
+        paid = self.client.post(f"/shop/orders/{order['id']}/confirm",
+                                json=self.confirmation(order), headers=self.shop_headers())
+        self.assertEqual(paid.status_code, 200, paid.text)
+        changed = self.client.put("/checkout-admin/settings",
+            json={**CREDENTIALS, "enabled": True, "shipping_provider": "shiprocket", "shipping_paise": 500,
+                  "pickup_location": "Primary"}, headers=self.staff_headers())
+        self.assertEqual(changed.status_code, 200, changed.text)
+        invoice_id = None
+        for _ in range(2):
+            dispatched = self.client.post(f"/checkout-admin/orders/{order['id']}/dispatch",
+                json={"courier": "Own delivery", "awb": "SELF-123"}, headers=self.staff_headers())
+            self.assertEqual(dispatched.status_code, 200, dispatched.text)
+            self.assertEqual(dispatched.json()["shipping_provider"], "self")
+            self.assertEqual(dispatched.json()["awb"], "SELF-123")
+            if invoice_id:
+                self.assertEqual(dispatched.json()["invoice_id"], invoice_id)
+            invoice_id = dispatched.json()["invoice_id"]
+        delivered = self.client.post(f"/checkout-admin/orders/{order['id']}/delivered", headers=self.staff_headers())
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+        self.assertEqual(delivered.json()["status"], "delivered")
+        self.assertFalse(any(call[0] == "shiprocket" for call in self.provider_calls))
+        with self.factory() as db:
+            quantity = db.execute(text("select sum(quantity) from stock_balances where company_id=:company and product_id=:product"),
+                                  {"company": self.company_id, "product": product_id}).scalar_one()
+            self.assertEqual(quantity, 1)
+            self.assertEqual(db.execute(text("select count(*) from stock_movements where reference_type='invoice' and reference_id=:id"),
+                                        {"id": invoice_id}).scalar_one(), 1)
+
     def test_shopper_orders_stock_reservations_and_webhooks_are_scoped(self):
         self.configure()
         product_id = self.product()

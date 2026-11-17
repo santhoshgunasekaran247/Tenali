@@ -11,6 +11,7 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
   const [collect, setCollect] = useState({ account_id: "", payment_mode: "cash" });
   const [cancel, setCancel] = useState({ reason: "", refund_account_id: "" });
   const [decline, setDecline] = useState("");
+  const [tracking, setTracking] = useState({ courier: order.courier || "", awb: order.awb || "" });
   const [busy, setBusy] = useState(false);
   const stockStores = stores.filter(store => store.holds_stock && store.is_active);
   const online = stores.find(store => store.id === order.store_id);
@@ -25,7 +26,7 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
   const storeName = (id: string | null) => stores.find(store => store.id === id)?.code || "";
   const prepaidReady = order.payment_method !== "prepaid" || !!order.advance_transaction_id;
   return <div className="order-actions">
-    <p className="checkout-fine-print">{paymentLabel(order.payment_method)} · {order.fulfilment_method === "pickup" ? `Pickup at ${storeName(order.pickup_store_id)}` : "Delivery"}{order.ship_from_store_id ? ` · Shipped from ${storeName(order.ship_from_store_id)}` : ""}{order.invoice_id ? " · Invoiced" : ""}</p>
+    <p className="checkout-fine-print">{paymentLabel(order.payment_method)} · {order.fulfilment_method === "pickup" ? `Pickup at ${storeName(order.pickup_store_id)}` : order.shipping_provider === "self" ? "Self-shipping / own courier" : "Shiprocket delivery"}{order.ship_from_store_id ? ` · Shipped from ${storeName(order.ship_from_store_id)}` : ""}{order.invoice_id ? " · Invoiced" : ""}</p>
     {order.review_reason ? <p role="alert" className="checkout-notice">{order.review_reason}</p> : null}
     {order.status === "cod_requested" ? <div className="shop-actions">
       <button className="btn" disabled={disabled} onClick={() => void run("approve-cod", {}, "Cash-on-delivery order approved; stock is now held at the warehouse.")}>Approve COD</button>
@@ -35,7 +36,14 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
     {order.payment_method === "prepaid" && order.razorpay_payment_id && order.review_reason?.startsWith("Advance not posted") ? <button className="btn light" disabled={disabled} onClick={() => void run("post-advance", {}, "Online payment advance posted.")}>Retry posting payment advance</button> : null}
     {["paid", "confirmed", "shipment_booked", "shipping_pending", "fulfilment_review"].includes(order.status) && order.payment_method !== "pay_at_pickup" && !order.invoice_id ? <div className="shop-actions">
       <label>Ship from<select value={shipFrom} onChange={event => setShipFrom(event.target.value)}>{stockStores.map(store => <option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>
-      <button className="btn" disabled={disabled || !shipFrom || !prepaidReady} onClick={() => void run("dispatch", { ship_from_store_id: shipFrom }, "Dispatched: stock booked and invoice created.")}>Dispatch &amp; invoice</button>
+      {order.fulfilment_method === "delivery" && order.shipping_provider === "self" ? <>
+        <label>Courier / delivery service (optional)<input maxLength={80} placeholder="Own delivery or courier name" value={tracking.courier} onChange={event => setTracking({ ...tracking, courier: event.target.value })} /></label>
+        <label>Tracking / AWB number (optional)<input maxLength={120} value={tracking.awb} onChange={event => setTracking({ ...tracking, awb: event.target.value })} /></label>
+      </> : null}
+      <button className="btn" disabled={disabled || !shipFrom || !prepaidReady} onClick={() => void run("dispatch", {
+        ship_from_store_id: shipFrom,
+        ...(order.fulfilment_method === "delivery" && order.shipping_provider === "self" ? { courier: tracking.courier.trim() || null, awb: tracking.awb.trim() || null } : {}),
+      }, "Dispatched: stock booked and invoice created.")}>Dispatch &amp; invoice</button>
     </div> : null}
     {order.fulfilment_method === "pickup" && ((order.payment_method === "prepaid" && order.status === "dispatched") || (order.payment_method === "pay_at_pickup" && order.status === "confirmed")) ? <button className="btn light" disabled={disabled} onClick={() => void run("ready", {}, "Marked ready for pickup.")}>Ready for pickup</button> : null}
     {order.fulfilment_method === "pickup" && ["confirmed", "ready_for_pickup", "dispatched"].includes(order.status) ? <div className="shop-actions">
@@ -52,6 +60,7 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
       <button className="btn light" disabled={disabled || !cancel.reason.trim()} onClick={() => void run("cancel", { reason: cancel.reason, refund_account_id: cancel.refund_account_id || null }, "Order cancelled.")}>Confirm cancellation</button>
     </div></details> : null}
     {order.invoice_id ? <p className="checkout-fine-print">To reverse an invoiced order, reverse its receipt and cancel the invoice from Billing; stock returns to the store that shipped it.</p> : null}
+    {order.shipping_provider === "self" && (order.courier || order.awb) ? <p className="checkout-fine-print">Delivery: {order.courier || "Own courier"}{order.awb ? ` · Tracking: ${order.awb}` : ""}</p> : null}
   </div>;
 }
 
@@ -64,4 +73,3 @@ export function useStoresAndAccounts() {
   }, []);
   return { stores, accounts };
 }
-

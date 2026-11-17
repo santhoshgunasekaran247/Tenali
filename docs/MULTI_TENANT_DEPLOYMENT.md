@@ -30,18 +30,36 @@ The storefront's **Shopper Account** opens `/account`, with store-specific signu
 (`/login`) and platform operators (`/platform`). A shopper account in one workspace
 cannot access another workspace or any operational API, even with the same email.
 
-Owners/admins open **Shopper Checkout & Orders** at `/portal/checkout`, now presented
-as **Payments, Delivery & Shopper Orders** with **Setup & activation** and **Manage
-orders** views. The guided setup covers account/KYC links, API keys, webhook delivery,
+Owners/admins open **Online Orders**, listed first under **Operations**, at
+`/portal/checkout`. It opens **Manage orders**, with **COD settlements** and
+**Enquiries** alongside it. Provider configuration is a separate **Admin → Payments
+& Delivery Setup** menu at `/portal/checkout-setup`; it is not an orders tab.
+Both pages retain administrator-only access. The guided setup covers account/KYC links, API keys, webhook delivery,
 pickup configuration, testing and the separate storefront visibility switch.
-Checkout is disabled until configured. Each workspace supplies its own Razorpay key
-ID/secret/webhook secret and dedicated Shiprocket API-user email/password. Credentials
+Checkout is disabled until configured. Each workspace chooses **Self-shipping / own
+courier** or **Shiprocket**. Existing settings and orders default to Shiprocket.
+The selected method is snapshotted when an order is created; changing setup affects
+new orders only. Apply migration `059_self_shipping` before deploying this version.
+
+Self-shipping requires no Shiprocket account or credentials. Arrange delivery
+outside Tenali; use **Dispatch & invoice** with optional courier and tracking/AWB
+details, then **Mark delivered**. Tracking is shown to the shopper. COD receipts
+still use **COD settlements** (enter your own delivery/courier name and receipt
+reference); delivery does not mark the invoice paid. The existing dispatch
+stock, invoice, payment-advance and retry protections remain in effect. Self-shipped
+orders cannot invoke Shiprocket booking or recovery APIs.
+
+Online prepaid payment requires the workspace's own Razorpay key ID, secret and
+webhook secret regardless of shipping method. Shiprocket API-user credentials are
+required for prepaid Shiprocket setup, not for self-shipping. COD/pickup-only
+checkout can run without payment credentials; connecting Shiprocket later requires
+its API-user credentials before booking. Credentials
 are encrypted with Fernet using a server-only `TENALI_CREDENTIAL_KEY`, bound to the
 company, never returned by settings APIs, and snapshotted per order. Do not log request
 bodies for provider settings or authentication. Use HTTPS even for administrator setup.
 
-On the first save, all provider credentials are required. On later saves, leave
-credential fields blank to keep their saved values. Replace the Razorpay key ID and
+On later saves, leave credential fields blank to keep their saved values. Switching
+to self-shipping retains saved credentials for existing orders. Replace the Razorpay key ID and
 secret together, or the Shiprocket API email/password together; a webhook secret can
 be replaced independently. Changing shipping or switching Add to Cart off does not
 require re-entering secrets. The UI accepts shipping in **rupees** and converts to

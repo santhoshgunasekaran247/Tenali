@@ -19,6 +19,7 @@ export type ShopOrder = {
   channel: "web" | "whatsapp";
   payment_method: PaymentMethod;
   fulfilment_method: FulfilmentMethod;
+  shipping_provider: "shiprocket" | "self";
   store_id: string | null;
   pickup_store_id: string | null;
   ship_from_store_id: string | null;

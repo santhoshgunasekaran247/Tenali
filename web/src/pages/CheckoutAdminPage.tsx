@@ -1,17 +1,17 @@
 import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, Settings2, ShoppingBag, Truck } from "lucide-react";
+import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, ShoppingBag, Truck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, orderStatus, paymentLabel, rupees, type ShopOrder } from "../features/shop";
 import { OrderActions, useStoresAndAccounts } from "../components/OrderActions";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
 
-type Policy = { prepaid_enabled: boolean; shipping_sac: string; shipping_gst_rate: number | string; cod_enabled: boolean; cod_limit: number | string; cod_approval_hours: number;
+type Policy = { shipping_provider: "shiprocket" | "self"; prepaid_enabled: boolean; shipping_sac: string; shipping_gst_rate: number | string; cod_enabled: boolean; cod_limit: number | string; cod_approval_hours: number;
   cod_overdue_days: number; cod_serviceable_pincodes: string[]; pickup_enabled: boolean; pickup_hold_hours: number; pickup_reminder_hours: number; prepaid_hold_minutes: number };
-type Settings = { configured: boolean; enabled?: boolean; shipping_paise?: number; pickup_location?: string; payment_mode: "test" | "live" | null; credentials_saved?: boolean } & Partial<Policy>;
+type Settings = { configured: boolean; enabled?: boolean; shipping_paise?: number; pickup_location?: string; payment_mode: "test" | "live" | null; credentials_saved?: boolean; razorpay_saved?: boolean; shiprocket_saved?: boolean } & Partial<Policy>;
 const defaultPolicy: Policy = { prepaid_enabled: true, shipping_sac: "9968", shipping_gst_rate: 18, cod_enabled: false, cod_limit: 5000, cod_approval_hours: 24, cod_overdue_days: 15,
-  cod_serviceable_pincodes: [], pickup_enabled: false, pickup_hold_hours: 72, pickup_reminder_hours: 48, prepaid_hold_minutes: 20 };
+  cod_serviceable_pincodes: [], pickup_enabled: false, pickup_hold_hours: 72, pickup_reminder_hours: 48, prepaid_hold_minutes: 20, shipping_provider: "shiprocket" };
 type CodRow = { order_id: string; status: string; dispatched_at: string | null; invoice_number: string; total: number; amount_received: number; outstanding: number; days_since_dispatch: number | null; overdue: boolean };
 type Settlement = { id: string; courier: string; settlement_reference: string; settlement_date: string; expected_amount: number; received_amount: number; shortfall_reason: string | null };
 type Enquiry = { id: string; reference: string; product_name: string; variant_name: string | null; quantity: number; shopper_name: string; shopper_phone: string; message: string | null; status: string; store_code: string | null; created_at: string; invoice_id: string | null };
@@ -31,10 +31,10 @@ function ProviderLink({ href, children }: { href: string; children: React.ReactN
   return <a className="checkout-provider-link" href={href} target="_blank" rel="noopener noreferrer">{children}<ExternalLink size={14} aria-hidden="true" /><span className="sr-only"> (opens in a new tab)</span></a>;
 }
 
-export function CheckoutAdminPage() {
+export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }) {
   const { user } = useAuth();
   const allowed = user?.role === "owner" || user?.role === "admin";
-  const [tab, setTab] = useState<"setup" | "orders" | "cod" | "enquiries">("setup");
+  const [tab, setTab] = useState<"orders" | "cod" | "enquiries">("orders");
   const { stores, accounts } = useStoresAndAccounts();
   const [policy, setPolicy] = useState<Policy>(defaultPolicy);
   const [pincodeText, setPincodeText] = useState("");
@@ -69,12 +69,12 @@ export function CheckoutAdminPage() {
   const refreshCod = async () => setCod(await accountRequest("/cod", undefined, "checkout-admin"));
   const refreshEnquiries = async () => setEnquiries((await accountRequest<{ items: Enquiry[] }>("/enquiries", undefined, "checkout-admin")).items);
   useEffect(() => {
-    if (!allowed) return;
+    if (!allowed || setupOnly) return;
     if (tab === "cod") void refreshCod().catch(failure => setError(String(failure)));
     if (tab === "enquiries") void refreshEnquiries().catch(failure => setError(String(failure)));
-  }, [allowed, tab, user?.company_id]);
+  }, [allowed, setupOnly, tab, user?.company_id]);
   useEffect(() => {
-    if (!allowed) return;
+    if (!allowed || !setupOnly) return;
     let active = true;
     void accountRequest<Settings>("/settings", undefined, "checkout-admin").then(result => {
       if (!active) return;
@@ -85,13 +85,13 @@ export function CheckoutAdminPage() {
       setLoaded(true);
     }).catch(failure => { if (active) setError(String(failure)); });
     return () => { active = false; };
-  }, [allowed, user?.company_id]);
+  }, [allowed, setupOnly, user?.company_id]);
   useEffect(() => {
-    if (allowed && tab === "orders") {
+    if (allowed && !setupOnly && tab === "orders") {
       setOrdersLoaded(false);
       void refreshOrders().catch(failure => setError(String(failure)));
     }
-  }, [allowed, tab, offset, statusFilter, user?.company_id]);
+  }, [allowed, setupOnly, tab, offset, statusFilter, user?.company_id]);
   const edit = (patch: Partial<typeof form>) => {
     setForm(previous => ({ ...previous, ...patch })); setDirty(true); setChecks({}); setMessage("");
   };
@@ -100,7 +100,9 @@ export function CheckoutAdminPage() {
     try {
       if (!/^\d+(?:\.\d{1,2})?$/.test(form.shipping_rupees)) throw new Error("Enter shipping in rupees with at most two decimal places.");
       const { shipping_rupees, ...fields } = form;
-      const credentials = Object.fromEntries(Object.entries(emptySecrets).filter(([key]) => !!fields[key as keyof typeof emptySecrets]).map(([key]) => [key, fields[key as keyof typeof emptySecrets]]));
+      const credentials = Object.fromEntries(Object.entries(emptySecrets).filter(([key]) =>
+        (policy.shipping_provider === "shiprocket" || !key.startsWith("shiprocket_")) && !!fields[key as keyof typeof emptySecrets])
+        .map(([key]) => [key, fields[key as keyof typeof emptySecrets]]));
       const shipping_paise = Math.round(Number(shipping_rupees) * 100);
       const pincodes = pincodeText.split(/[\s,]+/).map(value => value.trim()).filter(Boolean);
       await accountRequest("/settings", { method: "PUT", body: JSON.stringify({ enabled: form.enabled, pickup_location: form.pickup_location, shipping_paise, ...credentials, ...policy,
@@ -132,21 +134,24 @@ export function CheckoutAdminPage() {
   if (!allowed) return <main className="loading">Workspace administrator access is required.</main>;
   const statusLabel = !loaded ? "Loading setup" : !settings.configured ? "Not set up" : !settings.enabled ? "Online purchase hidden" : settings.payment_mode === "test" ? "Test checkout visible - no real payments" : "Live-key checkout visible - approval not verified";
   return <main className="shop-account-page checkout-admin-page">
-    <header className="shop-account-heading"><Link to="/portal">Back to Workspace</Link><h1>Payments, Delivery &amp; Shopper Orders</h1><p>Set up your store once. Take online payments, or keep selling through WhatsApp enquiries.</p><span className="checkout-workspace-label">{user?.company_name} only · Each workspace uses its own provider accounts</span></header>
+    <header className="shop-account-heading"><Link to="/portal">Back to Workspace</Link><h1>{setupOnly ? "Payments & Delivery Setup" : "Online Orders"}</h1>
+      <p>{setupOnly ? "Connect payment and delivery providers, configure checkout and activate online purchases." : "Manage shopper orders, courier COD settlements and customer enquiries."}</p>
+      <span className="checkout-workspace-label">{user?.company_name} only · {setupOnly ? "Each workspace uses its own provider accounts" : "Orders and enquiries for this workspace"}</span></header>
     <div className="shop-account-content">
-      <nav className="checkout-page-nav" aria-label="Checkout administration">
-        <button type="button" aria-pressed={tab === "setup"} onClick={() => setTab("setup")}><Settings2 size={18} aria-hidden="true" />Setup &amp; activation</button>
+      <nav className="checkout-page-nav" aria-label={setupOnly ? "Payment and delivery setup" : "Online order operations"}>
+        {setupOnly ? <Link to="/portal/checkout"><Package size={18} aria-hidden="true" />Open online orders</Link> : <>
         <button type="button" aria-pressed={tab === "orders"} onClick={() => setTab("orders")}><Package size={18} aria-hidden="true" />Manage orders</button>
         <button type="button" aria-pressed={tab === "cod"} onClick={() => setTab("cod")}><CreditCard size={18} aria-hidden="true" />COD settlements</button>
         <button type="button" aria-pressed={tab === "enquiries"} onClick={() => setTab("enquiries")}><MessageCircle size={18} aria-hidden="true" />Enquiries</button>
+        </>}
         <Link to="/">View storefront<ExternalLink size={14} aria-hidden="true" /></Link>
       </nav>
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
-      {tab === "setup" ? <>
+      {setupOnly ? <>
         <section className="checkout-overview" aria-label="Store checkout status">
-          <div><p className="checkout-kicker">Your store status</p><h2>{statusLabel}</h2><p>To accept real orders: finish your Razorpay and Shiprocket account setup, save their login details here, test a payment, then turn on Add to Cart below. Turning it on only shows the shopping button; it cannot activate your payment or shipping account.</p></div>
-          <ol className="checkout-milestones"><li><CheckCircle2 size={18} aria-hidden="true" />Setup: {settings.configured ? "saved" : "required"}</li><li><CreditCard size={18} aria-hidden="true" />Razorpay: {settings.payment_mode ? `${settings.payment_mode} keys saved` : "not configured"}</li><li><Truck size={18} aria-hidden="true" />Next: open Razorpay and Shiprocket to finish any pending business-document or pickup-address checks</li></ol>
+          <div><p className="checkout-kicker">Your store status</p><h2>{statusLabel}</h2><p>Choose your payment and shipping methods, save the required credentials and test before turning on Add to Cart. Self-shipping uses your own delivery team or courier; Shiprocket is optional. Turning on checkout does not activate a provider account.</p></div>
+          <ol className="checkout-milestones"><li><CheckCircle2 size={18} aria-hidden="true" />Setup: {settings.configured ? "saved" : "required"}</li><li><CreditCard size={18} aria-hidden="true" />Razorpay: {settings.payment_mode ? `${settings.payment_mode} keys saved` : "not configured"}</li><li><Truck size={18} aria-hidden="true" />Delivery: {policy.shipping_provider === "self" ? "Self-shipping / own courier" : "Shiprocket"}</li></ol>
         </section>
         <section className="checkout-choice-guide" aria-labelledby="selling-options"><h2 id="selling-options">WhatsApp enquiry or online purchase?</h2>
           <div className="checkout-guide-grid">
@@ -162,27 +167,33 @@ export function CheckoutAdminPage() {
               <p><Link to="/portal/policies">Draft, review and publish this store&apos;s policies</Link> before website review. Use the store&apos;s public contact, privacy, terms, shipping, payment and cancellation/refund/returns pages, not unpublished drafts or Tenali platform policies.</p>
               <ol className="checkout-instructions"><li>Create your own Razorpay account. Complete the business/PAN, authorised-person and bank details requested in its onboarding flow. Submit documents directly to Razorpay, not to Tenali.</li><li>Add your public storefront website for review, including contact, pricing, terms, privacy and refund policies. Provide a dedicated shopper test login if reviewers need it; never your staff/admin login. These policy pages are not created by this setup form.</li><li>In <strong>Account &amp; Settings → API Keys</strong>, choose <strong>Test Mode</strong> first and generate a matching key ID and secret. Test keys do not move real money.</li><li>In Razorpay&apos;s payment-capture settings, choose automatic capture. This tells Razorpay to collect a successful payment without you having to approve each one manually. Tenali only treats collected payments as paid orders.</li><li>In Razorpay&apos;s webhook settings, click <strong>Add webhook</strong>. A webhook is a message Razorpay sends to Tenali when a payment succeeds, even if the shopper closes their browser. Paste the URL shown below, select the event named <strong>payment.captured</strong>, and create a private password of at least 16 characters. Paste that same password into <strong>Webhook secret</strong> below. It is not your Razorpay login password or API secret. Set this up in Test Mode while testing, then repeat in Live Mode when you switch to real payments.</li></ol>
               <div className="company-fields">
-                <label>Razorpay key ID<input required={!settings.configured} placeholder={settings.configured ? "Saved - enter only to replace key pair" : "rzp_test_... or rzp_live_..."} autoComplete="off" maxLength={100} value={form.razorpay_key_id} onChange={event => edit({ razorpay_key_id: event.target.value })} /><small>The prefix tells Tenali whether this is Test or Live Mode.</small></label>
-                <label>Razorpay key secret<input required={!settings.configured} type="password" autoComplete="new-password" maxLength={256} placeholder={settings.configured ? "Saved securely - leave blank to keep" : "Paste the secret generated with this key ID"} value={form.razorpay_key_secret} onChange={event => edit({ razorpay_key_secret: event.target.value })} /><small>Replace key ID and secret together. Never share them in chat.</small></label>
-                <label>Webhook secret<input required={!settings.configured} type="password" minLength={16} maxLength={256} autoComplete="new-password" placeholder={settings.configured ? "Saved securely - leave blank to keep" : "Use the same secret in Razorpay and here"} value={form.razorpay_webhook_secret} onChange={event => edit({ razorpay_webhook_secret: event.target.value })} /></label>
+                <label>Razorpay key ID<input required={policy.prepaid_enabled && !settings.razorpay_saved} placeholder={settings.razorpay_saved ? "Saved - enter only to replace key pair" : "rzp_test_... or rzp_live_..."} autoComplete="off" maxLength={100} value={form.razorpay_key_id} onChange={event => edit({ razorpay_key_id: event.target.value })} /><small>The prefix tells Tenali whether this is Test or Live Mode.</small></label>
+                <label>Razorpay key secret<input required={policy.prepaid_enabled && !settings.razorpay_saved} type="password" autoComplete="new-password" maxLength={256} placeholder={settings.razorpay_saved ? "Saved securely - leave blank to keep" : "Paste the secret generated with this key ID"} value={form.razorpay_key_secret} onChange={event => edit({ razorpay_key_secret: event.target.value })} /><small>Replace key ID and secret together. Never share them in chat.</small></label>
+                <label>Webhook secret<input required={policy.prepaid_enabled && !settings.razorpay_saved} type="password" minLength={16} maxLength={256} autoComplete="new-password" placeholder={settings.razorpay_saved ? "Saved securely - leave blank to keep" : "Use the same secret in Razorpay and here"} value={form.razorpay_webhook_secret} onChange={event => edit({ razorpay_webhook_secret: event.target.value })} /></label>
                 <div className="checkout-webhook"><strong>Webhook URL to enter in Razorpay</strong><code>{webhookUrl}</code><small>Select payment.captured. A connection check does not test webhook delivery.</small></div>
               </div>
               {localWebhook ? <p className="checkout-notice">This is a local or non-HTTPS address. Razorpay cannot deliver a webhook to localhost. Use your deployed public HTTPS workspace domain (or a controlled HTTPS development tunnel) for webhook testing. Browser payment verification still runs, but it does not prove webhook delivery.</p> : null}
             </section>
             <section className="checkout-step" aria-labelledby="shipping-setup">
-              <div className="checkout-step-heading"><span className="checkout-step-number">2</span><div><h2 id="shipping-setup">Connect Shiprocket delivery</h2><p>Use a dedicated API user and the exact pickup-location name from your Shiprocket account.</p></div></div>
+              <div className="checkout-step-heading"><span className="checkout-step-number">2</span><div><h2 id="shipping-setup">Choose how you ship</h2><p>Use your own delivery team or courier, or connect Shiprocket.</p></div></div>
+              <label>Shipping method<select value={policy.shipping_provider} onChange={event => {
+                setPolicy({ ...policy, shipping_provider: event.target.value as Policy["shipping_provider"] }); setDirty(true); setChecks({});
+              }}><option value="self">Self-shipping / own courier</option><option value="shiprocket">Shiprocket</option></select></label>
+              <p className="checkout-fine-print">Applies to new orders only. Existing orders keep their original shipping method.</p>
+              {policy.shipping_provider === "self" ? <p className="checkout-notice">No Shiprocket account is required. Arrange delivery yourself, enter optional courier and tracking details when dispatching, then mark the order delivered. COD receipts are recorded under COD settlements.</p> : <>
               <div className="checkout-provider-links"><ProviderLink href={providerLinks.shiprocket}>Open Shiprocket dashboard</ProviderLink><ProviderLink href={providerLinks.shiprocketKyc}>Shiprocket KYC requirements</ProviderLink><ProviderLink href={providerLinks.shiprocketApi}>Create an API user</ProviderLink></div>
               <ol className="checkout-instructions"><li>Register with Shiprocket, complete the KYC for your business type and resolve any dashboard rejection or pending request.</li><li>Add and verify your pickup address/phone as required. Check wallet funds and courier serviceability for the deliveries you plan to accept.</li><li>Go to <strong>Settings → API → Create an API User</strong>. Use an email different from your main Shiprocket login, with permissions for pickup details, orders and shipments.</li><li>Paste that API user&apos;s credentials below, not your personal Shiprocket dashboard password. Copy the pickup-location name exactly, for example Primary.</li></ol>
               <div className="company-fields">
-                <label>Shiprocket API-user email<input required={!settings.configured} type="email" autoComplete="off" maxLength={254} placeholder={settings.configured ? "Saved - enter only to replace login pair" : "Dedicated API user email"} value={form.shiprocket_email} onChange={event => edit({ shiprocket_email: event.target.value })} /></label>
-                <label>Shiprocket API-user password<input required={!settings.configured} type="password" autoComplete="new-password" maxLength={256} placeholder={settings.configured ? "Saved securely - leave blank to keep" : "API user password, not dashboard password"} value={form.shiprocket_password} onChange={event => edit({ shiprocket_password: event.target.value })} /><small>Replace email and password together.</small></label>
+                <label>Shiprocket API-user email<input required={!settings.shiprocket_saved && policy.prepaid_enabled} type="email" autoComplete="off" maxLength={254} placeholder={settings.shiprocket_saved ? "Saved - enter only to replace login pair" : "Dedicated API user email"} value={form.shiprocket_email} onChange={event => edit({ shiprocket_email: event.target.value })} /></label>
+                <label>Shiprocket API-user password<input required={!settings.shiprocket_saved && policy.prepaid_enabled} type="password" autoComplete="new-password" maxLength={256} placeholder={settings.shiprocket_saved ? "Saved securely - leave blank to keep" : "API user password, not dashboard password"} value={form.shiprocket_password} onChange={event => edit({ shiprocket_password: event.target.value })} /><small>Replace email and password together.</small></label>
                 <label>Pickup-location name<input required maxLength={100} placeholder="Exact name from Shiprocket, e.g. Primary" value={form.pickup_location} onChange={event => edit({ pickup_location: event.target.value })} /></label>
-                <label>Flat shipping charge (INR)<input type="number" required min={0} max={10000} step="0.01" value={form.shipping_rupees} onChange={event => edit({ shipping_rupees: event.target.value })} /><small>0 means free shipping. This is your customer-facing flat India rate, not a live courier quote. Confirm it covers your delivery areas and costs.</small></label>
               </div>
+              </>}
+              <label>Flat shipping charge (INR)<input type="number" required min={0} max={10000} step="0.01" value={form.shipping_rupees} onChange={event => edit({ shipping_rupees: event.target.value })} /><small>0 means free shipping. This is your customer-facing flat India rate, not a live courier quote. Confirm it covers your delivery areas and costs.</small></label>
             </section>
             <section className="checkout-step" aria-labelledby="storefront-setup">
               <div className="checkout-step-heading"><span className="checkout-step-number">3</span><div><h2 id="storefront-setup">Save and choose what shoppers see</h2><p>Keep online checkout off while preparing your accounts. WhatsApp enquiries can continue.</p></div></div>
-              <label className="checkout-switch"><input type="checkbox" checked={form.enabled} onChange={event => edit({ enabled: event.target.checked })} /><span><strong>Show Add to Cart on this workspace&apos;s storefront</strong><small>Test keys let you practise without real money. Live keys can charge shoppers. Before accepting real orders, complete the account checks in Razorpay and Shiprocket.</small></span></label>
+              <label className="checkout-switch"><input type="checkbox" checked={form.enabled} onChange={event => edit({ enabled: event.target.checked })} /><span><strong>Show Add to Cart on this workspace&apos;s storefront</strong><small>Test keys let you practise without real money. Live keys can charge shoppers. Complete checks for the providers you use and arrange delivery coverage before accepting real orders.</small></span></label>
               <div className="company-fields">
                 <label className="ops-toggle"><input type="checkbox" checked={policy.prepaid_enabled} onChange={event => { setPolicy({ ...policy, prepaid_enabled: event.target.checked }); setDirty(true); }} />Online payment (Razorpay)</label>
                 <label className="ops-toggle"><input type="checkbox" checked={policy.cod_enabled} onChange={event => { setPolicy({ ...policy, cod_enabled: event.target.checked }); setDirty(true); }} />Cash on delivery (requested, then approved by you)</label>
@@ -199,32 +210,36 @@ export function CheckoutAdminPage() {
               </div>
               <p className="checkout-fine-print">Stock leaves a store only when an order is dispatched or collected; before that it is held. Invoices for online orders use the online store&apos;s series; pay-at-pickup invoices use the shop&apos;s own series. Set up stores and the Razorpay clearing account under Stores &amp; Warehouses.</p>
               <p>Use numeric product prices (including applicable taxes), active variants and owned stock. Shoppers must log in to this store before paying. Quote-only or unavailable items cannot be purchased.</p>
-              <div className="checkout-save-bar"><button className="btn" disabled={locked || !loaded}>{busy ? "Saving..." : "Save workspace setup"}</button><span>{dirty ? "Unsaved changes - save before checking connections." : settings.configured ? "Blank credential fields keep the saved values." : "First save requires both provider logins and the webhook secret."}</span></div>
+              <div className="checkout-save-bar"><button className="btn" disabled={locked || !loaded}>{busy ? "Saving..." : "Save workspace setup"}</button><span>{dirty ? "Unsaved changes - save before checking connections." : settings.configured ? "Blank credential fields keep the saved values." : "Enter credentials only for the payment and shipping providers you enable."}</span></div>
               <p className="checkout-fine-print">Secrets are encrypted on the server and never returned to this page. Old orders keep their provider snapshot, so do not revoke old keys until those orders are reconciled. The platform operator must configure server credential encryption before your first save.</p>
             </section>
           </fieldset>
         </form>
         <section className="checkout-step" aria-labelledby="test-setup"><div className="checkout-step-heading"><span className="checkout-step-number">4</span><div><h2 id="test-setup">Check connections, then test a purchase</h2><p>Checks use saved settings only. They do not charge a card, create an order or book a shipment.</p></div></div>
           <div className="checkout-guide-grid">
-            {(["razorpay", "shiprocket"] as const).map(provider => <article className="checkout-connection-card" key={provider}><h3>{provider === "razorpay" ? "Razorpay keys" : "Shiprocket login & pickup"}</h3><p>{provider === "razorpay" ? "Reads the orders API to check the saved keys. It does not confirm payment capture, KYC or settlement eligibility." : "Signs in as the API user and checks that the saved pickup location exists. It does not approve KYC or confirm a courier route."}</p><button className="btn light" type="button" disabled={locked || !loaded || !settings.configured || dirty} onClick={() => void checkProvider(provider)}>{checking === provider ? "Checking..." : `Check ${provider === "razorpay" ? "Razorpay" : "Shiprocket"} connection`}</button>
+            {(["razorpay", "shiprocket"] as const).filter(provider => provider !== "shiprocket" || policy.shipping_provider === "shiprocket").map(provider => <article className="checkout-connection-card" key={provider}><h3>{provider === "razorpay" ? "Razorpay keys" : "Shiprocket login & pickup"}</h3><p>{provider === "razorpay" ? "Reads the orders API to check the saved keys. It does not confirm payment capture, KYC or settlement eligibility." : "Signs in as the API user and checks that the saved pickup location exists. It does not approve KYC or confirm a courier route."}</p><button className="btn light" type="button" disabled={locked || !loaded || !settings.configured || dirty} onClick={() => void checkProvider(provider)}>{checking === provider ? "Checking..." : `Check ${provider === "razorpay" ? "Razorpay" : "Shiprocket"} connection`}</button>
               {checks[provider] ? <div className={`checkout-check-result ${checks[provider]?.status}`} role="status"><strong>{checks[provider]?.status === "passed" ? "Connection check passed" : "Action needed"}</strong><p>{checks[provider]?.message}</p><small>Checked {new Date(checks[provider]!.checked_at).toLocaleString()} · Current session only</small></div> : <p className="checkout-fine-print">Not checked in this session.</p>}
             </article>)}
           </div>
           <ol className="checkout-instructions"><li>Save <strong>Test Mode</strong> Razorpay keys and enable Add to Cart only on a store you are testing. Add several products and quantities, then complete a test purchase with Razorpay&apos;s official test payment details. <ProviderLink href="https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/">Razorpay integration &amp; testing guide</ProviderLink></li><li>In <strong>Manage orders</strong>, confirm the order shows <strong>Payment verified</strong>. If verification is pending, use Verify Payment; do not pay twice. Check the same payment in the Razorpay Test dashboard.</li><li>On your public HTTPS site, open Razorpay&apos;s webhook delivery logs and check that the payment.captured message was delivered successfully. The connection-check button cannot test this message.</li><li><strong>Do not send test orders to Shiprocket.</strong> Razorpay test payments are simulated, but Shiprocket API calls can create real shipments. Tenali blocks shipment submission for test-key orders.</li><li>After provider approval, save matching <strong>Live Mode</strong> Razorpay keys and webhook settings, recheck connections, and perform an authorised small real purchase. Check capture in Razorpay and the verified order in Tenali. Live payments and shipping can incur charges; arrange any refund through Razorpay.</li></ol>
         </section>
-        <section className="checkout-step" aria-labelledby="activation-help"><h2 id="activation-help">When can I accept real orders?</h2><div className="checkout-guide-grid"><article><h3>Razorpay: finish business verification</h3><p>KYC means checking your identity and business documents. Submit the documents requested in your Razorpay account and resolve any pending requests there. Razorpay also reviews your website; its guide allows up to 3 working days for that review, but total account approval can take longer.</p><p>Once Razorpay lets you take live payments, replace your test keys with live keys here and test a real payment. A successful connection check only means the saved keys work; it does not mean Razorpay has finished reviewing your business.</p></article><article><h3>Shiprocket: prepare for pickup</h3><p>Upload the business documents requested in Shiprocket and complete its pickup-address and phone checks. Its guide says manual document checks may take 2-3 business days. Before accepting orders, check that your wallet has enough funds and couriers deliver to the areas you serve.</p><p>The Shiprocket connection button checks your API login and pickup name. Open Shiprocket to see whether documents or address checks are still pending.</p></article></div><p className="checkout-notice"><strong>Before your first real sale:</strong> finish both provider accounts, save live keys, confirm a real payment and its automatic notification reach Tenali, check delivery costs and coverage, then turn on Add to Cart. Until then, shoppers can still contact you through WhatsApp.</p></section>
+        <section className="checkout-step" aria-labelledby="activation-help"><h2 id="activation-help">When can I accept real orders?</h2><div className="checkout-guide-grid">
+          <article><h3>Razorpay: finish business verification</h3><p>If you enable online payment, complete Razorpay business and website approval. Save live keys, test a real payment and verify webhook delivery. A connection check alone does not establish approval.</p></article>
+          {policy.shipping_provider === "shiprocket" ? <article><h3>Shiprocket: prepare for pickup</h3><p>Complete Shiprocket KYC, verify the pickup address and phone, and check wallet funds and courier coverage. A successful API connection does not establish provider approval.</p></article> :
+            <article><h3>Self-shipping: arrange your own delivery</h3><p>No Shiprocket credentials or checks are needed. Confirm your courier coverage and costs, then dispatch from Online Orders. Add optional courier and tracking details, mark delivery when completed and record COD receipts separately.</p></article>}
+        </div><p className="checkout-notice"><strong>Before your first real sale:</strong> verify the payment methods you enabled, delivery costs and coverage. Turn on Add to Cart only when ready. Shoppers can still contact you through WhatsApp while you prepare.</p></section>
       </> : tab === "orders" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>Shopper orders</h2><p>Only this workspace&apos;s orders. Approve, dispatch and collect from here; each dispatch or collection creates the invoice and books stock.</p></div><div className="shop-actions"><label>Status<select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setOffset(0); }}><option value="">All</option>{["cod_requested", "paid", "confirmed", "fulfilment_review", "shipment_booked", "dispatched", "ready_for_pickup", "delivered", "collected", "cancelled"].map(value => <option key={value} value={value}>{orderStatus(value as ShopOrder["status"])}</option>)}</select></label><button className="btn light" disabled={locked} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh orders</button></div></div>
-        {!ordersLoaded ? <p role="status">Loading orders...</p> : !orders.length ? <div className="checkout-empty"><ShoppingBag size={32} aria-hidden="true" /><h3>No orders on this page yet</h3><p>Orders appear here when shoppers proceed to payment for their carts. Adding to cart alone and WhatsApp chats do not create an order.</p><button className="btn light" onClick={() => setTab("setup")}>Review setup &amp; run checks</button></div> : <>
-          <details className="checkout-step"><summary>Packing details &amp; shipment recovery</summary><p>For paid live orders, enter actual packed dimensions (cm) and weight (kg) before submitting. If a submission response was lost, find the order in Shiprocket using the Tenali order ID, then enter its Shiprocket order ID here. Do not blindly create another shipment.</p><div className="company-fields">
+        {!ordersLoaded ? <p role="status">Loading orders...</p> : !orders.length ? <div className="checkout-empty"><ShoppingBag size={32} aria-hidden="true" /><h3>No orders on this page yet</h3><p>Orders appear here when shoppers proceed to payment for their carts. Adding to cart alone and WhatsApp chats do not create an order.</p><Link className="btn light" to="/portal/checkout-setup">Review payments &amp; delivery setup</Link></div> : <>
+        {orders.some(order => order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery") ? <details className="checkout-step"><summary>Packing details &amp; shipment recovery</summary><p>For paid live orders, enter actual packed dimensions (cm) and weight (kg) before submitting. If a submission response was lost, find the order in Shiprocket using the Tenali order ID, then enter its Shiprocket order ID here. Do not blindly create another shipment.</p><div className="company-fields">
             {(Object.keys(packageSize) as (keyof typeof packageSize)[]).map(key => <label key={key}>Package {key} ({key === "weight" ? "kg" : "cm"})<input type="number" min={0.001} step="any" value={packageSize[key]} onChange={event => setPackageSize({ ...packageSize, [key]: event.target.value })} /></label>)}
             <label>Shiprocket order ID for recovery / tracking<input inputMode="numeric" value={reconcileId} onChange={event => setReconcileId(event.target.value)} /></label>
-          </div></details>
+          </div></details> : null}
           {orders.map(order => <article className="checkout-step shop-order" key={order.id}><div className="checkout-order-heading"><h3>{order.address.name}</h3><span className="checkout-order-total">{rupees(order.total_paise)}</span></div><p><strong>{orderStatus(order.status)}</strong> · {paymentLabel(order.payment_method)}{(order.provider_key_id || "").startsWith("rzp_test_") ? " · Test payment - no real shipment" : ""}</p><p className="checkout-fine-print">Order {order.id} · {new Date(order.created_at).toLocaleString()}</p><ul>{order.items.map(item => <li key={`${item.product_id}:${item.variant_id}`}>{item.name} × {item.quantity}</li>)}</ul><p>{order.address.phone}<br />{order.address.address}, {order.address.city}, {order.address.state} {order.address.pincode}</p>
             <OrderActions order={order} stores={stores} accounts={accounts} locked={locked} onDone={async note => { if (note) setMessage(note); await refreshOrders(); }} onError={failure => setError(failure)} />
             {order.shipping_error ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
             {order.shiprocket_order_id ? <p>Shiprocket order {order.shiprocket_order_id} · Shipment {order.shipment_id} · {order.awb || "AWB not yet recorded"}</p> : null}
-            <div className="shop-actions">{order.fulfilment_method === "delivery" && ((order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod")) && !(order.provider_key_id || "").startsWith("rzp_test_") ? <button className="btn" disabled={locked || Object.values(packageSize).some(value => !Number(value) || Number(value) <= 0)} onClick={() => void action(order, false)}>Submit packed order to Shiprocket</button> : null}
+            <div className="shop-actions">{order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery" && ((order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod")) && !(order.provider_key_id || "").startsWith("rzp_test_") ? <button className="btn" disabled={locked || Object.values(packageSize).some(value => !Number(value) || Number(value) <= 0)} onClick={() => void action(order, false)}>Submit packed order to Shiprocket</button> : null}
               {order.status === "awaiting_payment" ? <button className="btn light" disabled={locked} onClick={() => {
                 setBusy(true); setError("");
                 void accountRequest(`/orders/${order.id}/reconcile-payment`, { method: "POST" }, "checkout-admin").then(refreshOrders).catch(failure => setError(String(failure))).finally(() => setBusy(false));
@@ -233,9 +248,9 @@ export function CheckoutAdminPage() {
           </article>)}
         </>}
         <div className="shop-actions checkout-pagination"><button disabled={offset === 0 || locked} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><span>Page {offset / 50 + 1}</span><button disabled={orders.length < 50 || locked || !ordersLoaded} onClick={() => setOffset(offset + 50)}>Next</button></div>
-        <p className="checkout-fine-print">Shiprocket submission is not pickup or delivery confirmation. Assign an AWB, schedule pickup and manage delivery in Shiprocket; use recovery / tracking to record those details here.</p>
+        <p className="checkout-fine-print">Self-shipping: arrange your own courier, dispatch &amp; invoice, then mark delivered. For Shiprocket orders, submission alone is not delivery confirmation; manage AWB and pickup in Shiprocket.</p>
       </section> : null}
-      {tab === "cod" ? <section className="checkout-orders-section">
+      {!setupOnly && tab === "cod" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>Cash on delivery</h2><p>Dispatched COD invoices stay open until the courier remits. Record each remittance against its orders; shortfalls need a reason.</p></div><button className="btn light" disabled={locked} onClick={() => void refreshCod().catch(failure => setError(String(failure)))}>Refresh</button></div>
         {!cod ? <p role="status">Loading...</p> : <>
           <p>Outstanding: <strong>{rupees(Math.round(Number(cod.total_outstanding) * 100))}</strong></p>
@@ -264,7 +279,7 @@ export function CheckoutAdminPage() {
                       onClose={() => setSettlementDelete(null)} onDone={async result => { setSettlementDelete(null); setMessage(`Deleted ${result.label}.`); await refreshCod(); }} /> : null}
         </>}
       </section> : null}
-      {tab === "enquiries" ? <section className="checkout-orders-section">
+      {!setupOnly && tab === "enquiries" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>WhatsApp enquiries</h2><p>Recorded when shoppers tap &quot;Ask this store&quot;. Convert to an invoice from Billing, then link it here.</p></div><button className="btn light" disabled={locked} onClick={() => void refreshEnquiries().catch(failure => setError(String(failure)))}>Refresh</button></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Ref</th><th>When</th><th>Product</th><th>Qty</th><th>Shopper</th><th>Store</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>{enquiries.length ? enquiries.map(row => <tr key={row.id}><td>{row.reference}</td><td>{new Date(row.created_at).toLocaleString()}</td><td>{row.product_name}{row.variant_name ? ` - ${row.variant_name}` : ""}{row.message ? <small> · {row.message}</small> : null}</td><td>{Number(row.quantity)}</td><td>{row.shopper_name}<br /><a href={`https://wa.me/${row.shopper_phone.replace("+", "")}`} target="_blank" rel="noopener noreferrer">{row.shopper_phone}</a></td><td>{row.store_code || ""}</td><td>{row.status}</td>
