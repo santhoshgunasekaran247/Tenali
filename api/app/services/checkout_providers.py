@@ -43,6 +43,29 @@ def decrypt_credentials(company_id: str, encrypted: str) -> dict:
     return data["credentials"]
 
 
+def shiprocket_failure(method: str, path: str, status: int | None = None) -> str:
+    login = path == "/auth/login"
+    pickup = path == "/settings/company/pickup"
+    shipment_write = method.upper() not in {"GET", "HEAD"} and not login
+    stage = "API-user login" if login else "pickup-location lookup" if pickup else "shipment request"
+    prefix = f"Shiprocket {stage} failed" + (f" (HTTP {status})" if status else "") + ". "
+    if login and status in {400, 401, 403, 422}:
+        detail = "Check that the dedicated API user is active and its email/password are saved correctly; do not use the main dashboard login."
+    elif status in {401, 403}:
+        detail = "Shiprocket denied API access. Check the API user's permissions and account access."
+    elif status == 429:
+        detail = "Shiprocket is rate-limiting requests. Wait before checking again."
+    elif status in {400, 404, 422}:
+        detail = "Shiprocket rejected the request. Check the pickup-location name, required order/address details and package measurements in Shiprocket."
+    else:
+        detail = "Shiprocket could not be reached or returned an unusable response. Check its availability and the API service's provider-error logs."
+    if shipment_write:
+        detail += " Check Shiprocket for the Tenali order before retrying; use shipment recovery if it already exists."
+    else:
+        detail += " This request does not create a shipment."
+    return prefix + detail
+
+
 def provider_request(provider: str, method: str, path: str, credentials: dict, payload=None):
     if provider == "razorpay":
         base = "https://api.razorpay.com/v1"
@@ -57,10 +80,20 @@ def provider_request(provider: str, method: str, path: str, credentials: dict, p
     try:
         with build_opener(NoProviderRedirect()).open(request, timeout=20) as response:
             data = json.loads(response.read(2_000_000))
-    except (HTTPError, URLError, TimeoutError, ValueError, OSError) as error:
+    except HTTPError as error:
+        logger.warning("%s request failed (HTTP %s, %s %s)", provider, error.code, method, path.split("?")[0])
+        error.close()
+        if provider == "shiprocket":
+            raise HTTPException(502, shiprocket_failure(method, path, error.code)) from error
+        raise HTTPException(502, f"{provider.title()} could not complete the request. Reconcile provider status before retrying.") from error
+    except (URLError, TimeoutError, ValueError, OSError) as error:
         logger.warning("%s request failed (%s)", provider, type(error).__name__)
+        if provider == "shiprocket":
+            raise HTTPException(502, shiprocket_failure(method, path)) from error
         raise HTTPException(502, f"{provider.title()} could not complete the request. Reconcile provider status before retrying.") from error
     if not isinstance(data, dict):
+        if provider == "shiprocket":
+            raise HTTPException(502, shiprocket_failure(method, path))
         raise HTTPException(502, f"{provider.title()} returned an invalid response")
     return data
 

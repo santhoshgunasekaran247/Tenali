@@ -77,6 +77,14 @@ Checks do **not** establish KYC approval, webhook delivery, settlement readiness
 wallet balance, pickup approval or delivery serviceability. Confirm those in the
 provider dashboards and complete an end-to-end payment test.
 
+Shiprocket errors identify whether API-user login, pickup lookup or a shipment
+request failed and include the provider HTTP status when available. Login
+rejections require checking the dedicated API-user credentials; pickup permission
+errors require checking API access. Provider response bodies and credentials are
+not shown or logged. A failed connection check creates no shipment. A failed
+shipment submission may still have reached Shiprocket: reconcile by Tenali order
+ID and use recovery rather than blindly submitting again.
+
 KYC documents go directly to the respective provider, not to this settings form.
 Razorpay requirements depend on the business type and include its requested business,
 identity and bank verification. Public website review includes contact, pricing,
