@@ -1,4 +1,5 @@
 import io
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
@@ -9,6 +10,43 @@ from app.services import checkout_providers as providers
 
 
 class CheckoutProviderErrorTests(unittest.TestCase):
+    def test_shiprocket_login_omits_authorization_and_preserves_credentials(self):
+        credentials = {"shiprocket_email": "api@example.com", "shiprocket_password": 'p@ss+"\\ word'}
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value.read.side_effect = [
+            b'{"token":"fresh-token"}',
+            b'{"data":{"shipping_address":[{"pickup_location":"Primary"}]}}',
+        ]
+        with patch.object(providers, "build_opener", return_value=opener):
+            providers.check_connection("shiprocket", credentials, "Primary")
+        login = opener.open.call_args_list[0].args[0]
+        self.assertEqual(login.full_url, "https://apiv2.shiprocket.in/v1/external/auth/login")
+        self.assertEqual(login.get_method(), "POST")
+        self.assertFalse(login.has_header("Authorization"))
+        self.assertEqual(json.loads(login.data), {
+            "email": credentials["shiprocket_email"], "password": credentials["shiprocket_password"],
+        })
+        pickup = opener.open.call_args_list[1].args[0]
+        self.assertEqual(pickup.get_header("Authorization"), "Bearer fresh-token")
+
+    def test_shiprocket_login_does_not_forward_a_stale_token(self):
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value.read.return_value = b'{"token":"fresh-token"}'
+        with patch.object(providers, "build_opener", return_value=opener):
+            providers.provider_request("shiprocket", "POST", "/auth/login", {"token": "stale-token"},
+                                       {"email": "api@example.com", "password": "fixture-password"})
+        self.assertFalse(opener.open.call_args.args[0].has_header("Authorization"))
+
+    def test_razorpay_keeps_basic_authorization(self):
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value.read.return_value = b'{"items":[]}'
+        with patch.object(providers, "build_opener", return_value=opener):
+            providers.provider_request("razorpay", "GET", "/orders", {
+                "razorpay_key_id": "fixture-key", "razorpay_key_secret": "fixture-secret",
+            })
+        self.assertEqual(opener.open.call_args.args[0].get_header("Authorization"),
+                         "Basic Zml4dHVyZS1rZXk6Zml4dHVyZS1zZWNyZXQ=")
+
     def request_failure(self, error, method="POST", path="/auth/login"):
         opener = MagicMock()
         opener.open.side_effect = error

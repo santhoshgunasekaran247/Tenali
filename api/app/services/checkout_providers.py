@@ -67,14 +67,15 @@ def shiprocket_failure(method: str, path: str, status: int | None = None) -> str
 
 
 def provider_request(provider: str, method: str, path: str, credentials: dict, payload=None):
+    headers = {"Content-Type": "application/json"}
     if provider == "razorpay":
         base = "https://api.razorpay.com/v1"
-        authorization = "Basic " + base64.b64encode(
+        headers["Authorization"] = "Basic " + base64.b64encode(
             (credentials["razorpay_key_id"] + ":" + credentials["razorpay_key_secret"]).encode()).decode()
     else:
         base = "https://apiv2.shiprocket.in/v1/external"
-        authorization = "Bearer " + credentials.get("token", "")
-    headers = {"Content-Type": "application/json", "Authorization": authorization}
+        if path != "/auth/login":
+            headers["Authorization"] = "Bearer " + credentials.get("token", "")
     body = json.dumps(payload).encode() if payload is not None else None
     request = Request(base + path, data=body, headers=headers, method=method)
     try:

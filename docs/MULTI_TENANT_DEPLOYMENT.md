@@ -80,7 +80,12 @@ provider dashboards and complete an end-to-end payment test.
 Shiprocket errors identify whether API-user login, pickup lookup or a shipment
 request failed and include the provider HTTP status when available. Login
 rejections require checking the dedicated API-user credentials; pickup permission
-errors require checking API access. Provider response bodies and credentials are
+errors require checking API access. The login request sends the API-user email
+and password as JSON without an Authorization header; only subsequent requests
+send the returned Bearer token. If valid credentials still return HTTP 401,
+ensure the API deployment includes this login-header fix before replacing
+credentials. A 401 alone does not prove that the saved password is incorrect.
+Provider response bodies and credentials are
 not shown or logged. A failed connection check creates no shipment. A failed
 shipment submission may still have reached Shiprocket: reconcile by Tenali order
 ID and use recovery rather than blindly submitting again.
