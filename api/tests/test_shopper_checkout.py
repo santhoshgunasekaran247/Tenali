@@ -322,6 +322,9 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         self.assertEqual(order["total_paise"], 60500)
         paid = self.client.post(f"/shop/orders/{order['id']}/confirm", json=self.confirmation(order), headers=self.shop_headers())
         self.assertEqual(paid.status_code, 200, paid.text)
+        shipped = self.client.post(f"/checkout-admin/orders/{order['id']}/ship", json={"weight": 1, "length": 10, "width": 10, "height": 10},
+                                   headers=self.staff_headers())
+        self.assertEqual(shipped.status_code, 200, shipped.text)
         dispatched = self.client.post(f"/checkout-admin/orders/{order['id']}/dispatch", json={}, headers=self.staff_headers())
         self.assertEqual(dispatched.status_code, 200, dispatched.text)
         with self.factory() as db:
@@ -542,6 +545,10 @@ class ShopperCheckoutTests(TenantDatabaseCase):
         captured = self.client.post(f"/shop/orders/{late['id']}/confirm", json=self.confirmation(late, "late"), headers=self.shop_headers())
         self.assertEqual(captured.status_code, 200, captured.text)
         self.assertEqual(captured.json()["status"], "paid")
+        with self.factory() as db:
+            # Simulate a recovered Shiprocket order so dispatch reaches the stock check.
+            db.execute(text("update shop_orders set shiprocket_order_id=424242 where id=:id"), {"id": late["id"]})
+            db.commit()
         reviewed = self.client.post(f"/checkout-admin/orders/{late['id']}/dispatch", json={}, headers=self.staff_headers())
         self.assertEqual(reviewed.status_code, 409, reviewed.text)
         self.assertIn("fulfilment_review", self.client.get("/checkout-admin/orders?status=fulfilment_review", headers=self.staff_headers()).text)

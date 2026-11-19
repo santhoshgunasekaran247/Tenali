@@ -83,6 +83,21 @@ function nodes(tree) {
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+test("billing keeps quotations, invoices and audit stacked beside the creation form", () => {
+  const { render } = mountBilling();
+  const layout = nodes(render()).find(node => node.props?.className === "ops-grid billing-layout");
+  assert.ok(layout);
+  const [create, records] = layout.props.children;
+  assert.match(create.props.className, /billing-create-card/);
+  assert.equal(records.props.className, "billing-records");
+  const cards = records.props.children.filter(Boolean);
+  assert.deepEqual(Array.from(cards, card => card.props["aria-labelledby"]), [
+    "billing-quotations-heading", "billing-invoices-heading", "billing-audit-heading",
+  ]);
+  assert.equal(nodes(records).filter(node => node.type === "table").length, 3);
+  assert.ok(nodes(records).some(node => node.props?.["aria-label"] === "Collection status"));
+});
+
 test("customers render before inventory, invoices, or reconciliation finish; failures do not hide successful data", async () => {
   const { requests, render } = mountBilling();
   assert.equal(requests.invoiceReconcileRuns?.length, 1, "Audit request starts immediately, not after all other data");

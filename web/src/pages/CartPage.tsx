@@ -6,8 +6,8 @@ import { useAuth } from "../features/auth";
 import { cartItemKey, useCart } from "../features/cart";
 import { accountRequest, rupees } from "../features/shop";
 import type { CatalogProduct } from "../types";
-import { Package, Trash2 } from "lucide-react";
-import { toAssetUrl } from "../features/catalog/utils";
+import { Trash2 } from "lucide-react";
+import { ProductImageLink, productImage, productPagePath } from "../components/OrderItems";
 
 export function CartPage() {
   const { storefront, loading } = useAuth();
@@ -69,8 +69,8 @@ export function CartPage() {
       {!cart.items.length ? <section className="ops-card"><h2>Your cart is empty</h2><p>Add products, choose quantities and pay for them together.</p><Link className="btn" to="/">Browse products</Link></section>
         : !ready ? <p role="status">Checking current products and prices...</p> : <form className="cart-layout" onSubmit={checkout}>
           <div className="cart-items">{rows.map(({ item, product, variant, unit, quantity, minimum, problem }) => <article className="ops-card cart-item" key={cartItemKey(item)}>
-            <Link className="cart-item-image" to={`/products/${item.product_id}`} aria-label={`View ${product?.name || "product"}`}>{product?.image_url ? <img src={toAssetUrl(product.image_url)} alt="" /> : <Package size={28} aria-hidden="true" />}</Link>
-            <div className="cart-item-details"><h2><Link to={`/products/${item.product_id}`}>{product?.name || "Unavailable product"}</Link></h2>{variant ? <p>{variant.variant_name}</p> : null}{Number.isFinite(unit) && unit > 0 ? <p>{rupees(Math.round(unit * 100))} each</p> : null}<small>Minimum: {minimum} {minimum === 1 ? "unit" : "units"}{product?.variants?.length ? " per size / colour" : ""}</small>
+            <ProductImageLink className="cart-item-image" item={item} name={product?.name || "Unavailable product"} imageUrl={productImage(product)} />
+            <div className="cart-item-details"><h2><Link to={productPagePath(item)}>{product?.name || "Unavailable product"}</Link></h2>{variant ? <p>{variant.variant_name}</p> : null}{Number.isFinite(unit) && unit > 0 ? <p>{rupees(Math.round(unit * 100))} each</p> : null}<small>Minimum: {minimum} {minimum === 1 ? "unit" : "units"}{product?.variants?.length ? " per size / colour" : ""}</small>
             <button type="button" className="cart-remove" aria-label={`Remove ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} onClick={() => cart.remove(item)}><Trash2 size={14} aria-hidden="true" />Remove</button></div>
             <div className="cart-item-quantity"><label>Quantity<input aria-label={`Quantity for ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} type="number" required min={minimum} max={100} step={1} value={drafts[cartItemKey(item)] ?? item.quantity} onChange={event => {
               const value = event.target.value; setDrafts(previous => ({ ...previous, [cartItemKey(item)]: value }));

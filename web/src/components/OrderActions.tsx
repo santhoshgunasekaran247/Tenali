@@ -6,6 +6,51 @@ import { Link } from "react-router-dom";
 
 type Props = { order: ShopOrder; stores: Store[]; accounts: Account[]; locked: boolean; onDone: (message: string) => Promise<void>; onError: (message: string) => void };
 
+export type PackageSize = { weight: string; length: string; width: string; height: string };
+export const emptyPackage: PackageSize = { weight: "", length: "", width: "", height: "" };
+
+/** Which Shiprocket actions apply; orders dispatched before Shiprocket submission can still be submitted or recovered. */
+export function shiprocketActions(order: ShopOrder) {
+  const applies = order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery";
+  const testPayment = (order.provider_key_id || "").startsWith("rzp_test_");
+  const ready = (order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod");
+  const late = order.status === "dispatched" && !order.shiprocket_order_id && ["prepaid", "cod"].includes(order.payment_method);
+  return {
+    applies,
+    testPayment,
+    canSubmit: applies && !testPayment && (ready || (late && !order.shipping_error)),
+    canRecover: applies && (["shipping_pending", "shipment_booked"].includes(order.status) || (order.status === "dispatched" && (late || !order.awb))),
+  };
+}
+
+type ShiprocketProps = { order: ShopOrder; pkg: PackageSize; reconcileId: string; locked: boolean;
+  onPackage: (pkg: PackageSize) => void; onReconcileId: (value: string) => void; onSubmit: () => void; onRecover: () => void };
+
+export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, onReconcileId, onSubmit, onRecover }: ShiprocketProps) {
+  const { applies, testPayment, canSubmit, canRecover } = shiprocketActions(order);
+  if (!applies) return null;
+  const packageValid = Object.values(pkg).every(value => Number(value) > 0);
+  return <section className="order-action-panel order-shiprocket-panel" aria-label="Shiprocket shipment"><h4>Shiprocket shipment</h4>
+    {order.shiprocket_order_id ? <dl className="order-shiprocket-facts">
+      <div><dt>Shiprocket order</dt><dd>{order.shiprocket_order_id}</dd></div>
+      <div><dt>Shipment</dt><dd>{order.shipment_id || "-"}</dd></div>
+      <div><dt>AWB</dt><dd>{order.awb || "Not yet assigned"}</dd></div>
+      {order.courier ? <div><dt>Courier</dt><dd>{order.courier}</dd></div> : null}
+    </dl> : <p className="order-action-help">{testPayment ? "Razorpay test payment - this order cannot create a real Shiprocket shipment."
+      : order.status === "dispatched" ? "This order was dispatched before it was submitted to Shiprocket. Submit it now, or recover it if it already exists in Shiprocket."
+      : "Not yet submitted. Enter the packed size and submit; Dispatch & invoice unlocks once Shiprocket confirms the order."}</p>}
+    {order.shipping_error ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
+    {canSubmit ? <div className="shop-actions order-package-fields">
+      {(Object.keys(pkg) as (keyof PackageSize)[]).map(key => <label key={key}>{key[0].toUpperCase() + key.slice(1)} ({key === "weight" ? "kg" : "cm"})<input type="number" min={0.001} step="any" value={pkg[key]} onChange={event => onPackage({ ...pkg, [key]: event.target.value })} /></label>)}
+      <button className="btn" disabled={locked || !packageValid} onClick={onSubmit}>Submit packed order to Shiprocket</button>
+    </div> : null}
+    {canRecover ? <details className="order-shiprocket-recovery"><summary>Recover shipment / update tracking</summary><p>If a submission response was lost, find the order in Shiprocket using the Tenali order ID and enter its Shiprocket order ID. Do not create another shipment.</p><div className="shop-actions">
+      <label>Shiprocket order ID<input inputMode="numeric" value={reconcileId} onChange={event => onReconcileId(event.target.value)} /></label>
+      <button className="btn light" disabled={locked || !/^[1-9][0-9]*$/.test(reconcileId)} onClick={onRecover}>Recover shipment / update tracking</button>
+    </div></details> : null}
+  </section>;
+}
+
 /** Staff lifecycle actions for one online order; each call maps to a checkout-admin endpoint. */
 export function OrderActions({ order, stores, accounts, locked, onDone, onError }: Props) {
   const [shipFrom, setShipFrom] = useState(order.ship_from_store_id || "");
@@ -30,6 +75,8 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
   const disabled = locked || busy;
   const storeName = (id: string | null) => stores.find(store => store.id === id)?.code || "";
   const prepaidReady = order.payment_method !== "prepaid" || !!order.advance_transaction_id;
+  const awaitingShiprocket = order.fulfilment_method === "delivery" && order.shipping_provider === "shiprocket" && !order.shiprocket_order_id;
+  const dispatchReady = prepaidReady && !awaitingShiprocket;
   return <div className="order-actions">
     <p className="checkout-fine-print">{paymentLabel(order.payment_method)} · {order.fulfilment_method === "pickup" ? `Pickup at ${storeName(order.pickup_store_id)}` : order.shipping_provider === "self" ? "Self-shipping / own courier" : "Shiprocket delivery"}{order.ship_from_store_id ? ` · Shipped from ${storeName(order.ship_from_store_id)}` : ""}{order.invoice_id ? " · Invoiced" : ""}</p>
     {order.review_reason ? <p role="alert" className="checkout-notice">{order.review_reason}</p> : null}
@@ -45,11 +92,11 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
         <label>Courier / delivery service (optional)<input maxLength={80} placeholder="Own delivery or courier name" value={tracking.courier} onChange={event => setTracking({ ...tracking, courier: event.target.value })} /></label>
         <label>Tracking / AWB number (optional)<input maxLength={120} value={tracking.awb} onChange={event => setTracking({ ...tracking, awb: event.target.value })} /></label>
       </> : null}
-      <button className="btn" disabled={disabled || !shipFrom || !prepaidReady} onClick={() => void run("dispatch", {
+      <button className="btn" disabled={disabled || !shipFrom || !dispatchReady} onClick={() => void run("dispatch", {
         ship_from_store_id: shipFrom,
         ...(order.fulfilment_method === "delivery" && order.shipping_provider === "self" ? { courier: tracking.courier.trim() || null, awb: tracking.awb.trim() || null } : {}),
       }, "Dispatched: stock booked and invoice created.")}>Dispatch &amp; invoice</button>
-    </div>{!prepaidReady ? <p className="order-action-help">Post the verified payment advance above to enable dispatch.</p> : null}</section> : null}
+    </div>{!prepaidReady ? <p className="order-action-help">Post the verified payment advance above to enable dispatch.</p> : awaitingShiprocket ? <p className="order-action-help">Submit the packed order to Shiprocket above first. Dispatch &amp; invoice unlocks once Shiprocket confirms the order.</p> : null}</section> : null}
     {order.fulfilment_method === "pickup" && ((order.payment_method === "prepaid" && order.status === "dispatched") || (order.payment_method === "pay_at_pickup" && order.status === "confirmed")) ? <button className="btn light" disabled={disabled} onClick={() => void run("ready", {}, "Marked ready for pickup.")}>Ready for pickup</button> : null}
     {order.fulfilment_method === "pickup" && ["confirmed", "ready_for_pickup", "dispatched"].includes(order.status) ? <section className="order-action-panel"><h4>Shopper collection</h4><div className="shop-actions">
       {order.payment_method === "pay_at_pickup" ? <>

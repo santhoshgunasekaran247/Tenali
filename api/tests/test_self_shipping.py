@@ -209,6 +209,73 @@ class SelfShippingTests(unittest.TestCase):
             provider.assert_not_called()
             db.commit.assert_called_once()
 
+    def test_shiprocket_delivery_orders_cannot_be_dispatched_before_shiprocket_booking(self):
+        order = {"id": str(uuid4()), "status": "paid", "invoice_id": None, "shipping_provider": "shiprocket",
+                 "payment_method": "prepaid", "advance_transaction_id": str(uuid4()), "review_reason": None,
+                 "fulfilment_method": "delivery", "shiprocket_order_id": None}
+        db = MagicMock()
+        with patch.object(shop_orders_service, "_order", return_value=order), \
+                patch.object(shop_orders_service, "_create_order_invoice") as invoice:
+            with self.assertRaises(HTTPException) as error:
+                shop_orders_service.dispatch_order(db, str(uuid4()), order["id"], DispatchInput())
+            self.assertEqual(error.exception.status_code, 409)
+            self.assertIn("Submit this order to Shiprocket", error.exception.detail)
+            invoice.assert_not_called()
+            db.commit.assert_not_called()
+
+    def _late_shipment(self, row, shipment):
+        db, identity_db = MagicMock(), MagicMock()
+        db.execute.return_value.mappings.return_value.first.return_value = row
+        db.execute.return_value.mappings.return_value.one.return_value = {**row, "shiprocket_order_id": 991}
+        identity_db.execute.return_value.scalar_one.return_value = "shopper@example.invalid"
+        responses = [{"token": "token"}, shipment]
+        with patch.object(checkout_providers, "provider_request", side_effect=lambda *args, **kwargs: responses.pop(0)) as provider, \
+                patch.object(checkout_providers, "decrypt_credentials", return_value={"shiprocket_email": "a@b.invalid", "shiprocket_password": "x"}), \
+                patch.object(checkout_providers, "encrypt_credentials", return_value="encrypted"), \
+                patch.object(shop_checkout, "public_order", side_effect=lambda value: value):
+            result = shop_checkout.create_shipment(db, identity_db, str(uuid4()), str(row["id"]),
+                                                   PackageInput(weight=1, length=10, width=10, height=10))
+        return db, provider, result
+
+    def _dispatched_row(self, **extra):
+        from datetime import datetime
+        return {"id": uuid4(), "shipping_provider": "shiprocket", "status": "dispatched", "fulfilment_method": "delivery",
+                "payment_method": "prepaid", "provider_key_id": "rzp_live_fixture", "shiprocket_order_id": None,
+                "shipping_error": None, "credentials": "encrypted", "shopper_id": uuid4(), "pickup_location": "Primary",
+                "created_at": datetime(2026, 1, 1), "subtotal_paise": 10000, "shipping_paise": 0,
+                "address": {"name": "A", "address": "1 St", "city": "Chennai", "pincode": "600001", "state": "Tamil Nadu", "phone": "9999999999"},
+                "items": [{"name": "Item", "sku": "SKU", "quantity": 1, "unit_paise": 10000}], **extra}
+
+    def test_dispatched_orders_without_shiprocket_booking_can_be_submitted_without_changing_status(self):
+        db, provider, result = self._late_shipment(self._dispatched_row(), {"order_id": 991, "shipment_id": 552})
+        self.assertEqual(result["shiprocket_order_id"], 991)
+        self.assertEqual(provider.call_count, 2)
+        statements = [str(call.args[0]) for call in db.execute.call_args_list]
+        pending = next(sql for sql in statements if "shipping_error=case" in sql)
+        self.assertIn("when status='dispatched' then status", pending)
+        booked = next(sql for sql in statements if "shiprocket_order_id=:provider" in sql)
+        self.assertIn("when status='dispatched' then status else 'shipment_booked'", booked)
+        marker = next(call.args[1] for call in db.execute.call_args_list if "shipping_error=case" in str(call.args[0]))
+        self.assertIn("in progress", marker["marker"])
+
+    def test_dispatched_orders_with_unconfirmed_or_existing_shiprocket_booking_are_not_resubmitted(self):
+        for extra in ({"shipping_error": "Provider response uncertain"}, {"shiprocket_order_id": 991}):
+            row = self._dispatched_row(**extra)
+            db = MagicMock()
+            db.execute.return_value.mappings.return_value.first.return_value = row
+            with patch.object(checkout_providers, "provider_request") as provider, \
+                    patch.object(shop_checkout, "public_order", side_effect=lambda value: value):
+                if extra.get("shiprocket_order_id"):
+                    self.assertEqual(shop_checkout.create_shipment(db, MagicMock(), str(uuid4()), str(uuid4()),
+                                                                   PackageInput(weight=1, length=10, width=10, height=10)), row)
+                else:
+                    with self.assertRaises(HTTPException) as error:
+                        shop_checkout.create_shipment(db, MagicMock(), str(uuid4()), str(uuid4()),
+                                                      PackageInput(weight=1, length=10, width=10, height=10))
+                    self.assertIn("recover", error.exception.detail)
+                provider.assert_not_called()
+                db.commit.assert_not_called()
+
     def test_manual_tracking_cannot_override_shiprocket_or_bypass_payment(self):
         for shipping, payment, advance in (("shiprocket", "cod", None), ("self", "prepaid", None)):
             db = MagicMock()

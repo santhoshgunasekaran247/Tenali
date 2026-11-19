@@ -91,6 +91,11 @@ class MultiStoreTests(unittest.TestCase):
                                 expected_total_paise=quantity * 118000 + (0 if fulfilment_method == "pickup" else 5000))
         return create_order(self.db, self.db, self.company, self.shopper, payload)
 
+    def book_shiprocket(self, order_id):
+        """Simulate a confirmed Shiprocket booking; dispatch requires it for Shiprocket delivery orders."""
+        self.db.execute(self.text("update shop_orders set shiprocket_order_id=:provider where company_id=:company and id=:id"),
+                        {"provider": abs(hash(str(order_id))) % 10**9 + 1, "company": self.company, "id": str(order_id)})
+
     def test_per_store_stock_transfer_and_negative_guard(self):
         from app.schemas.inventory import StockAdjustment, StockTransferCreate
 
@@ -150,6 +155,10 @@ class MultiStoreTests(unittest.TestCase):
         approved = service.approve_cod(self.db, self.company, str(order["id"]))
         self.assertEqual(approved["status"], "confirmed")
         self.assertEqual(self.inventory.available_stock(self.main, self.product, None), Decimal("8"))
+        with self.assertRaises(HTTPException) as unbooked:
+            service.dispatch_order(self.db, self.company, str(order["id"]), DispatchInput(ship_from_store_id=self.main))
+        self.assertIn("Submit this order to Shiprocket", unbooked.exception.detail)
+        self.book_shiprocket(order["id"])
         dispatched = service.dispatch_order(self.db, self.company, str(order["id"]), DispatchInput(ship_from_store_id=self.main))
         self.assertEqual(dispatched["status"], "dispatched")
         invoice = self.db.execute(self.text("select invoice_number, total, collection_status, store_id from invoices where id=:id"),
@@ -186,6 +195,7 @@ class MultiStoreTests(unittest.TestCase):
 
         first = self.order("cod", quantity=1)
         service.approve_cod(self.db, self.company, str(first["id"]))
+        self.book_shiprocket(first["id"])
         before = service.dispatch_order(self.db, self.company, str(first["id"]), DispatchInput(ship_from_store_id=self.main))
         old_party = self.db.execute(self.text("select customer_party_id from invoices where id=:id"),
                                     {"id": before["invoice_id"]}).scalar_one()
@@ -194,6 +204,7 @@ class MultiStoreTests(unittest.TestCase):
         self.db.commit()
         second = self.order("cod", quantity=1)
         service.approve_cod(self.db, self.company, str(second["id"]))
+        self.book_shiprocket(second["id"])
         after = service.dispatch_order(self.db, self.company, str(second["id"]), DispatchInput(ship_from_store_id=self.main))
         self.assertEqual(str(self.db.execute(self.text("select customer_party_id from invoices where id=:id"),
                                              {"id": after["invoice_id"]}).scalar_one()), self.party)

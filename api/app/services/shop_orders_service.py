@@ -177,6 +177,8 @@ def dispatch_order(db: Session, company_id: str, order_id: str, payload: Dispatc
         raise HTTPException(409, f"An order in status {order['status']} cannot be dispatched")
     if order["payment_method"] == "prepaid" and not order["advance_transaction_id"]:
         raise HTTPException(409, order["review_reason"] or "Post the online payment advance before dispatching")
+    if order["shipping_provider"] == "shiprocket" and order["fulfilment_method"] == "delivery" and not order.get("shiprocket_order_id"):
+        raise HTTPException(409, "Submit this order to Shiprocket (or recover its Shiprocket order ID) before dispatching it.")
     if (payload.courier or payload.awb) and (order["shipping_provider"] != "self" or order["fulfilment_method"] != "delivery"):
         raise HTTPException(422, "Manual courier and tracking details apply only to self-shipped delivery orders.")
     online = get_store(db, company_id, str(order["store_id"]))

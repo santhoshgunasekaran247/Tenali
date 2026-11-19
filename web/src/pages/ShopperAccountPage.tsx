@@ -6,6 +6,7 @@ import { useAuth } from "../features/auth";
 import { accountRequest, orderStatus, paymentLabel, payOrder, loadRazorpay, rupees, shopperSession, type Shopper, type ShopOrder } from "../features/shop";
 import { useCart } from "../features/cart";
 import { clearSocialLogin } from "../features/shopperFederation";
+import { OrderItems } from "../components/OrderItems";
 
 export function ShopperAccountPage({ register = false }: { register?: boolean }) {
   const { storefront, loading } = useAuth();
@@ -91,7 +92,7 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
         </section>
         <section><h2>My Orders</h2><button className="ops-link-btn" disabled={busy} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh Payment &amp; Shipping Status</button>
           {!orders.length ? <p>No orders on this page.</p> : null}
-          {orders.map(order => <article className="ops-card shop-order" key={order.id}><h3>Order {order.id}</h3><p>{orderStatus(order.status)} · {paymentLabel(order.payment_method)}{order.fulfilment_method === "pickup" ? " · Store pickup" : ""}</p>{order.review_reason && order.status === "fulfilment_review" ? <p className="checkout-notice">The store is reviewing this order.</p> : null}<ul>{order.items.map(item => <li key={`${item.product_id}:${item.variant_id}`}>{item.name} × {item.quantity} · {rupees(item.unit_paise * item.quantity)}</li>)}</ul><p>{order.shipping_paise ? `Shipping ${rupees(order.shipping_paise)} · ` : ""}Total <strong>{rupees(order.total_paise)}</strong></p>
+          {orders.map(order => <article className="ops-card shop-order" key={order.id}><h3>Order {order.id}</h3><p>{orderStatus(order.status)} · {paymentLabel(order.payment_method)}{order.fulfilment_method === "pickup" ? " · Store pickup" : ""}</p>{order.review_reason && order.status === "fulfilment_review" ? <p className="checkout-notice">The store is reviewing this order.</p> : null}<OrderItems items={order.items} /><p>{order.shipping_paise ? `Shipping ${rupees(order.shipping_paise)} · ` : ""}Total <strong>{rupees(order.total_paise)}</strong></p>
             {order.status === "awaiting_payment" ? (!order.expires_at || Date.now() < Date.parse(order.expires_at)) ? <button className="btn" disabled={busy} onClick={() => void pay(order)}>Pay with Razorpay</button> : <p>Checkout expired. If already charged, wait for payment verification or contact the store before placing another order.</p> : null}
             {order.status === "cod_requested" && order.expires_at ? <p>Awaiting store approval until {new Date(order.expires_at).toLocaleString()}.</p> : null}
             {order.status === "confirmed" && order.payment_method === "pay_at_pickup" && order.expires_at ? <p>Held for pickup until {new Date(order.expires_at).toLocaleString()}.</p> : null}

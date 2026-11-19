@@ -302,8 +302,8 @@ export function BillingPage() {
         </p>
       </section>
 
-      <section className="ops-grid">
-        <article className="ops-card">
+      <section className="ops-grid billing-layout">
+        <article className="ops-card billing-create-card">
           <div className="ops-card-head">
             <h2>Create {documentKind === "invoice" ? "Invoice" : "Quotation"}</h2>
           </div>
@@ -482,8 +482,9 @@ export function BillingPage() {
           </form>
         </article>
 
-        <article className="ops-card ops-list-card">
-          <div className="ops-card-head"><h2>Quotations</h2><span className="catalog-count">{quotations.length} records</span></div>
+        <div className="billing-records">
+        <article className="ops-card ops-list-card billing-quotations-card" aria-labelledby="billing-quotations-heading">
+          <div className="ops-card-head"><h2 id="billing-quotations-heading">Quotations</h2><span className="catalog-count">{quotations.length} records</span></div>
           {quotationError ? <FloatingAlert>{quotationError}</FloatingAlert> : null}
           {quotationLoading ? <p role="status">Loading quotations...</p> : null}
           <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
@@ -499,14 +500,14 @@ export function BillingPage() {
           </tbody></table></div>
         </article>
 
-        <article className="ops-card ops-list-card">
+        <article className="ops-card ops-list-card billing-invoices-card" aria-labelledby="billing-invoices-heading">
           <div className="ops-card-head">
-            <h2>Invoices</h2>
+            <h2 id="billing-invoices-heading">Invoices</h2>
             <span className="catalog-count">{invoices.length} records</span>
           </div>
 
           <div className="ops-list-tools">
-            <select value={collectionStatus} onChange={(event) => setCollectionStatus(event.target.value)}>
+            <select aria-label="Collection status" value={collectionStatus} onChange={(event) => setCollectionStatus(event.target.value)}>
               <option value="">All Collection Status</option>
               <option value="UNPAID">UNPAID</option>
               <option value="PARTIAL">PARTIAL</option>
@@ -559,7 +560,7 @@ export function BillingPage() {
                       <td>{item.amount_received.toFixed(2)}</td>
                       <td>{item.status==='CANCELLED'?'CANCELLED':item.collection_status}</td>
                       <td>{item.due_date || "-"}</td>
-                      <td>
+                      <td className="billing-invoice-actions">
                         <button className="ops-link-btn" type="button"
                           title={item.document_data ? "Download tax invoice PDF" : "Legacy invoice has no saved product details"}
                           aria-label={`Download PDF for ${item.invoice_number}`}
@@ -596,9 +597,9 @@ export function BillingPage() {
             onDone={result => { const refunds = result.refunds?.length || 0; setMessage(`${cancelTarget.invoice_number} was cancelled. Its PDF now shows CANCELLED${refunds ? `; ${refunds} refund(s) are pending in Settlements ? Refunds` : ""}. Use Reissue for a corrected invoice.`); setCancelTarget(null); setRefreshVersion(previous => previous + 1); }} /> : null}
         </article>
 
-        <article className="ops-card ops-list-card">
+        <article className="ops-card ops-list-card billing-audit-card" aria-labelledby="billing-audit-heading">
           <div className="ops-card-head">
-            <h2>Reconcile Audit</h2>
+            <h2 id="billing-audit-heading">Reconcile Audit</h2>
             <span className="catalog-count">{reconcileTotal} runs</span>
           </div>
 
@@ -655,6 +656,7 @@ export function BillingPage() {
             </table>
           </div>
         </article>
+        </div>
       </section>
     </div>
   );

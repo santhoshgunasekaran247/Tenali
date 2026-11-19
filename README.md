@@ -68,6 +68,10 @@ Render Environment settings, never in the static UI or the repository.
   add checks current product details and adds the minimum quantity; products
   with variants open their detail page so shoppers can select a size / colour.
   Cart and checkout totals are estimates until the server confirms the quote.
+- Cart, checkout summaries and shopper/staff orders show product thumbnails and
+  linked names that open the product page with the selected variant. Order images
+  use the current catalogue; unavailable images show a placeholder without
+  changing the order's saved quantities or prices.
 - After Razorpay checkout, the browser confirms payment with the server and
   watches the shopper-owned order status for webhook updates. A lost callback
   triggers server-side reconciliation after three minutes; verification
@@ -82,11 +86,19 @@ Render Environment settings, never in the static UI or the repository.
   exists and does not charge the shopper again. Dispatch requires that advance.
   Staff ledger attribution uses the tenant audit trail, not the legacy
   user-profile field on account transactions.
+- Shiprocket delivery orders must be submitted to Shiprocket (package weight and
+  dimensions are entered on each order card) before Dispatch & invoice unlocks.
+  Orders dispatched before this rule can still be submitted, or recovered with
+  their Shiprocket order ID, without changing their dispatched status. An
+  unconfirmed submission must be recovered, never resubmitted.
 
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
   check shows problems first, with optional matching entries and store filtering.
   It compares on-hand balances with recorded activity, not a physical count.
   Missing document evidence does not change stock quantities.
+- Billing keeps document creation on the left and stacks quotations, invoices
+  and reconciliation history in the wider right column. On smaller screens the
+  records follow the form; wide invoice tables scroll within their card.
 - Product search matches words across names, product IDs, SKUs, brands,
   categories and variant details. Vendor selection and inactive products remain
   separate filters.

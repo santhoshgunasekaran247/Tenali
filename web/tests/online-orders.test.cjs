@@ -32,7 +32,7 @@ function harness(overrides = {}, request = async () => ({}), refresh = async () 
     advance_transaction_id: null, ship_from_store_id: "warehouse", invoice_id: null,
     review_reason: "Advance not posted: set a settlement account", ...overrides };
   return {
-    requests, errors, messages,
+    requests, errors, messages, exports,
     render(locked = false) {
       cursor = 0;
       return exports.OrderActions({ order, stores: [
@@ -98,4 +98,52 @@ test("cancelled orders do not offer advance retry and COD does not require prepa
   const tree = harness({ payment_method: "cod", status: "confirmed", razorpay_payment_id: null }).render();
   assert.equal(button(tree, "Dispatch & invoice").props.disabled, false);
   assert.equal(button(tree, "Retry posting payment advance"), undefined);
+});
+
+const shiprocket = { shipping_provider: "shiprocket", advance_transaction_id: "advance", review_reason: null, provider_key_id: "rzp_live_x" };
+const panel = (order, pkg = { weight: "", length: "", width: "", height: "" }) => {
+  const { exports } = harness();
+  const calls = [];
+  const tree = exports.ShiprocketPanel({ order: { id: "order", payment_method: "prepaid", fulfilment_method: "delivery", ...shiprocket, ...order }, pkg,
+    reconcileId: "", locked: false, onPackage: () => {}, onReconcileId: () => {}, onSubmit: () => calls.push("submit"), onRecover: () => calls.push("recover") });
+  return { tree, calls, html: tree ? renderToStaticMarkup(tree) : "" };
+};
+const filled = { weight: "0.5", length: "20", width: "15", height: "10" };
+
+test("Shiprocket delivery orders cannot be dispatched before Shiprocket confirms the order", () => {
+  const tree = harness(shiprocket).render();
+  assert.equal(button(tree, "Dispatch & invoice").props.disabled, true);
+  assert.match(renderToStaticMarkup(tree), /Submit the packed order to Shiprocket above first/);
+  assert.equal(button(harness({ ...shiprocket, status: "shipment_booked", shiprocket_order_id: 77 }).render(), "Dispatch & invoice").props.disabled, false);
+});
+
+test("paid Shiprocket orders show an inline submit panel that needs package dimensions", () => {
+  const empty = panel({ status: "paid" });
+  assert.equal(button(empty.tree, "Submit packed order to Shiprocket").props.disabled, true);
+  const ready = panel({ status: "paid" }, filled);
+  const submit = button(ready.tree, "Submit packed order to Shiprocket");
+  assert.equal(submit.props.disabled, false);
+  submit.props.onClick();
+  assert.deepEqual(ready.calls, ["submit"]);
+});
+
+test("orders dispatched before Shiprocket submission can still be submitted or recovered", () => {
+  const late = panel({ status: "dispatched", invoice_id: "invoice", shiprocket_order_id: null }, filled);
+  assert.match(late.html, /dispatched before it was submitted to Shiprocket/);
+  assert.equal(button(late.tree, "Submit packed order to Shiprocket").props.disabled, false);
+  assert.match(late.html, /Recover shipment \/ update tracking/);
+  const uncertain = panel({ status: "dispatched", shiprocket_order_id: null, shipping_error: "Provider response uncertain" }, filled);
+  assert.equal(button(uncertain.tree, "Submit packed order to Shiprocket"), undefined);
+  assert.match(uncertain.html, /Provider response uncertain/);
+  assert.match(uncertain.html, /Recover shipment/);
+});
+
+test("booked shipments show Shiprocket references and test payments never submit", () => {
+  const booked = panel({ status: "dispatched", shiprocket_order_id: 991, shipment_id: 552, awb: "AWB1", courier: "Delhivery" });
+  assert.match(booked.html, /991/); assert.match(booked.html, /552/); assert.match(booked.html, /AWB1/); assert.match(booked.html, /Delhivery/);
+  assert.equal(button(booked.tree, "Submit packed order to Shiprocket"), undefined);
+  const test = panel({ status: "paid", provider_key_id: "rzp_test_x" }, filled);
+  assert.equal(button(test.tree, "Submit packed order to Shiprocket"), undefined);
+  assert.match(test.html, /test payment/);
+  assert.equal(panel({ shipping_provider: "self", status: "paid" }).tree, null);
 });

@@ -3,8 +3,9 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, loadRazorpay, payOrder, rupees, shopperSession, type Availability, type DeliveryAddress, type FulfilmentMethod, type PaymentMethod, type Quote, type Shopper, type ShopOrder } from "../features/shop";
-import { cartItemKey, useCart } from "../features/cart";
+import { useCart } from "../features/cart";
 import { policyPath } from "../features/policies";
+import { OrderItems } from "../components/OrderItems";
 
 export function CheckoutPage() {
   const { storefront, loading } = useAuth();
@@ -99,7 +100,7 @@ export function CheckoutPage() {
       </div> : null}
       <p>{cart.items.length} products / variants in your cart. <Link to="/cart">Edit products and quantities</Link></p><button className="btn" disabled={busy || (fulfilment === "pickup" && !pickupStore)}>Review Order</button></fieldset>
     </form>}
-    {quote ? <section className="ops-card purchase-summary"><h2>Order summary</h2><ul className="checkout-summary-items">{quote.items.map(item => <li key={cartItemKey(item)}><div><strong>{item.name}</strong><span>Qty {item.quantity} · {rupees(item.unit_paise)} each</span></div><strong>{rupees(item.unit_paise * item.quantity)}</strong></li>)}</ul><dl className="order-totals"><div><dt>Subtotal</dt><dd>{rupees(quote.subtotal_paise)}</dd></div><div><dt>{fulfilment === "pickup" ? "Store pickup" : "Delivery"}</dt><dd>{quote.shipping_paise ? rupees(quote.shipping_paise) : "Free"}</dd></div><div className="order-total"><dt>Total</dt><dd>{rupees(quote.total_paise)}</dd></div></dl><p className="purchase-fine-print">Includes applicable taxes.{fulfilment === "pickup" ? ` Collect at ${quote.pickup_store || "the chosen store"}.` : " Delivery details are shared with the store's shipping provider to fulfil your order."}</p>
+    {quote ? <section className="ops-card purchase-summary"><h2>Order summary</h2><OrderItems items={quote.items} /><dl className="order-totals"><div><dt>Subtotal</dt><dd>{rupees(quote.subtotal_paise)}</dd></div><div><dt>{fulfilment === "pickup" ? "Store pickup" : "Delivery"}</dt><dd>{quote.shipping_paise ? rupees(quote.shipping_paise) : "Free"}</dd></div><div className="order-total"><dt>Total</dt><dd>{rupees(quote.total_paise)}</dd></div></dl><p className="purchase-fine-print">Includes applicable taxes.{fulfilment === "pickup" ? ` Collect at ${quote.pickup_store || "the chosen store"}.` : " Delivery details are shared with the store's shipping provider to fulfil your order."}</p>
       {effectivePayment === "cod" ? <p>The store reviews cash-on-delivery requests before confirming. You pay the courier {rupees(quote.total_paise)} on delivery.</p> : null}
       {effectivePayment === "pay_at_pickup" ? <p>Your items are held at the store for a limited time. Pay {rupees(quote.total_paise)} at the counter when you collect.</p> : null}
       <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? order && effectivePayment === "prepaid" ? "Waiting for payment confirmation..." : "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : <section className="ops-card purchase-summary"><h2>Order summary</h2><p className="purchase-fine-print">Complete your delivery details and select Review Order to confirm prices, delivery and the final total.</p><Link to="/cart">View your cart ({cart.items.length})</Link></section>}

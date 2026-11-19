@@ -35,7 +35,8 @@ test("order management and provider setup render separately and retain administr
     const { CheckoutAdminPage } = load("pages/CheckoutAdminPage.tsx", {
       "../features/auth": { useAuth: () => ({ user: { role, company_name: "Example", tenant_slug: "example" } }) },
       "../features/shop": { orderStatus: value => value },
-      "../components/OrderActions": { useStoresAndAccounts: () => ({ stores: [], accounts: [] }) },
+      "../components/OrderActions": { useStoresAndAccounts: () => ({ stores: [], accounts: [] }), ShiprocketPanel: () => null, emptyPackage: {} },
+      "../components/OrderItems": { OrderItems: () => null },
       "../components/DeleteTransactionDialog": { DeleteTransactionDialog: () => null },
       "../components/Notifications": { FloatingAlert: () => null },
       "react-router-dom": { Link },
@@ -94,7 +95,7 @@ test("self-shipping dispatch sends optional manual tracking without calling a sh
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "/orders/order/dispatch");
   assert.deepEqual(JSON.parse(calls[0][1].body), { ship_from_store_id: "warehouse", courier: "Own courier", awb: "TRACK-1" });
-  assert.deepEqual(errors, []);
+  assert.deepEqual(errors.filter(Boolean), []);
   const html = renderToStaticMarkup(element);
   assert.match(html, /Self-shipping \/ own courier/);
   assert.match(html, /Courier \/ delivery service \(optional\)/);

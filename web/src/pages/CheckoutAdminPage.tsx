@@ -4,8 +4,9 @@ import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, Shoppin
 import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, orderStatus, paymentLabel, rupees, type ShopOrder } from "../features/shop";
-import { OrderActions, useStoresAndAccounts } from "../components/OrderActions";
+import { emptyPackage, OrderActions, ShiprocketPanel, useStoresAndAccounts, type PackageSize } from "../components/OrderActions";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
+import { OrderItems } from "../components/OrderItems";
 
 type Policy = { shipping_provider: "shiprocket" | "self"; prepaid_enabled: boolean; shipping_sac: string; shipping_gst_rate: number | string; cod_enabled: boolean; cod_limit: number | string; cod_approval_hours: number;
   cod_overdue_days: number; cod_serviceable_pincodes: string[]; pickup_enabled: boolean; pickup_hold_hours: number; pickup_reminder_hours: number; prepaid_hold_minutes: number };
@@ -53,8 +54,8 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [offset, setOffset] = useState(0);
-  const [packageSize, setPackageSize] = useState({ weight: "", length: "", width: "", height: "" });
-  const [reconcileId, setReconcileId] = useState("");
+  const [packages, setPackages] = useState<Record<string, PackageSize>>({});
+  const [reconcileIds, setReconcileIds] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [settlementDelete, setSettlementDelete] = useState<Settlement | null>(null);
@@ -124,9 +125,9 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
     setBusy(true); setError(""); setMessage("");
     try {
       await accountRequest(`/orders/${order.id}/${reconcile ? "reconcile-shipment" : "ship"}`, {
-        method: "POST", body: JSON.stringify(reconcile ? { provider_order_id: Number(reconcileId) } : packageSize),
+        method: "POST", body: JSON.stringify(reconcile ? { provider_order_id: Number(reconcileIds[order.id]) } : packages[order.id] || emptyPackage),
       }, "checkout-admin");
-      setMessage(reconcile ? "Shipment reconciled." : "Order submitted to Shiprocket. Arrange AWB, pickup and delivery in Shiprocket, then check tracking here.");
+      setMessage(reconcile ? "Shipment reconciled." : order.status === "dispatched" ? "Order submitted to Shiprocket. Arrange AWB and pickup in Shiprocket." : "Order submitted to Shiprocket. You can now dispatch & invoice it; arrange AWB and pickup in Shiprocket.");
       await refreshOrders();
     } catch (failure) { setError(String(failure)); await refreshOrders().catch(refreshFailure => setError(previous => `${previous} ${String(refreshFailure)}`)); }
     finally { setBusy(false); }
@@ -238,24 +239,21 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
       </> : tab === "orders" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>Shopper orders</h2><p>Only this workspace&apos;s orders. Approve, dispatch and collect from here; each dispatch or collection creates the invoice and books stock.</p></div><div className="shop-actions"><label>Status<select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setOffset(0); }}><option value="">All</option>{["cod_requested", "paid", "confirmed", "fulfilment_review", "shipment_booked", "dispatched", "ready_for_pickup", "delivered", "collected", "cancelled"].map(value => <option key={value} value={value}>{orderStatus(value as ShopOrder["status"])}</option>)}</select></label><button className="btn light" disabled={locked} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh orders</button></div></div>
         {!ordersLoaded ? <p role="status">Loading orders...</p> : !orders.length ? <div className="checkout-empty"><ShoppingBag size={32} aria-hidden="true" /><h3>No orders on this page yet</h3><p>Orders appear here when shoppers proceed to payment for their carts. Adding to cart alone and WhatsApp chats do not create an order.</p><Link className="btn light" to="/portal/checkout-setup">Review payments &amp; delivery setup</Link></div> : <>
-        {orders.some(order => order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery") ? <details className="checkout-step"><summary>Packing details &amp; shipment recovery</summary><p>For paid live orders, enter actual packed dimensions (cm) and weight (kg) before submitting. If a submission response was lost, find the order in Shiprocket using the Tenali order ID, then enter its Shiprocket order ID here. Do not blindly create another shipment.</p><div className="company-fields">
-            {(Object.keys(packageSize) as (keyof typeof packageSize)[]).map(key => <label key={key}>Package {key} ({key === "weight" ? "kg" : "cm"})<input type="number" min={0.001} step="any" value={packageSize[key]} onChange={event => setPackageSize({ ...packageSize, [key]: event.target.value })} /></label>)}
-            <label>Shiprocket order ID for recovery / tracking<input inputMode="numeric" value={reconcileId} onChange={event => setReconcileId(event.target.value)} /></label>
-          </div></details> : null}
           {orders.map(order => <article className="checkout-step shop-order online-order-card" key={order.id}><header className="checkout-order-heading"><div><p className="checkout-kicker">Order #{order.id.slice(0, 8)}</p><h3>{order.address.name}</h3><time dateTime={order.created_at}>{new Date(order.created_at).toLocaleString()}</time></div><div className="order-heading-total"><span className="checkout-order-total">{rupees(order.total_paise)}</span><span>{paymentLabel(order.payment_method)}</span></div></header>
             <div className="order-status-row"><span className={`order-status-badge order-status-${order.status}`}>{orderStatus(order.status)}</span>{(order.provider_key_id || "").startsWith("rzp_test_") ? <span className="order-test-badge">Test payment - no real shipment</span> : null}</div>
-            <div className="order-details-grid"><section aria-label="Ordered items"><h4>Items</h4><ul className="admin-order-items">{order.items.map(item => <li key={`${item.product_id}:${item.variant_id}`}><div><strong>{item.name}</strong><span>Qty {item.quantity} · {rupees(item.unit_paise)} each</span></div><strong>{rupees(item.unit_paise * item.quantity)}</strong></li>)}</ul><p className="order-delivery-charge">Delivery <strong>{order.shipping_paise ? rupees(order.shipping_paise) : "Free"}</strong></p></section>
+            <div className="order-details-grid"><section aria-label="Ordered items"><h4>Items</h4><OrderItems items={order.items} /><p className="order-delivery-charge">Delivery <strong>{order.shipping_paise ? rupees(order.shipping_paise) : "Free"}</strong></p></section>
               <section className="order-delivery-address" aria-label="Delivery contact"><h4>{order.fulfilment_method === "pickup" ? "Shopper contact" : "Deliver to"}</h4><strong>{order.address.name}</strong><a href={`tel:${order.address.phone}`}>{order.address.phone}</a><address>{order.address.address}<br />{order.address.city}, {order.address.state} {order.address.pincode}</address></section></div>
-            <details className="order-reference"><summary>Order reference</summary><p>{order.id}</p>{order.razorpay_payment_id ? <p>Razorpay: {order.razorpay_payment_id}</p> : null}</details>
+            <details className="order-reference"><summary>Order reference</summary><p>{order.id}</p>{order.razorpay_payment_id ? <p>Razorpay: {order.razorpay_payment_id}</p> : null}{order.shiprocket_order_id ? <p>Shiprocket: {order.shiprocket_order_id}{order.shipment_id ? ` · Shipment ${order.shipment_id}` : ""}</p> : null}</details>
+            <ShiprocketPanel order={order} pkg={packages[order.id] || emptyPackage} reconcileId={reconcileIds[order.id] || ""} locked={locked}
+              onPackage={pkg => setPackages(previous => ({ ...previous, [order.id]: pkg }))} onReconcileId={value => setReconcileIds(previous => ({ ...previous, [order.id]: value }))}
+              onSubmit={() => void action(order, false)} onRecover={() => void action(order, true)} />
             <OrderActions order={order} stores={stores} accounts={accounts} locked={locked} onDone={async note => { if (note) setMessage(note); await refreshOrders(); }} onError={failure => setError(failure)} />
-            {order.shipping_error ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
-            {order.shiprocket_order_id ? <p>Shiprocket order {order.shiprocket_order_id} · Shipment {order.shipment_id} · {order.awb || "AWB not yet recorded"}</p> : null}
-            <div className="shop-actions order-provider-actions">{order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery" && ((order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod")) && !(order.provider_key_id || "").startsWith("rzp_test_") ? <button className="btn" disabled={locked || Object.values(packageSize).some(value => !Number(value) || Number(value) <= 0)} onClick={() => void action(order, false)}>Submit packed order to Shiprocket</button> : null}
+            {order.shipping_error && order.shipping_provider !== "shiprocket" ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
+            <div className="shop-actions order-provider-actions">
               {order.status === "awaiting_payment" ? <button className="btn light" disabled={locked} onClick={() => {
                 setBusy(true); setError("");
                 void accountRequest(`/orders/${order.id}/reconcile-payment`, { method: "POST" }, "checkout-admin").then(refreshOrders).catch(failure => setError(String(failure))).finally(() => setBusy(false));
-              }}>Verify payment with Razorpay</button> : null}
-              {order.status === "shipping_pending" || order.status === "shipment_booked" ? <button className="btn light" disabled={locked || !/^[1-9][0-9]*$/.test(reconcileId)} onClick={() => void action(order, true)}>Recover shipment / update tracking</button> : null}</div>
+              }}>Verify payment with Razorpay</button> : null}</div>
           </article>)}
         </>}
         <div className="shop-actions checkout-pagination"><button disabled={offset === 0 || locked} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><span>Page {offset / 50 + 1}</span><button disabled={orders.length < 50 || locked || !ordersLoaded} onClick={() => setOffset(offset + 50)}>Next</button></div>
