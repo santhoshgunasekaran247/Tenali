@@ -305,7 +305,9 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
         "order_items": [{"name": item["name"], "sku": item["sku"], "units": item["quantity"],
                          "selling_price": item["unit_paise"] / 100} for item in row["items"]],
         "payment_method": "COD" if row["payment_method"] == "cod" else "Prepaid", "sub_total": row["subtotal_paise"] / 100,
-        "shipping_charges": row["shipping_paise"] / 100, **{key: float(value) for key, value in package.model_dump().items()},
+        "shipping_charges": row["shipping_paise"] / 100,
+        # Shiprocket's adhoc API names the package width "breadth".
+        "weight": float(package.weight), "length": float(package.length), "breadth": float(package.width), "height": float(package.height),
     }
     token = providers.provider_request("shiprocket", "POST", "/auth/login", {}, {
         "email": credentials["shiprocket_email"], "password": credentials["shiprocket_password"]}).get("token")

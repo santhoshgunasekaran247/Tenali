@@ -284,6 +284,9 @@ class SelfShippingTests(unittest.TestCase):
                                                    {"order_id": 991, "shipment_id": 552})
         self.assertEqual(result["shiprocket_order_id"], 991)
         self.assertEqual(provider.call_count, 2)
+        payload = provider.call_args_list[1].args[4]
+        self.assertEqual((payload["weight"], payload["length"], payload["breadth"], payload["height"]), (1.0, 10.0, 10.0, 10.0))
+        self.assertNotIn("width", payload)
 
     def test_release_unblocks_only_unconfirmed_submissions(self):
         cases = [
