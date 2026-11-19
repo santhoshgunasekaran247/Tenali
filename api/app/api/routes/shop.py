@@ -20,7 +20,7 @@ from app.services import shopper_federation as federation
 from app.services.customer_contacts import normalize_phone
 from app.services.federation_settings import public_config
 from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company
-from app.services.shop_checkout import ORDER_COLUMNS, checkout_availability, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
+from app.services.shop_checkout import ORDER_COLUMNS, checkout_availability, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, release_shipment, settings_for
 from app.services.storefront_access import ensure_storefront_enabled
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
@@ -426,6 +426,12 @@ def ship(order_id: UUID, payload: PackageInput, identity=Depends(administrator),
 @admin_router.post("/orders/{order_id}/reconcile-shipment")
 def reconcile(order_id: UUID, payload: ShipmentReconcile, identity=Depends(administrator), db=Depends(get_db), privileged=Depends(identity_db)):
     return reconcile_shipment(db, str(identity["company_id"]), str(order_id), payload.provider_order_id, privileged)
+
+
+@admin_router.post("/orders/{order_id}/release-shipment")
+def release(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
+    return release_shipment(db, str(identity["company_id"]), str(order_id))
+
 
 
 @admin_router.post("/orders/{order_id}/reconcile-payment")

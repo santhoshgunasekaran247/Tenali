@@ -81,12 +81,25 @@ class CheckoutProviderErrorTests(unittest.TestCase):
         self.assertIn("rate-limiting", detail)
 
     def test_uncertain_shipment_write_retains_no_duplicate_shipment_guidance(self):
-        for error in [TimeoutError(), URLError("private-provider-response"), self.http_error(503),
-                      self.http_error(422)]:
+        for error in [TimeoutError(), URLError("private-provider-response"), self.http_error(503)]:
             with self.subTest(error=type(error).__name__):
                 detail = self.request_failure(error, path="/orders/create/adhoc")
                 self.assertIn("before retrying", detail)
                 self.assertIn("shipment recovery", detail)
+
+    def test_rejected_shipment_write_is_definite_and_names_only_safe_fields(self):
+        opener = MagicMock()
+        opener.open.side_effect = HTTPError("https://apiv2.shiprocket.in/private", 422, "private", {}, io.BytesIO(
+            b'{"message":"private-provider-response","errors":{"billing_pincode":["private-provider-response"],"<script>":["x"]}}'))
+        with patch.object(providers, "build_opener", return_value=opener), self.assertRaises(providers.ProviderError) as raised:
+            providers.provider_request("shiprocket", "POST", "/orders/create/adhoc", {"token": "private-token"}, {})
+        detail = raised.exception.detail
+        self.assertEqual(raised.exception.provider_status, 422)
+        self.assertIn("billing_pincode", detail)
+        self.assertIn("No shipment was created", detail)
+        self.assertNotIn("shipment recovery", detail)
+        self.assertNotIn("private-provider-response", detail)
+        self.assertNotIn("<script>", detail)
 
     def test_non_object_response_retains_uncertain_write_guidance(self):
         opener = MagicMock()

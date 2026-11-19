@@ -91,8 +91,11 @@ Render Environment settings, never in the static UI or the repository.
   Orders dispatched (or marked delivered) before this rule can still be submitted,
   or recovered with their Shiprocket order ID; they return to dispatched without
   touching the invoice or stock. Mark delivered also waits for a Shiprocket
-  booking and asks for confirmation. An
-  unconfirmed submission must be recovered, never resubmitted.
+  booking and asks for confirmation. When Shiprocket rejects a submission (HTTP
+  4xx) nothing is created: the order is restored, the rejected field names are
+  shown, and it can be corrected and resubmitted. A timeout or 5xx is
+  unconfirmed and must be recovered; if the Tenali order ID is not in
+  Shiprocket, staff can use "Not in Shiprocket: allow resubmission" to retry.
 
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
   check shows problems first, with optional matching entries and store filtering.

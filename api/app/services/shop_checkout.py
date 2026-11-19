@@ -263,6 +263,9 @@ def reconcile_payment(db, company_id: str, order_id: str):
 
 AFTER_DISPATCH = {"dispatched", "delivered"}
 PENDING_MARKER = "Shiprocket submission in progress. If this persists, recover it in Shiprocket using the Tenali order ID."
+UNCERTAIN_MARKER = "Provider response uncertain. Reconcile in Shiprocket using the Tenali order ID."
+# Only these markers mean a shipment may exist; other shipping errors record a definite Shiprocket rejection.
+UNCERTAIN_MARKERS = {PENDING_MARKER, UNCERTAIN_MARKER}
 
 
 def _late_shipment(row) -> bool:
@@ -281,7 +284,7 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
     if row["status"] == "shipment_booked" or (row["status"] in AFTER_DISPATCH and row.get("shiprocket_order_id")):
         return public_order(row)
     late = _late_shipment(row)
-    if late and row.get("shipping_error"):
+    if late and row.get("shipping_error") in UNCERTAIN_MARKERS:
         raise HTTPException(409, "A previous Shiprocket submission is unconfirmed. Find the order in Shiprocket using the Tenali order ID and recover it instead of resubmitting.")
     if not late and (row["fulfilment_method"] != "delivery" or row["status"] not in {"paid", "confirmed"} or (row["status"] == "confirmed" and row["payment_method"] != "cod")):
         raise HTTPException(409, "Only paid or approved cash-on-delivery delivery orders can be submitted. Reconcile any pending shipment before retrying.")
@@ -320,9 +323,15 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
         shipment = providers.provider_request("shiprocket", "POST", "/orders/create/adhoc", {"token": token}, payload)
         if not shipment.get("order_id") or not shipment.get("shipment_id"):
             raise HTTPException(502, "Shiprocket did not confirm the shipment. Reconcile it before retrying.")
-    except HTTPException:
-        db.execute(text("update shop_orders set shipping_error='Provider response uncertain. Reconcile in Shiprocket using the Tenali order ID.' where company_id=:company and id=:id"),
-                   {"company": company_id, "id": order_id})
+    except HTTPException as error:
+        if getattr(error, "provider_status", None) in providers.DEFINITE_REJECTIONS:
+            # Shiprocket refused the request, so nothing was created: restore the order and keep its reason for staff.
+            db.execute(text("""update shop_orders set status=:status,shipping_error=:reason where company_id=:company and id=:id"""),
+                       {"company": company_id, "id": order_id, "status": "dispatched" if late else row["status"],
+                        "reason": str(error.detail)[:1000]})
+        else:
+            db.execute(text("update shop_orders set shipping_error=:marker where company_id=:company and id=:id"),
+                       {"company": company_id, "id": order_id, "marker": UNCERTAIN_MARKER})
         db.commit()
         raise
     result = db.execute(text("""update shop_orders set status=:status,
@@ -361,5 +370,25 @@ def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: in
         where company_id=:company and id=:id returning *"""),
         {"company": company_id, "id": order_id, "status": status, "late": late, "provider": provider_order_id, "shipment": shipment["id"],
          "awb": shipment.get("awb"), "courier": shipment.get("courier")}).mappings().one()
+    db.commit()
+    return public_order(result)
+
+
+def release_shipment(db, company_id: str, order_id: str):
+    """Staff confirmed the Tenali order is absent in Shiprocket, so an unconfirmed submission may be retried."""
+    row = db.execute(text("select * from shop_orders where company_id=:company and id=:id for update"),
+                     {"company": company_id, "id": order_id}).mappings().first()
+    if not row or row["shipping_provider"] != "shiprocket" or row.get("shiprocket_order_id"):
+        raise HTTPException(409, "No unconfirmed Shiprocket submission to release")
+    late = _late_shipment(row)
+    if late and row.get("shipping_error") in UNCERTAIN_MARKERS:
+        status = "dispatched"
+    elif row["status"] == "shipping_pending":
+        status = "confirmed" if row["payment_method"] == "cod" else "paid"
+    else:
+        raise HTTPException(409, "No unconfirmed Shiprocket submission to release")
+    result = db.execute(text("""update shop_orders set status=:status,shipping_error=null,
+        delivered_at=case when :late then null else delivered_at end where company_id=:company and id=:id returning *"""),
+        {"company": company_id, "id": order_id, "status": status, "late": late}).mappings().one()
     db.commit()
     return public_order(result)

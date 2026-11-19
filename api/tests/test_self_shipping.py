@@ -229,12 +229,21 @@ class SelfShippingTests(unittest.TestCase):
         db.execute.return_value.mappings.return_value.one.return_value = {**row, "shiprocket_order_id": 991}
         identity_db.execute.return_value.scalar_one.return_value = "shopper@example.invalid"
         responses = [{"token": "token"}, shipment]
-        with patch.object(checkout_providers, "provider_request", side_effect=lambda *args, **kwargs: responses.pop(0)) as provider, \
+
+        def respond(*args, **kwargs):
+            response = responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+        with patch.object(checkout_providers, "provider_request", side_effect=respond) as provider, \
                 patch.object(checkout_providers, "decrypt_credentials", return_value={"shiprocket_email": "a@b.invalid", "shiprocket_password": "x"}), \
                 patch.object(checkout_providers, "encrypt_credentials", return_value="encrypted"), \
                 patch.object(shop_checkout, "public_order", side_effect=lambda value: value):
-            result = shop_checkout.create_shipment(db, identity_db, str(uuid4()), str(row["id"]),
-                                                   PackageInput(weight=1, length=10, width=10, height=10))
+            try:
+                result = shop_checkout.create_shipment(db, identity_db, str(uuid4()), str(row["id"]),
+                                                       PackageInput(weight=1, length=10, width=10, height=10))
+            except HTTPException as error:
+                result = error
         return db, provider, result
 
     def _dispatched_row(self, **extra):
@@ -256,6 +265,48 @@ class SelfShippingTests(unittest.TestCase):
             self.assertIn("in progress", updates[0]["marker"])
             self.assertEqual(updates[-1]["status"], "dispatched")
             self.assertIsNone(updates[-1].get("marker"))
+
+    def test_rejected_submission_restores_order_and_uncertain_submission_blocks_resubmission(self):
+        rejection = checkout_providers.ProviderError("Shiprocket rejected the request. No shipment was created.", 422)
+        for status, original, expected in (("delivered", "delivered", "dispatched"), ("paid", "paid", "paid")):
+            db, _, error = self._late_shipment(self._dispatched_row(status=status), rejection)
+            self.assertIs(error, rejection)
+            final = [call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0])][-1]
+            self.assertEqual((final["status"], final["reason"]), (expected, str(rejection.detail)), original)
+        for failure in (checkout_providers.ProviderError("timeout", None), checkout_providers.ProviderError("down", 503)):
+            db, _, error = self._late_shipment(self._dispatched_row(), failure)
+            final = [call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0])][-1]
+            self.assertEqual(final["marker"], shop_checkout.UNCERTAIN_MARKER)
+            self.assertNotIn("status", final)
+
+    def test_rejected_late_order_can_be_resubmitted(self):
+        db, provider, result = self._late_shipment(self._dispatched_row(shipping_error="Shiprocket rejected the request."),
+                                                   {"order_id": 991, "shipment_id": 552})
+        self.assertEqual(result["shiprocket_order_id"], 991)
+        self.assertEqual(provider.call_count, 2)
+
+    def test_release_unblocks_only_unconfirmed_submissions(self):
+        cases = [
+            (self._dispatched_row(status="delivered", shipping_error=shop_checkout.UNCERTAIN_MARKER), "dispatched", True),
+            (self._dispatched_row(status="shipping_pending", shipping_error=shop_checkout.UNCERTAIN_MARKER), "paid", False),
+            (self._dispatched_row(status="shipping_pending", payment_method="cod"), "confirmed", False),
+        ]
+        for row, expected, late in cases:
+            db = MagicMock()
+            db.execute.return_value.mappings.return_value.first.return_value = row
+            db.execute.return_value.mappings.return_value.one.return_value = row
+            with patch.object(shop_checkout, "public_order", side_effect=lambda value: value):
+                shop_checkout.release_shipment(db, str(uuid4()), str(row["id"]))
+            update = next(call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0]))
+            self.assertEqual((update["status"], update["late"]), (expected, late))
+            db.commit.assert_called_once()
+        for row in (self._dispatched_row(), self._dispatched_row(shiprocket_order_id=991, status="shipping_pending"),
+                    self._dispatched_row(status="paid")):
+            db = MagicMock()
+            db.execute.return_value.mappings.return_value.first.return_value = row
+            with self.assertRaises(HTTPException):
+                shop_checkout.release_shipment(db, str(uuid4()), str(row["id"]))
+            db.commit.assert_not_called()
 
     def test_orders_without_shiprocket_booking_cannot_be_marked_delivered(self):
         order = {"fulfilment_method": "delivery", "status": "dispatched", "shipping_provider": "shiprocket", "shiprocket_order_id": None}
@@ -282,7 +333,7 @@ class SelfShippingTests(unittest.TestCase):
         self.assertEqual((update["status"], update["late"], update["provider"], update["awb"]), ("dispatched", True, 991, "AWB1"))
 
     def test_dispatched_orders_with_unconfirmed_or_existing_shiprocket_booking_are_not_resubmitted(self):
-        for extra in ({"shipping_error": "Provider response uncertain"}, {"shiprocket_order_id": 991}):
+        for extra in ({"shipping_error": shop_checkout.UNCERTAIN_MARKER}, {"shiprocket_order_id": 991}):
             row = self._dispatched_row(**extra)
             db = MagicMock()
             db.execute.return_value.mappings.return_value.first.return_value = row

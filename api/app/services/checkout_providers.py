@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -43,7 +44,26 @@ def decrypt_credentials(company_id: str, encrypted: str) -> dict:
     return data["credentials"]
 
 
-def shiprocket_failure(method: str, path: str, status: int | None = None) -> str:
+class ProviderError(HTTPException):
+    """Provider failure that keeps the provider's HTTP status so callers can tell rejections from uncertain outcomes."""
+
+    def __init__(self, detail: str, provider_status: int | None = None):
+        super().__init__(502, detail)
+        self.provider_status = provider_status
+
+
+# Shiprocket answered these without processing the request, so no shipment exists.
+DEFINITE_REJECTIONS = {400, 401, 403, 404, 422, 429}
+_FIELD = re.compile(r"^[a-z][a-z0-9_.]{0,39}$")
+
+
+def shiprocket_error_fields(body) -> list[str]:
+    """Only validated field names leave the provider body; messages may echo shopper data."""
+    errors = body.get("errors") if isinstance(body, dict) else None
+    return [key for key in errors if isinstance(key, str) and _FIELD.match(key)][:8] if isinstance(errors, dict) else []
+
+
+def shiprocket_failure(method: str, path: str, status: int | None = None, fields: list[str] | None = None) -> str:
     login = path == "/auth/login"
     pickup = path == "/settings/company/pickup"
     shipment_write = method.upper() not in {"GET", "HEAD"} and not login
@@ -59,7 +79,11 @@ def shiprocket_failure(method: str, path: str, status: int | None = None) -> str
         detail = "Shiprocket rejected the request. Check the pickup-location name, required order/address details and package measurements in Shiprocket."
     else:
         detail = "Shiprocket could not be reached or returned an unusable response. Check its availability and the API service's provider-error logs."
-    if shipment_write:
+    if fields:
+        detail += " Fields reported by Shiprocket: " + ", ".join(fields) + "."
+    if shipment_write and status in DEFINITE_REJECTIONS:
+        detail += " No shipment was created; correct the details and submit again."
+    elif shipment_write:
         detail += " Check Shiprocket for the Tenali order before retrying; use shipment recovery if it already exists."
     else:
         detail += " This request does not create a shipment."
@@ -119,14 +143,16 @@ def provider_request(provider: str, method: str, path: str, credentials: dict, p
         logger.warning("%s request failed (HTTP %s, %s %s)", provider, error.code, method, path.split("?")[0])
         error_body = None
         try:
-            if provider == "razorpay":
-                error_body = json.loads(error.read(16_384))
+            error_body = json.loads(error.read(16_384))
         except (ValueError, OSError) as parse_error:
-            logger.warning("Razorpay error response could not be decoded (%s)", type(parse_error).__name__)
+            logger.warning("%s error response could not be decoded (%s)", provider.title(), type(parse_error).__name__)
         finally:
             error.close()
         if provider == "shiprocket":
-            raise HTTPException(502, shiprocket_failure(method, path, error.code)) from error
+            fields = shiprocket_error_fields(error_body)
+            if fields:
+                logger.warning("Shiprocket rejected fields: %s", ", ".join(fields))
+            raise ProviderError(shiprocket_failure(method, path, error.code, fields), error.code) from error
         raise HTTPException(502, razorpay_failure(method, path, error.code, error_body)) from error
     except (URLError, TimeoutError, ValueError, OSError) as error:
         logger.warning("%s request failed (%s)", provider, type(error).__name__)

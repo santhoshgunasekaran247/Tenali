@@ -9,25 +9,30 @@ type Props = { order: ShopOrder; stores: Store[]; accounts: Account[]; locked: b
 export type PackageSize = { weight: string; length: string; width: string; height: string };
 export const emptyPackage: PackageSize = { weight: "", length: "", width: "", height: "" };
 
+export const SHIPROCKET_UNCERTAIN = ["Provider response uncertain", "Shiprocket submission in progress"];
+
 /** Which Shiprocket actions apply; orders dispatched before Shiprocket submission can still be submitted or recovered. */
 export function shiprocketActions(order: ShopOrder) {
   const applies = order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery";
   const testPayment = (order.provider_key_id || "").startsWith("rzp_test_");
   const ready = (order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod");
   const late = ["dispatched", "delivered"].includes(order.status) && !order.shiprocket_order_id && ["prepaid", "cod"].includes(order.payment_method);
+  const uncertain = SHIPROCKET_UNCERTAIN.some(marker => (order.shipping_error || "").startsWith(marker));
   return {
     applies,
     testPayment,
-    canSubmit: applies && !testPayment && (ready || (late && !order.shipping_error)),
+    canSubmit: applies && !testPayment && (ready || (late && !uncertain)),
     canRecover: applies && (["shipping_pending", "shipment_booked"].includes(order.status) || late || (order.status === "dispatched" && !order.awb)),
+    // Staff may release an unconfirmed submission only after checking it does not exist in Shiprocket.
+    canRelease: applies && !order.shiprocket_order_id && (order.status === "shipping_pending" || (late && uncertain)),
   };
 }
 
 type ShiprocketProps = { order: ShopOrder; pkg: PackageSize; reconcileId: string; locked: boolean;
-  onPackage: (pkg: PackageSize) => void; onReconcileId: (value: string) => void; onSubmit: () => void; onRecover: () => void };
+  onPackage: (pkg: PackageSize) => void; onReconcileId: (value: string) => void; onSubmit: () => void; onRecover: () => void; onRelease?: () => void };
 
-export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, onReconcileId, onSubmit, onRecover }: ShiprocketProps) {
-  const { applies, testPayment, canSubmit, canRecover } = shiprocketActions(order);
+export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, onReconcileId, onSubmit, onRecover, onRelease }: ShiprocketProps) {
+  const { applies, testPayment, canSubmit, canRecover, canRelease } = shiprocketActions(order);
   if (!applies) return null;
   const packageValid = Object.values(pkg).every(value => Number(value) > 0);
   return <section className="order-action-panel order-shiprocket-panel" aria-label="Shiprocket shipment"><h4>Shiprocket shipment</h4>
@@ -48,7 +53,10 @@ export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, on
     {canRecover ? <details className="order-shiprocket-recovery"><summary>Recover shipment / update tracking</summary><p>If a submission response was lost, find the order in Shiprocket using the Tenali order ID and enter its Shiprocket order ID. Do not create another shipment.</p><div className="shop-actions">
       <label>Shiprocket order ID<input inputMode="numeric" value={reconcileId} onChange={event => onReconcileId(event.target.value)} /></label>
       <button className="btn light" disabled={locked || !/^[1-9][0-9]*$/.test(reconcileId)} onClick={onRecover}>Recover shipment / update tracking</button>
-    </div></details> : null}
+    </div>
+      {canRelease && onRelease ? <div className="shop-actions"><p>Searched Shiprocket and this Tenali order ID is not there? Release it so it can be submitted again.</p>
+        <button className="btn light" disabled={locked} onClick={() => { if (window.confirm("Only continue if this Tenali order ID does not exist in Shiprocket. Submitting again when it already exists creates a duplicate shipment.")) onRelease(); }}>Not in Shiprocket: allow resubmission</button></div> : null}
+    </details> : null}
   </section>;
 }
 

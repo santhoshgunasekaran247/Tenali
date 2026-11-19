@@ -7,6 +7,7 @@ const ts = require("typescript");
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 
+const testWindow = { confirm: () => true };
 function harness(overrides = {}, request = async () => ({}), refresh = async () => {}) {
   const states = [], errors = [], messages = [], requests = [];
   let cursor = 0;
@@ -26,7 +27,7 @@ function harness(overrides = {}, request = async () => ({}), refresh = async () 
       requests.push(args); return request(...args);
     } },
   };
-  vm.runInNewContext(compiled, { exports, require: name => mocks[name] || require(name) });
+  vm.runInNewContext(compiled, { exports, window: testWindow, require: name => mocks[name] || require(name) });
   const order = { id: "order", store_id: "online", payment_method: "prepaid", status: "paid",
     fulfilment_method: "delivery", shipping_provider: "self", razorpay_payment_id: "pay_captured",
     advance_transaction_id: null, ship_from_store_id: "warehouse", invoice_id: null,
@@ -105,7 +106,7 @@ const panel = (order, pkg = { weight: "", length: "", width: "", height: "" }) =
   const { exports } = harness();
   const calls = [];
   const tree = exports.ShiprocketPanel({ order: { id: "order", payment_method: "prepaid", fulfilment_method: "delivery", ...shiprocket, ...order }, pkg,
-    reconcileId: "", locked: false, onPackage: () => {}, onReconcileId: () => {}, onSubmit: () => calls.push("submit"), onRecover: () => calls.push("recover") });
+    reconcileId: "", locked: false, onPackage: () => {}, onReconcileId: () => {}, onSubmit: () => calls.push("submit"), onRecover: () => calls.push("recover"), onRelease: () => calls.push("release") });
   return { tree, calls, html: tree ? renderToStaticMarkup(tree) : "" };
 };
 const filled = { weight: "0.5", length: "20", width: "15", height: "10" };
@@ -136,6 +137,25 @@ test("orders dispatched before Shiprocket submission can still be submitted or r
   assert.equal(button(uncertain.tree, "Submit packed order to Shiprocket"), undefined);
   assert.match(uncertain.html, /Provider response uncertain/);
   assert.match(uncertain.html, /Recover shipment/);
+});
+
+test("unconfirmed submissions can be released after a confirmation, and rejected ones resubmitted directly", () => {
+  const uncertain = panel({ status: "delivered", shiprocket_order_id: null, shipping_error: "Provider response uncertain. Reconcile in Shiprocket using the Tenali order ID." }, filled);
+  const release = button(uncertain.tree, "Not in Shiprocket: allow resubmission");
+  try {
+    testWindow.confirm = () => false;
+    release.props.onClick();
+    assert.deepEqual(uncertain.calls, []);
+    testWindow.confirm = () => true;
+    release.props.onClick();
+    assert.deepEqual(uncertain.calls, ["release"]);
+  } finally { testWindow.confirm = () => true; }
+  const rejected = panel({ status: "dispatched", shiprocket_order_id: null, shipping_error: "Shiprocket rejected the request. No shipment was created." }, filled);
+  assert.equal(button(rejected.tree, "Submit packed order to Shiprocket").props.disabled, false);
+  assert.equal(button(rejected.tree, "Not in Shiprocket: allow resubmission"), undefined);
+  assert.match(rejected.html, /No shipment was created/);
+  assert.equal(button(panel({ status: "paid" }, filled).tree, "Not in Shiprocket: allow resubmission"), undefined);
+  assert.ok(button(panel({ status: "shipping_pending" }).tree, "Not in Shiprocket: allow resubmission"));
 });
 
 test("booked shipments show Shiprocket references and test payments never submit", () => {

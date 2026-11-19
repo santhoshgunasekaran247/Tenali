@@ -127,9 +127,18 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
       await accountRequest(`/orders/${order.id}/${reconcile ? "reconcile-shipment" : "ship"}`, {
         method: "POST", body: JSON.stringify(reconcile ? { provider_order_id: Number(reconcileIds[order.id]) } : packages[order.id] || emptyPackage),
       }, "checkout-admin");
-      setMessage(reconcile ? "Shipment reconciled." : order.status === "dispatched" ? "Order submitted to Shiprocket. Arrange AWB and pickup in Shiprocket." : "Order submitted to Shiprocket. You can now dispatch & invoice it; arrange AWB and pickup in Shiprocket.");
+      setMessage(reconcile ? "Shipment reconciled." : ["dispatched", "delivered"].includes(order.status) ? "Order submitted to Shiprocket. Arrange AWB and pickup in Shiprocket." : "Order submitted to Shiprocket. You can now dispatch & invoice it; arrange AWB and pickup in Shiprocket.");
       await refreshOrders();
     } catch (failure) { setError(String(failure)); await refreshOrders().catch(refreshFailure => setError(previous => `${previous} ${String(refreshFailure)}`)); }
+    finally { setBusy(false); }
+  };
+  const release = async (order: ShopOrder) => {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await accountRequest(`/orders/${order.id}/release-shipment`, { method: "POST" }, "checkout-admin");
+      setMessage("Shiprocket submission released. Enter the packed size and submit again.");
+      await refreshOrders();
+    } catch (failure) { setError(String(failure)); }
     finally { setBusy(false); }
   };
   if (!allowed) return <main className="loading">Workspace administrator access is required.</main>;
@@ -246,7 +255,7 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
             <details className="order-reference"><summary>Order reference</summary><p>{order.id}</p>{order.razorpay_payment_id ? <p>Razorpay: {order.razorpay_payment_id}</p> : null}{order.shiprocket_order_id ? <p>Shiprocket: {order.shiprocket_order_id}{order.shipment_id ? ` · Shipment ${order.shipment_id}` : ""}</p> : null}</details>
             <ShiprocketPanel order={order} pkg={packages[order.id] || emptyPackage} reconcileId={reconcileIds[order.id] || ""} locked={locked}
               onPackage={pkg => setPackages(previous => ({ ...previous, [order.id]: pkg }))} onReconcileId={value => setReconcileIds(previous => ({ ...previous, [order.id]: value }))}
-              onSubmit={() => void action(order, false)} onRecover={() => void action(order, true)} />
+              onSubmit={() => void action(order, false)} onRecover={() => void action(order, true)} onRelease={() => void release(order)} />
             <OrderActions order={order} stores={stores} accounts={accounts} locked={locked} onDone={async note => { if (note) setMessage(note); await refreshOrders(); }} onError={failure => setError(failure)} />
             {order.shipping_error && order.shipping_provider !== "shiprocket" ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
             <div className="shop-actions order-provider-actions">
