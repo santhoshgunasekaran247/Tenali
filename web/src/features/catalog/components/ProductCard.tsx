@@ -96,7 +96,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
             <strong>{moneyLabel(product.selling_price_display)}</strong>
           </div>
         </div>
-        <p title={product.description}>{product.description}</p>
+        {product.description ? <p title={product.description}>{product.description}</p> : null}
         <div className="product-card-actions" onClick={event => event.stopPropagation()}>
         {checkoutEnabled ? inCart ? <div className="product-card-incart">
             <span>In cart</span>

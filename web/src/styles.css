@@ -270,6 +270,14 @@ body {
   padding: 58px 7vw 64px;
 }
 
+.home-section { padding: 40px 7vw 44px; }
+.home-section .section-heading { margin-bottom: 18px; }
+.home-section .section-heading h2 { font-size: clamp(28px, 2.6vw, 38px); margin-bottom: 8px; }
+.home-section .section-heading h2 br { display: none; }
+.home-section .section-heading h2 span::before { content: " "; }
+.home-section .section-heading > p:last-child { margin: 0; font-size: 13px; }
+.home-section .bulk-pricing { margin-bottom: 16px; }
+
 .categories-section { background: var(--site-tint); }
 .featured-section { background: var(--site-surface); }
 .specials-section {
@@ -1973,28 +1981,28 @@ input[required], select[required], textarea[required] { border-inline-start: 3px
 .product-section .product-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 22px;
+  gap: 16px;
 }
 
 .product-section .product-image {
-  height: 330px;
+  height: 210px;
   background: var(--site-tint);
-  padding: 16px;
+  padding: 12px;
 }
 
 .product-section .product-body {
-  padding: 20px 20px 22px;
+  padding: 12px 14px 14px;
 }
 
 .product-section .product-body h3 {
-  font-size: 27px;
+  font-size: 21px;
   font-weight: 600;
 }
 
 .product-section .product-body p {
   font-size: 12px;
-  line-height: 1.55;
-  margin: 0 0 18px;
+  line-height: 1.45;
+  margin: 0;
 }
 
 .product-section .product-body .btn {
@@ -2295,7 +2303,7 @@ footer strong {
 
   .product-section .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .product-section .product-image { height: 210px; }
+  .product-section .product-image { height: 180px; }
 
   .home-section,
   .brands-section,
@@ -2327,7 +2335,10 @@ footer strong {
     grid-template-columns: 1fr;
   }
 
-  .product-section .product-grid,
+  .product-section .product-grid, .home-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .product-section .product-image, .home-product-grid .product-image { height: 150px; padding: 8px; }
+  .product-section .product-body, .home-product-grid .product-body { padding: 10px; }
+
   .category-index-grid {
     grid-template-columns: 1fr;
   }
@@ -2499,7 +2510,7 @@ html[data-busy] body::before {
 .quantity-stepper :is(button, input):focus-visible { outline: 2px solid var(--site-text); outline-offset: -2px; }
 .product-card-buy { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
 .product-card-buy .btn { min-width: 0; min-height: 40px; padding-inline: 10px; white-space: nowrap; }
-.product-card-buy .quantity-stepper, .product-card-incart .quantity-stepper { grid-template-columns: 34px minmax(36px, 44px) 34px; height: 40px; }
+.product-card-buy .quantity-stepper, .product-card-incart .quantity-stepper { grid-template-columns: 30px minmax(32px, 40px) 30px; height: 40px; }
 .product-card-incart { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 6px 6px 14px; border: 1px solid var(--site-border); border-radius: 8px; background: var(--site-tint, #f4f1ea); font-size: 13px; font-weight: 600; }
 .product-card-incart .quantity-stepper { background: var(--site-surface); }
 .product-cart-quantity { display: grid; gap: 6px; font-size: 13px; }
@@ -2508,4 +2519,15 @@ html[data-busy] body::before {
   .product-card-buy { grid-template-columns: minmax(0, 1fr); }
   .product-card-buy .btn { white-space: normal; }
   .product-card-buy .quantity-stepper { justify-self: start; }
+}
+.product-card { container-type: inline-size; }
+@container (max-width: 215px) {
+  .product-card-buy { grid-template-columns: minmax(0, 1fr); }
+  .product-card-buy .quantity-stepper { justify-self: stretch; grid-template-columns: 36px minmax(0, 1fr) 36px; }
+  .product-card-incart { flex-wrap: wrap; justify-content: center; padding: 6px; text-align: center; }
+  .product-card-incart > span { flex-basis: 100%; }
+  .product-card-incart .quantity-stepper { width: 100%; grid-template-columns: 36px minmax(0, 1fr) 36px; }
+  .product-card-actions .btn { padding-inline: 8px; font-size: 12px; }
+  .product-card .product-body h3 { font-size: 17px; }
+  .price-block { gap: 8px; flex-wrap: wrap; }
 }
