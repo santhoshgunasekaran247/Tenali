@@ -1,5 +1,5 @@
 import { FloatingAlert } from "../components/Notifications";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { FederatedShopperLogin } from "../components/FederatedShopperLogin";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth";
@@ -23,6 +23,8 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const paymentAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => paymentAbort.current?.abort(), []);
   useEffect(() => {
     if (loading) return;
     if (!storefront) { setChecking(false); return; }
@@ -47,17 +49,18 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   };
   const pay = async (order: ShopOrder) => {
     if (!shopper || !storefront) return;
+    const controller = new AbortController();
+    paymentAbort.current = controller;
     setBusy(true); setError(""); setMessage("");
     try {
       await loadRazorpay();
-      const result = await payOrder(order, shopper, storefront.company_name);
+      const result = await payOrder(order, shopper, storefront.company_name, controller.signal);
       if (result) {
-        await accountRequest(`/orders/${order.id}/confirm`, { method: "POST", body: JSON.stringify(result) });
         cart.removePurchased(order.items);
-        setMessage("Payment status updated.");
+        setMessage("Payment verified. Your order has been updated.");
       } else setMessage("Checkout closed. An unfinished checkout does not confirm payment.");
       await refreshOrders();
-    } catch (failure) { setError(String(failure)); } finally { setBusy(false); }
+    } catch (failure) { if (!controller.signal.aborted) setError(String(failure)); } finally { setBusy(false); }
   };
   if (loading || checking) return <main className="loading">Loading shopper account...</main>;
   if (!storefront) return <main className="access-page"><section className="access-panel"><h1>Shopper Account</h1><p>Open the store&apos;s workspace address or verified domain to sign in. Shopper accounts are separate for every store.</p><Link to="/login">Workspace staff sign in</Link></section></main>;

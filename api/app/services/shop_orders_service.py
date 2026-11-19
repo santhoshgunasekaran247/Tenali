@@ -60,12 +60,12 @@ def post_prepaid_advance(db: Session, company_id: str, order: dict) -> None:
                    {"id": order["id"], "reason": f"Advance not posted: {error.detail}"})
         return
     transaction = db.execute(text("""insert into account_transactions(company_id,store_id,from_account_id,to_account_id,amount,
-            payment_mode,reference,category,description,transaction_date,source_type,source_id,created_by)
+            payment_mode,reference,category,description,transaction_date,source_type,source_id)
         values(:company,:store,null,:account,:amount,'online',:reference,'online_advance',:description,current_date,
-            'shop_order',:order,cast(:actor as uuid)) returning id"""),
+            'shop_order',:order) returning id"""),
         {"company": company_id, "store": str(store["id"]), "account": str(store["settlement_account_id"]),
          "amount": Decimal(order["total_paise"]) / 100, "reference": order["razorpay_payment_id"],
-         "description": f"Online order advance {str(order['id'])[:8]}", "order": str(order["id"]), "actor": _actor(db)}).scalar_one()
+         "description": f"Online order advance {str(order['id'])[:8]}", "order": str(order["id"])}).scalar_one()
     db.execute(text("update shop_orders set advance_transaction_id=:tx, review_reason=null where id=:id"),
                {"tx": str(transaction), "id": order["id"]})
 
@@ -75,8 +75,11 @@ def retry_advance(db: Session, company_id: str, order_id: str) -> dict:
     if order["payment_method"] != "prepaid" or not order["razorpay_payment_id"] or order["advance_transaction_id"]:
         raise HTTPException(409, "No pending advance to post for this order")
     post_prepaid_advance(db, company_id, order)
+    result = _order_out(db, company_id, order_id)
     db.commit()
-    return _order_out(db, company_id, order_id)
+    if not result["advance_transaction_id"]:
+        raise HTTPException(409, result["review_reason"] or "Payment advance was not posted. Check the online store's settlement account and accounting period.")
+    return result
 
 
 def approve_cod(db: Session, company_id: str, order_id: str) -> dict:
@@ -287,12 +290,12 @@ def cancel_order(db: Session, company_id: str, order_id: str, payload: OrderCanc
             raise HTTPException(422, "Choose the account the refund is paid from (normally the Razorpay clearing account)")
         assert_period_open(db, company_id, date.today(), "Refunding online order")
         db.execute(text("""insert into account_transactions(company_id,store_id,from_account_id,to_account_id,amount,payment_mode,
-                reference,category,description,transaction_date,source_type,source_id,created_by)
+                reference,category,description,transaction_date,source_type,source_id)
             values(:company,:store,:account,null,:amount,'online',:reference,'online_refund',:description,current_date,
-                'shop_order_refund',:order,cast(:actor as uuid))"""),
+                'shop_order_refund',:order)"""),
             {"company": company_id, "store": str(order["store_id"]), "account": str(payload.refund_account_id),
              "amount": Decimal(order["total_paise"]) / 100, "reference": order["razorpay_payment_id"],
-             "description": f"Refund of online order {str(order['id'])[:8]}: {payload.reason}", "order": order_id, "actor": _actor(db)})
+             "description": f"Refund of online order {str(order['id'])[:8]}: {payload.reason}", "order": order_id})
         status = "refunded"
     db.execute(text("""update shop_orders set status=:status,cancelled_at=now(),cancellation_reason=:reason,expires_at=null where id=:id"""),
                {"status": status, "reason": payload.reason, "id": order_id})
@@ -349,12 +352,11 @@ def record_cod_settlement(db: Session, company_id: str, payload: CodSettlementIn
              "key": f"cod:{payload.courier}:{payload.settlement_reference}:{order['id']}", "reference": payload.settlement_reference,
              "date": payload.settlement_date, "notes": f"COD remittance {payload.settlement_reference} ({payload.courier})"}).scalar_one()
         db.execute(text("""insert into account_transactions(company_id,from_account_id,to_account_id,amount,payment_mode,reference,category,
-                description,transaction_date,source_type,source_id,created_by)
-            values(:company,null,:account,:amount,'cod_remittance',:reference,'sales_collection',:description,:date,'receivable_payment',:payment,
-                cast(:actor as uuid))"""),
+                description,transaction_date,source_type,source_id)
+            values(:company,null,:account,:amount,'cod_remittance',:reference,'sales_collection',:description,:date,'receivable_payment',:payment)"""),
             {"company": company_id, "account": str(payload.account_id), "amount": amount, "reference": payload.settlement_reference,
              "description": f"COD remittance for online order {str(order['id'])[:8]}", "date": payload.settlement_date,
-             "payment": str(payment), "actor": _actor(db)})
+             "payment": str(payment)})
         sync_receivable(db, company_id, receivable, invoice)
         db.execute(text("""insert into cod_settlement_items(settlement_id,company_id,order_id,invoice_id,amount)
             values(:settlement,:company,:order,:invoice,:amount)"""),

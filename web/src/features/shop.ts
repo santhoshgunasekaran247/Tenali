@@ -57,7 +57,7 @@ type RazorpayOptions = {
   prefill: { email: string; name: string; contact: string };
   handler: (result: PaymentResult) => void; modal: { ondismiss: () => void };
 };
-type RazorpayInstance = { open: () => void; on: (event: "payment.failed", callback: () => void) => void };
+type RazorpayInstance = { open: () => void; close: () => void; on: (event: "payment.failed", callback: () => void) => void };
 declare global {
   interface Window { Razorpay?: new (options: RazorpayOptions) => RazorpayInstance }
 }
@@ -65,6 +65,10 @@ declare global {
 function csrf(cookie: string) {
   const value = document.cookie.split("; ").find(entry => entry.startsWith(cookie + "="))?.slice(cookie.length + 1);
   return value ? decodeURIComponent(value) : "";
+}
+
+class ShopRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
 }
 
 export async function accountRequest<T>(path: string, options?: RequestInit, realm: "shop" | "platform" | "checkout-admin" | "parties" = "shop"): Promise<T> {
@@ -81,7 +85,7 @@ export async function accountRequest<T>(path: string, options?: RequestInit, rea
   if (!response.ok) {
     const message = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail)
       ? body.detail.map((entry: { msg?: string }) => entry.msg || "Invalid input").join(" ") : "Unable to complete this request.";
-    throw new Error(message);
+    throw new ShopRequestError(message, response.status);
   }
   return body as T;
 }
@@ -113,16 +117,102 @@ export function loadRazorpay(): Promise<void> {
   return razorpayScript;
 }
 
-export function payOrder(order: ShopOrder, shopper: Shopper, storeName: string): Promise<PaymentResult | null> {
+function paymentRequest(path: string, options: RequestInit, signal: AbortSignal): Promise<ShopOrder> {
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const cleanup = () => { clearTimeout(timer); signal.removeEventListener("abort", cancel); };
+    const cancel = () => { cleanup(); controller.abort(); reject(new Error("Payment verification cancelled.")); };
+    const timer = setTimeout(() => {
+      cleanup(); controller.abort();
+      reject(new Error("Payment verification timed out. Check My Orders before paying again."));
+    }, 30_000);
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) { cancel(); return; }
+    accountRequest<ShopOrder>(path, { ...options, signal: controller.signal }).then(
+      result => { cleanup(); resolve(result); },
+      error => { cleanup(); reject(error); },
+    );
+  });
+}
+
+export function payOrder(order: ShopOrder, shopper: Shopper, storeName: string, signal?: AbortSignal): Promise<ShopOrder | null> {
   return new Promise((resolve, reject) => {
     if (!window.Razorpay) { reject(new Error("Razorpay checkout is unavailable.")); return; }
-    const checkout = new window.Razorpay({
-      key: order.provider_key_id || "", amount: order.total_paise, currency: "INR", order_id: order.razorpay_order_id || "",
-      name: storeName, prefill: { email: shopper.email, name: shopper.display_name, contact: order.address.phone },
-      handler: resolve, modal: { ondismiss: () => resolve(null) },
-    });
-    checkout.on("payment.failed", () => reject(new Error("Payment failed. Check your orders and bank status before trying again.")));
-    checkout.open();
+    if (!order.provider_key_id || !order.razorpay_order_id) { reject(new Error("This order has no Razorpay checkout. Check My Orders.")); return; }
+    const lifetime = new AbortController();
+    let checkout: RazorpayInstance | undefined;
+    let finished = false, verifying = false;
+    let pollTimer: ReturnType<typeof setTimeout>;
+    const finish = (verified: ShopOrder | null, error?: Error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(deadline); clearTimeout(pollTimer);
+      signal?.removeEventListener("abort", cancel);
+      lifetime.abort();
+      if (error) reject(error); else resolve(verified);
+      checkout?.close();
+    };
+    const cancel = () => finish(null, new Error("Payment verification cancelled. Check My Orders before paying again."));
+    const verified = (value: ShopOrder) => value.id === order.id && value.payment_method === "prepaid"
+      && !!value.razorpay_payment_id && ["paid", "fulfilment_review", "confirmed", "shipping_pending",
+        "shipment_booked", "dispatched", "delivered", "ready_for_pickup", "collected"].includes(value.status);
+    const recover = async (dismissed: boolean) => {
+      try {
+        const value = await paymentRequest(`/orders/${order.id}/reconcile-payment`, { method: "POST" }, lifetime.signal);
+        if (!verified(value)) throw new Error("Payment has not been verified. Check My Orders before paying again.");
+        finish(value);
+      } catch (failure) {
+        if (dismissed && failure instanceof ShopRequestError && failure.status === 409) finish(null);
+        else finish(null, new Error(`${failure instanceof Error ? failure.message : String(failure)} Check My Orders before paying again.`));
+      }
+    };
+    const poll = async () => {
+      try {
+        const value = await paymentRequest(`/orders/${order.id}`, {}, lifetime.signal);
+        if (verified(value)) { finish(value); return; }
+      } catch (failure) {
+        if (finished) return;
+        console.warn("Unable to refresh payment status; checkout will attempt server-side reconciliation.", failure);
+      }
+      if (!finished) pollTimer = setTimeout(() => void poll(), 3000);
+    };
+    const deadline = setTimeout(() => {
+      if (verifying || finished) return;
+      verifying = true;
+      void recover(false);
+    }, 180_000);
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) { cancel(); return; }
+    try {
+      checkout = new window.Razorpay({
+        key: order.provider_key_id, amount: order.total_paise, currency: "INR", order_id: order.razorpay_order_id,
+        name: storeName, prefill: { email: shopper.email, name: shopper.display_name, contact: order.address.phone },
+        handler: result => {
+          if (finished || verifying) return;
+          verifying = true; clearTimeout(deadline);
+          void paymentRequest(`/orders/${order.id}/confirm`, { method: "POST", body: JSON.stringify(result) }, lifetime.signal)
+            .then(value => {
+              if (!verified(value)) throw new Error("Payment has not been verified.");
+              finish(value);
+            }).catch(failure => {
+              if (!finished) {
+                console.warn("Payment callback confirmation did not complete; checking captured payment with the server.", failure);
+                void recover(false);
+              }
+            });
+        },
+        modal: { ondismiss: () => {
+          if (finished || verifying) return;
+          verifying = true; clearTimeout(deadline);
+          void recover(true);
+        } },
+      });
+      checkout.on("payment.failed", () => finish(null, new Error("Payment failed. Check My Orders and your bank status before trying again.")));
+      pollTimer = setTimeout(() => void poll(), 3000);
+      checkout.open();
+    } catch (failure) {
+      finish(null, failure instanceof Error ? failure : new Error(String(failure)));
+    }
   });
 }
 

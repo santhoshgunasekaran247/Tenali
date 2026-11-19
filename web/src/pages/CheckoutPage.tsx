@@ -1,5 +1,5 @@
 import { FloatingAlert } from "../components/Notifications";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { accountRequest, loadRazorpay, payOrder, rupees, shopperSession, type Availability, type DeliveryAddress, type FulfilmentMethod, type PaymentMethod, type Quote, type Shopper, type ShopOrder } from "../features/shop";
@@ -23,6 +23,8 @@ export function CheckoutPage() {
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const paymentAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => paymentAbort.current?.abort(), []);
   const cartFingerprint = JSON.stringify(cart.items);
   useEffect(() => {
     setQuote(null);
@@ -60,18 +62,19 @@ export function CheckoutPage() {
   };
   const pay = async () => {
     if (!quote || !shopper || !storefront) return;
+    const controller = new AbortController();
+    paymentAbort.current = controller;
     setBusy(true); setError("");
     try {
       if (effectivePayment === "prepaid") await loadRazorpay();
       const created = order || await accountRequest<ShopOrder>("/orders", { method: "POST", body: JSON.stringify({ ...payload, expected_total_paise: quote.total_paise }) });
       setOrder(created);
       if (effectivePayment !== "prepaid") { cart.removePurchased(created.items); navigate("/account", { replace: true }); return; }
-      const result = await payOrder(created, shopper, storefront.company_name);
+      const result = await payOrder(created, shopper, storefront.company_name, controller.signal);
       if (!result) { navigate("/account"); return; }
-      await accountRequest(`/orders/${created.id}/confirm`, { method: "POST", body: JSON.stringify(result) });
       cart.removePurchased(created.items);
       navigate("/account", { replace: true });
-    } catch (failure) { setError(`${failure instanceof Error ? failure.message : String(failure)} Check My Orders before creating another checkout.`); }
+    } catch (failure) { if (!controller.signal.aborted) setError(`${failure instanceof Error ? failure.message : String(failure)} Check My Orders before creating another checkout.`); }
     finally { setBusy(false); }
   };
   if (loading) return <main className="loading">Loading store...</main>;
@@ -79,7 +82,7 @@ export function CheckoutPage() {
   return <main className="shop-account-page shopping-page checkout-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
     <p className="policy-notice">Review this seller&apos;s <Link to={policyPath("tenant", "terms")}>terms</Link>, <Link to={policyPath("tenant", "privacy")}>privacy</Link>, <Link to={policyPath("tenant", "shipping")}>shipping and delivery</Link>, <Link to={policyPath("tenant", "payment")}>payment</Link> and <Link to={policyPath("tenant", "returns")}>cancellation, refund, return and exchange policies</Link>. <Link to={policyPath("tenant", "contact")}>Contact the seller</Link> for missing or unclear terms.</p>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
-    {order ? <p className="checkout-notice">Order created. Finish this payment or check <Link to="/account">My Orders</Link> before starting another checkout. <Link to="/account">View payment status</Link></p> : null}
+    {order ? <p className="checkout-notice" role="status">Your order is saved. Waiting for verified payment confirmation. If you have already paid, do not pay again. <Link to="/account">View or verify payment in My Orders</Link></p> : null}
     <div className="checkout-layout">
     {!shopper ? <p>Loading shopper session...</p> : <form className="ops-form ops-card" onSubmit={getQuote}>
       <fieldset className="access-fields" disabled={busy || !!order}><legend>Delivery Details</legend><div className="company-fields">
@@ -99,6 +102,6 @@ export function CheckoutPage() {
     {quote ? <section className="ops-card purchase-summary"><h2>Order summary</h2><ul className="checkout-summary-items">{quote.items.map(item => <li key={cartItemKey(item)}><div><strong>{item.name}</strong><span>Qty {item.quantity} · {rupees(item.unit_paise)} each</span></div><strong>{rupees(item.unit_paise * item.quantity)}</strong></li>)}</ul><dl className="order-totals"><div><dt>Subtotal</dt><dd>{rupees(quote.subtotal_paise)}</dd></div><div><dt>{fulfilment === "pickup" ? "Store pickup" : "Delivery"}</dt><dd>{quote.shipping_paise ? rupees(quote.shipping_paise) : "Free"}</dd></div><div className="order-total"><dt>Total</dt><dd>{rupees(quote.total_paise)}</dd></div></dl><p className="purchase-fine-print">Includes applicable taxes.{fulfilment === "pickup" ? ` Collect at ${quote.pickup_store || "the chosen store"}.` : " Delivery details are shared with the store's shipping provider to fulfil your order."}</p>
       {effectivePayment === "cod" ? <p>The store reviews cash-on-delivery requests before confirming. You pay the courier {rupees(quote.total_paise)} on delivery.</p> : null}
       {effectivePayment === "pay_at_pickup" ? <p>Your items are held at the store for a limited time. Pay {rupees(quote.total_paise)} at the counter when you collect.</p> : null}
-      <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : <section className="ops-card purchase-summary"><h2>Order summary</h2><p className="purchase-fine-print">Complete your delivery details and select Review Order to confirm prices, delivery and the final total.</p><Link to="/cart">View your cart ({cart.items.length})</Link></section>}
+      <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? order && effectivePayment === "prepaid" ? "Waiting for payment confirmation..." : "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : <section className="ops-card purchase-summary"><h2>Order summary</h2><p className="purchase-fine-print">Complete your delivery details and select Review Order to confirm prices, delivery and the final total.</p><Link to="/cart">View your cart ({cart.items.length})</Link></section>}
   </div></div></main>;
 }

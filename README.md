@@ -68,6 +68,20 @@ Render Environment settings, never in the static UI or the repository.
   add checks current product details and adds the minimum quantity; products
   with variants open their detail page so shoppers can select a size / colour.
   Cart and checkout totals are estimates until the server confirms the quote.
+- After Razorpay checkout, the browser confirms payment with the server and
+  watches the shopper-owned order status for webhook updates. A lost callback
+  triggers server-side reconciliation after three minutes; verification
+  requests time out after 30 seconds instead of leaving checkout spinning.
+  Cart items are removed and My Orders opens only after server-verified payment.
+  If verification remains uncertain, use My Orders / Verify Payment before
+  paying again. Leaving checkout cancels its browser-side polling.
+- For prepaid orders, configure a settlement (Razorpay clearing) account on the
+  Online store in Stores. A captured payment remains paid if advance posting is
+  blocked; Online Orders shows the reason and allows staff to retry after fixing
+  the account or accounting period. Retry only reports success once the advance
+  exists and does not charge the shopper again. Dispatch requires that advance.
+  Staff ledger attribution uses the tenant audit trail, not the legacy
+  user-profile field on account transactions.
 
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
   check shows problems first, with optional matching entries and store filtering.

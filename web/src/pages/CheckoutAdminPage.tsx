@@ -35,7 +35,7 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   const { user } = useAuth();
   const allowed = user?.role === "owner" || user?.role === "admin";
   const [tab, setTab] = useState<"orders" | "cod" | "enquiries">("orders");
-  const { stores, accounts } = useStoresAndAccounts();
+  const { stores, accounts, lookupError } = useStoresAndAccounts();
   const [policy, setPolicy] = useState<Policy>(defaultPolicy);
   const [pincodeText, setPincodeText] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -151,6 +151,7 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
         <Link to="/">View storefront<ExternalLink size={14} aria-hidden="true" /></Link>
       </nav>
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+      {lookupError ? <FloatingAlert>Unable to load stores and settlement accounts: {lookupError}. Refresh before changing an order.</FloatingAlert> : null}
       {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
       {setupOnly ? <>
         <section className="checkout-overview" aria-label="Store checkout status">
@@ -241,11 +242,15 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
             {(Object.keys(packageSize) as (keyof typeof packageSize)[]).map(key => <label key={key}>Package {key} ({key === "weight" ? "kg" : "cm"})<input type="number" min={0.001} step="any" value={packageSize[key]} onChange={event => setPackageSize({ ...packageSize, [key]: event.target.value })} /></label>)}
             <label>Shiprocket order ID for recovery / tracking<input inputMode="numeric" value={reconcileId} onChange={event => setReconcileId(event.target.value)} /></label>
           </div></details> : null}
-          {orders.map(order => <article className="checkout-step shop-order" key={order.id}><div className="checkout-order-heading"><h3>{order.address.name}</h3><span className="checkout-order-total">{rupees(order.total_paise)}</span></div><p><strong>{orderStatus(order.status)}</strong> · {paymentLabel(order.payment_method)}{(order.provider_key_id || "").startsWith("rzp_test_") ? " · Test payment - no real shipment" : ""}</p><p className="checkout-fine-print">Order {order.id} · {new Date(order.created_at).toLocaleString()}</p><ul>{order.items.map(item => <li key={`${item.product_id}:${item.variant_id}`}>{item.name} × {item.quantity}</li>)}</ul><p>{order.address.phone}<br />{order.address.address}, {order.address.city}, {order.address.state} {order.address.pincode}</p>
+          {orders.map(order => <article className="checkout-step shop-order online-order-card" key={order.id}><header className="checkout-order-heading"><div><p className="checkout-kicker">Order #{order.id.slice(0, 8)}</p><h3>{order.address.name}</h3><time dateTime={order.created_at}>{new Date(order.created_at).toLocaleString()}</time></div><div className="order-heading-total"><span className="checkout-order-total">{rupees(order.total_paise)}</span><span>{paymentLabel(order.payment_method)}</span></div></header>
+            <div className="order-status-row"><span className={`order-status-badge order-status-${order.status}`}>{orderStatus(order.status)}</span>{(order.provider_key_id || "").startsWith("rzp_test_") ? <span className="order-test-badge">Test payment - no real shipment</span> : null}</div>
+            <div className="order-details-grid"><section aria-label="Ordered items"><h4>Items</h4><ul className="admin-order-items">{order.items.map(item => <li key={`${item.product_id}:${item.variant_id}`}><div><strong>{item.name}</strong><span>Qty {item.quantity} · {rupees(item.unit_paise)} each</span></div><strong>{rupees(item.unit_paise * item.quantity)}</strong></li>)}</ul><p className="order-delivery-charge">Delivery <strong>{order.shipping_paise ? rupees(order.shipping_paise) : "Free"}</strong></p></section>
+              <section className="order-delivery-address" aria-label="Delivery contact"><h4>{order.fulfilment_method === "pickup" ? "Shopper contact" : "Deliver to"}</h4><strong>{order.address.name}</strong><a href={`tel:${order.address.phone}`}>{order.address.phone}</a><address>{order.address.address}<br />{order.address.city}, {order.address.state} {order.address.pincode}</address></section></div>
+            <details className="order-reference"><summary>Order reference</summary><p>{order.id}</p>{order.razorpay_payment_id ? <p>Razorpay: {order.razorpay_payment_id}</p> : null}</details>
             <OrderActions order={order} stores={stores} accounts={accounts} locked={locked} onDone={async note => { if (note) setMessage(note); await refreshOrders(); }} onError={failure => setError(failure)} />
             {order.shipping_error ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
             {order.shiprocket_order_id ? <p>Shiprocket order {order.shiprocket_order_id} · Shipment {order.shipment_id} · {order.awb || "AWB not yet recorded"}</p> : null}
-            <div className="shop-actions">{order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery" && ((order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod")) && !(order.provider_key_id || "").startsWith("rzp_test_") ? <button className="btn" disabled={locked || Object.values(packageSize).some(value => !Number(value) || Number(value) <= 0)} onClick={() => void action(order, false)}>Submit packed order to Shiprocket</button> : null}
+            <div className="shop-actions order-provider-actions">{order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery" && ((order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod")) && !(order.provider_key_id || "").startsWith("rzp_test_") ? <button className="btn" disabled={locked || Object.values(packageSize).some(value => !Number(value) || Number(value) <= 0)} onClick={() => void action(order, false)}>Submit packed order to Shiprocket</button> : null}
               {order.status === "awaiting_payment" ? <button className="btn light" disabled={locked} onClick={() => {
                 setBusy(true); setError("");
                 void accountRequest(`/orders/${order.id}/reconcile-payment`, { method: "POST" }, "checkout-admin").then(refreshOrders).catch(failure => setError(String(failure))).finally(() => setBusy(false));

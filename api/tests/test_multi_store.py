@@ -71,6 +71,15 @@ class MultiStoreTests(unittest.TestCase):
             where company_id=:company and store_id=:store and product_id=:product"""),
             {"company": self.company, "store": store_id, "product": self.product}).scalar_one()
 
+    def staff_actor(self):
+        actor = str(uuid4())
+        self.db.execute(self.text("""insert into tenant_users(id,company_id,email,display_name,password_hash)
+            values(:id,:company,:email,'Order regression actor','x')"""),
+            {"id": actor, "company": self.company, "email": uuid4().hex + "@example.invalid"})
+        self.db.execute(self.text("select set_config('app.actor_user_id',:actor,true)"), {"actor": actor})
+        self.db.info["tenant_context"] = {"company_id": self.company, "user_id": actor}
+        return actor
+
     def order(self, payment_method, fulfilment_method="delivery", pickup_store_id=None, quantity=2):
         from app.schemas.checkout import CheckoutInput
         from app.services.shop_checkout import create_order
@@ -153,6 +162,7 @@ class MultiStoreTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             service.record_cod_settlement(self.db, self.company, CodSettlementInput(courier="Delhivery", settlement_reference="UTR1",
                 settlement_date=date.today(), account_id=self.cod_clearing["id"], items=[{"order_id": order["id"], "amount": "2300.00"}]))
+        actor = self.staff_actor()
         settlement = service.record_cod_settlement(self.db, self.company, CodSettlementInput(courier="Delhivery", settlement_reference="UTR1",
             settlement_date=date.today(), account_id=self.cod_clearing["id"], items=[{"order_id": order["id"], "amount": "2300.00"}],
             shortfall_reason="Courier COD handling fee 110"))
@@ -161,6 +171,11 @@ class MultiStoreTests(unittest.TestCase):
                                 {"id": dispatched["invoice_id"]}).mappings().one()
         self.assertEqual((state["collection_status"], state["amount_received"]), ("PARTIAL", Decimal("2300.00")))
         self.assertEqual(service.cod_outstanding(self.db, self.company)["total_outstanding"], Decimal("110.00"))
+        audit_actor = self.db.execute(self.text("""select a.actor_user_id from audit_events a
+            join account_transactions t on a.entity_id=t.id
+            where a.entity_type='account_transactions' and a.action='INSERT'
+            and t.company_id=:company and t.source_type='receivable_payment'"""), {"company": self.company}).scalar_one()
+        self.assertEqual(str(audit_actor), actor)
         with self.assertRaises(HTTPException):
             service.record_cod_settlement(self.db, self.company, CodSettlementInput(courier="Delhivery", settlement_reference="UTR1",
                 settlement_date=date.today(), account_id=self.cod_clearing["id"], items=[{"order_id": order["id"], "amount": "110.00"}]))
@@ -228,6 +243,7 @@ class MultiStoreTests(unittest.TestCase):
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(self.inventory.available_stock(self.main, self.product, None), Decimal("10"))
         simulated = self.order("cod", quantity=1)
+        actor = self.staff_actor()
         self.db.execute(self.text("""update shop_orders set status='paid', payment_method='prepaid', razorpay_payment_id='pay_test'
             where id=:id"""), {"id": simulated["id"]})
         service.post_prepaid_advance(self.db, self.company, dict(self.db.execute(self.text("select * from shop_orders where id=:id"),
@@ -241,6 +257,64 @@ class MultiStoreTests(unittest.TestCase):
             from account_transactions where company_id=:company and (to_account_id=:account or from_account_id=:account)"""),
             {"company": self.company, "account": self.clearing["id"]}).scalar_one()
         self.assertEqual(balance, Decimal("0"))
+        audit_actor = self.db.execute(self.text("""select a.actor_user_id from audit_events a
+            join account_transactions t on a.entity_id=t.id
+            where a.entity_type='account_transactions' and a.action='INSERT'
+            and t.source_type='shop_order_refund' and t.source_id=:order"""),
+            {"order": simulated["id"]}).scalar_one()
+        self.assertEqual(str(audit_actor), actor)
+
+    def test_staff_retry_advance_preserves_tenant_audit_without_legacy_profile_identity(self):
+        from app.services import shop_orders_service as service
+        order = self.order("cod", quantity=1)
+        actor = self.staff_actor()
+        self.db.execute(self.text("""update shop_orders set status='paid',payment_method='prepaid',
+            razorpay_payment_id='pay_advance_regression',review_reason='Advance not posted: missing account'
+            where id=:id"""), {"id": order["id"]})
+        posted = service.retry_advance(self.db, self.company, str(order["id"]))
+        self.assertIsNotNone(posted["advance_transaction_id"])
+        self.assertIsNone(posted["review_reason"])
+        transaction = self.db.execute(self.text("""select amount,to_account_id,created_by from account_transactions
+            where id=:id"""), {"id": posted["advance_transaction_id"]}).mappings().one()
+        self.assertEqual(transaction["amount"], Decimal(order["total_paise"]) / 100)
+        self.assertEqual(str(transaction["to_account_id"]), str(self.clearing["id"]))
+        self.assertIsNone(transaction["created_by"])
+        audit_actor = self.db.execute(self.text("""select actor_user_id from audit_events where entity_type='account_transactions'
+            and entity_id=:id and action='INSERT'"""), {"id": posted["advance_transaction_id"]}).scalar_one()
+        self.assertEqual(str(audit_actor), actor)
+        with self.assertRaises(HTTPException) as raised:
+            service.retry_advance(self.db, self.company, str(order["id"]))
+        self.assertEqual(raised.exception.status_code, 409)
+
+    def test_retry_advance_without_settlement_account_is_not_reported_as_success(self):
+        from app.services import shop_orders_service as service
+        order = self.order("cod", quantity=1)
+        self.db.execute(self.text("update stores set settlement_account_id=null where id=:id"), {"id": self.web["id"]})
+        self.db.execute(self.text("""update shop_orders set status='paid',payment_method='prepaid',
+            razorpay_payment_id='pay_advance_regression' where id=:id"""), {"id": order["id"]})
+        with self.assertRaises(HTTPException) as raised:
+            service.retry_advance(self.db, self.company, str(order["id"]))
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("settlement", raised.exception.detail)
+        self.assertIsNone(self.db.execute(self.text("select advance_transaction_id from shop_orders where id=:id"),
+                                         {"id": order["id"]}).scalar_one())
+
+    def test_retry_advance_in_closed_period_retains_review_reason(self):
+        from unittest.mock import patch
+        from app.services import shop_orders_service as service
+        order = self.order("cod", quantity=1)
+        self.db.execute(self.text("""update shop_orders set status='paid',payment_method='prepaid',
+            razorpay_payment_id='pay_closed_period' where id=:id"""), {"id": order["id"]})
+        with patch.object(service, "assert_period_open", side_effect=HTTPException(409, "Accounting period is closed")):
+            with self.assertRaises(HTTPException) as raised:
+                service.retry_advance(self.db, self.company, str(order["id"]))
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("Accounting period is closed", raised.exception.detail)
+        state = self.db.execute(self.text("select status,advance_transaction_id,review_reason from shop_orders where id=:id"),
+                                {"id": order["id"]}).mappings().one()
+        self.assertEqual(state["status"], "paid")
+        self.assertIsNone(state["advance_transaction_id"])
+        self.assertIn("Accounting period is closed", state["review_reason"])
 
     def test_store_rules(self):
         from app.schemas.stores import StoreInput

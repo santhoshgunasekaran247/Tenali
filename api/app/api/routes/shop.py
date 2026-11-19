@@ -203,6 +203,16 @@ def orders(offset: int = Query(0, ge=0), company=Depends(store), identity=Depend
         {"company": company["id"], "shopper": identity["id"], "offset": offset}).mappings()]}
 
 
+@router.get("/orders/{order_id}")
+def order_status(order_id: UUID, company=Depends(store), identity=Depends(customer), db=Depends(shop_db)):
+    row = db.execute(text(f"""select {ORDER_COLUMNS} from shop_orders
+        where company_id=:company and shopper_id=:shopper and id=:id"""),
+        {"company": company["id"], "shopper": identity["id"], "id": order_id}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Order not found")
+    return dict(row)
+
+
 @router.post("/orders/{order_id}/confirm")
 def confirm(order_id: UUID, payload: PaymentConfirmation, company=Depends(store), identity=Depends(customer), db=Depends(shop_db)):
     row = db.execute(text("select razorpay_order_id from shop_orders where company_id=:company and shopper_id=:shopper and id=:id"),
