@@ -19,7 +19,7 @@ function load(file, mocks) {
 function cardHarness(current = {}, existing = []) {
   const product = { id: "product", name: "Diya", minimum_order_quantity: 2, selling_price_display: "450",
     stock_qty: 10, image_url: "", ...current };
-  const states = [], added = [], navigated = [];
+  const states = [], added = [], navigated = [], updated = [], removed = [];
   let cursor = 0;
   const { ProductCard } = load("features/catalog/components/ProductCard.tsx", {
     react: { ...React, useState: initial => {
@@ -35,13 +35,14 @@ function cardHarness(current = {}, existing = []) {
     "../../cart": { useCart: () => ({ items: existing, add: item => {
       if (item.quantity > 100) throw new Error("Online orders support up to 100 units per item.");
       added.push(item);
-    } }) },
+    }, setQuantity: (item, quantity) => updated.push([item.product_id, quantity]), remove: item => removed.push(item.product_id) }) },
     "../../../api": { api: { product: async () => ({ product }) } },
     "../utils": { moneyLabel: value => value, toAssetUrl: value => value, whatsappLink: () => "https://wa.me/example" },
     "../storefrontText": { storefrontText: value => value },
+    "../../../components/QuantityStepper": { QuantityStepper: props => React.createElement("quantity-stepper", { "data-value": props.value, "data-min": props.min, "data-max": props.max, "aria-label": props.label }) },
   });
   return {
-    added, navigated,
+    added, navigated, updated, removed,
     render(enabled = true) { cursor = 0; return ProductCard({ product, phone: "example", checkoutEnabled: enabled }); },
   };
 }
@@ -75,7 +76,7 @@ test("quick add uses the minimum quantity and offers a cart link without navigat
 test("variant selection is required and existing cart stock is respected", async () => {
   for (const [current, existing, navigation] of [
     [{ variants: [{ id: "size" }] }, [], true],
-    [{ stock_qty: 2 }, [{ product_id: "product", variant_id: null, quantity: 1 }], false],
+    [{ stock_qty: 1 }, [], false],
     [{ selling_price_display: "" }, [], false],
     [{ minimum_order_quantity: 101, stock_qty: 200 }, [], false],
   ]) {
@@ -86,6 +87,33 @@ test("variant selection is required and existing cart stock is respected", async
     assert.equal(h.navigated.length, navigation ? 1 : 0);
     if (!navigation) assert.match(renderToStaticMarkup(h.render()), /role="alert"/);
   }
+});
+
+const stepper = tree => find(tree, node => node.type?.name === "QuantityStepper" || (typeof node.type === "function" && "onChange" in (node.props || {})));
+
+test("cards add the chosen quantity with plus/minus, bounded by the minimum and stock", async () => {
+  const h = cardHarness({ stock_qty: 6 });
+  const chooser = stepper(h.render());
+  assert.deepEqual([chooser.props.value, chooser.props.min, chooser.props.max], ["2", 2, 6]);
+  chooser.props.onChange("5");
+  find(h.render(), node => node.type === "button").props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.added[0].quantity, 5);
+});
+
+test("items already in the cart show an in-cart stepper that updates or removes the cart line", () => {
+  const h = cardHarness({ stock_qty: 6 }, [{ product_id: "product", variant_id: null, quantity: 3 }]);
+  const html = renderToStaticMarkup(h.render());
+  assert.match(html, /In cart/);
+  assert.doesNotMatch(html, /Add to Cart/);
+  const control = stepper(h.render());
+  assert.equal(control.props.value, "3");
+  control.props.onChange("4");
+  assert.deepEqual(h.updated, [["product", 4]]);
+  control.props.onChange("9");
+  assert.deepEqual(h.updated, [["product", 4]]);
+  control.props.onBelowMin();
+  assert.deepEqual(h.removed, ["product"]);
 });
 
 test("Enter on nested purchase controls does not activate the product card", () => {

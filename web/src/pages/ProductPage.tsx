@@ -12,6 +12,7 @@ import { NearbyStores } from "../components/NearbyStores";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { accountRequest } from "../features/shop";
 import { useCart } from "../features/cart";
+import { QuantityStepper } from "../components/QuantityStepper";
 
 export function ProductPage() {
   const {storefront}=useAuth();
@@ -66,6 +67,7 @@ export function ProductPage() {
   const minimum = product.minimum_order_quantity;
   const stock = variant ? variant.stock_qty : product.stock_qty;
   const canPurchase = Number(price) > 0 && Number(stock) >= minimum;
+  const inCart = cart.items.find(item => item.product_id === product.id && item.variant_id === (variantId || null))?.quantity || 0;
   const addToCart = () => {
     setCartError(""); setCartMessage("");
     try {
@@ -139,7 +141,9 @@ export function ProductPage() {
             <div className="detail-actions">
               {checkoutEnabled ? <div className="product-cart-controls">
                 <p className="product-cart-minimum">Minimum order: <strong>{minimum} {minimum === 1 ? "unit" : "units"}</strong>{product.variants?.length ? " per size / colour" : ""}</p>
-                <label>Quantity<input type="number" min={minimum} max={100} step={1} value={quantity} onChange={event => { setQuantity(event.target.value); setCartMessage(""); }} /></label>
+                <div className="product-cart-quantity"><span>Quantity</span><QuantityStepper label="Quantity" value={quantity} min={minimum} max={Math.max(minimum, Math.min(100, Number(stock) || 0))}
+                  onChange={value => { setQuantity(value); setCartMessage(""); }} /></div>
+                {inCart ? <p className="product-cart-incart">Already in your cart: <strong>{inCart}</strong></p> : null}
                 {product.variants?.length && !variantId ? <p>{text("checkout_variant_required","Select a size / colour to add to your cart.")}</p>
                   : canPurchase ? <button className="btn" type="button" onClick={addToCart}>{text("add_to_cart","Add to Cart")}</button>
                     : <p>{Number(price) > 0 ? "Not enough stock for the minimum order. Contact the store." : "Contact the store for a quote on this item."}</p>}

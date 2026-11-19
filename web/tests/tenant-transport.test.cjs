@@ -14,6 +14,7 @@ function transport(hostname = "sourcedbysru.in", enabled = true) {
   }).outputText;
   vm.runInNewContext(code, {
     exports, URL, Request, Headers, Map,
+    require: name => name === "./busyIndicator" ? { trackRequest: request => request() } : require(name),
     __TENALI_CUSTOM_DOMAINS__: enabled,
     __TENALI_PLATFORM_HOSTS__: ["tenali.biz", "tenali-web.onrender.com"],
     window: { location: { hostname, protocol: "https:", origin: `https://${hostname}`, pathname: "/" } },

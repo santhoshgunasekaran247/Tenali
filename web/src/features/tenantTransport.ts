@@ -1,3 +1,5 @@
+import { trackRequest } from "./busyIndicator";
+
 export function tenantBase(): string {
   return window.location.pathname.match(/^\/c\/[a-z0-9-]+(?=\/|$)/)?.[0] || "";
 }
@@ -31,9 +33,9 @@ export async function tenantFetch(input: RequestInfo|URL,options?:RequestInit) {
   }
   const target = remote ? apiOrigin + url.pathname + url.search : input;
   const request = remote && input instanceof Request ? new Request(target, input) : target;
-  const response = await fetch(request, {
+  const response = await trackRequest(() => fetch(request, {
     ...options, credentials: remote ? "include" : "same-origin", headers,
-  });
+  }));
   if (remote) {
     for (const kind of ["staff", "shopper"]) {
       const token = response.headers.get(`X-Tenali-${kind}-CSRF`);

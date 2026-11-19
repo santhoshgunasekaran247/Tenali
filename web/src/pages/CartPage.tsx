@@ -8,6 +8,7 @@ import { accountRequest, rupees } from "../features/shop";
 import type { CatalogProduct } from "../types";
 import { Trash2 } from "lucide-react";
 import { ProductImageLink, productImage, productPagePath } from "../components/OrderItems";
+import { QuantityStepper } from "../components/QuantityStepper";
 
 export function CartPage() {
   const { storefront, loading } = useAuth();
@@ -72,10 +73,10 @@ export function CartPage() {
             <ProductImageLink className="cart-item-image" item={item} name={product?.name || "Unavailable product"} imageUrl={productImage(product)} />
             <div className="cart-item-details"><h2><Link to={productPagePath(item)}>{product?.name || "Unavailable product"}</Link></h2>{variant ? <p>{variant.variant_name}</p> : null}{Number.isFinite(unit) && unit > 0 ? <p>{rupees(Math.round(unit * 100))} each</p> : null}<small>Minimum: {minimum} {minimum === 1 ? "unit" : "units"}{product?.variants?.length ? " per size / colour" : ""}</small>
             <button type="button" className="cart-remove" aria-label={`Remove ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} onClick={() => cart.remove(item)}><Trash2 size={14} aria-hidden="true" />Remove</button></div>
-            <div className="cart-item-quantity"><label>Quantity<input aria-label={`Quantity for ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} type="number" required min={minimum} max={100} step={1} value={drafts[cartItemKey(item)] ?? item.quantity} onChange={event => {
-              const value = event.target.value; setDrafts(previous => ({ ...previous, [cartItemKey(item)]: value }));
+            <div className="cart-item-quantity"><QuantityStepper label={`Quantity for ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} min={minimum} max={100} value={drafts[cartItemKey(item)] ?? String(item.quantity)} onChange={value => {
+              setDrafts(previous => ({ ...previous, [cartItemKey(item)]: value }));
               if (Number.isInteger(Number(value)) && Number(value) >= minimum && Number(value) <= 100) cart.setQuantity(item, Number(value));
-            }} /></label>
+            }} />
             {quantity > 0 && Number.isFinite(unit) && unit > 0 ? <strong>{rupees(Math.round(unit * 100) * quantity)}</strong> : null}</div>
             {problem ? <p className="ops-error" role="alert">{problem}</p> : null}
           </article>)}</div>

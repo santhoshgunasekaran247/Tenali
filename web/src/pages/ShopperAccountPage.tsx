@@ -65,33 +65,36 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   };
   if (loading || checking) return <main className="loading">Loading shopper account...</main>;
   if (!storefront) return <main className="access-page"><section className="access-panel"><h1>Shopper Account</h1><p>Open the store&apos;s workspace address or verified domain to sign in. Shopper accounts are separate for every store.</p><Link to="/login">Workspace staff sign in</Link></section></main>;
-  return <main className="shop-account-page">
-    <header className="shop-account-heading"><Link to="/">Back to Storefront</Link><h1>{shopper ? "My Shopper Account" : register ? "Create Shopper Account" : "Shopper Sign In"}</h1><p>{storefront.company_name} · Separate from staff and other stores.</p></header>
+  const initials = (shopper?.display_name || shopper?.email || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("");
+  return <main className={`shop-account-page${shopper ? " shopping-page shopper-account" : ""}`}>
+    <header className="shop-account-heading"><Link to="/">{shopper ? "← Back to storefront" : "Back to Storefront"}</Link><h1>{shopper ? "My Account" : register ? "Create Shopper Account" : "Shopper Sign In"}</h1><p>{shopper ? `Signed in to ${storefront.company_name}` : `${storefront.company_name} · Separate from staff and other stores.`}</p></header>
     <div className="shop-account-content">
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
-      {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <>
-        <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p><p>Phone: {shopper.phone || "Not recorded"}</p>
-          <details><summary>Edit contact details</summary><form className="ops-form" onSubmit={(event: FormEvent) => {
+      {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <div className="shopper-account-layout">
+        <section className="ops-card shopper-profile" aria-labelledby="shopper-profile-name">
+          <div className="shopper-profile-head"><span className="shopper-avatar" aria-hidden="true">{initials}</span><div><h2 id="shopper-profile-name">{shopper.display_name}</h2><p>Shopper account</p></div></div>
+          <dl className="shopper-profile-facts"><div><dt>Email</dt><dd>{shopper.email}</dd></div><div><dt>Phone</dt><dd>{shopper.phone || "Not recorded"}</dd></div></dl>
+          <details className="shopper-profile-edit"><summary>Edit contact details</summary><form className="ops-form" onSubmit={(event: FormEvent) => {
             event.preventDefault(); setBusy(true); setError(""); setMessage("");
             void accountRequest<Shopper>("/profile", { method: "POST", body: JSON.stringify(profile) })
               .then(result => { setShopper(result); setMessage("Contact details updated."); })
               .catch(failure => setError(String(failure))).finally(() => setBusy(false));
           }}><label>Your name<input required maxLength={150} value={profile.display_name} onChange={event => setProfile({ ...profile, display_name: event.target.value })} /></label>
             <label>Phone number<input required type="tel" maxLength={40} value={profile.phone} onChange={event => setProfile({ ...profile, phone: event.target.value })} /></label>
-            <button className="btn light" disabled={busy}>Save contact details</button></form></details>
-          <button className="btn light" disabled={busy} onClick={() => {
+            <button className="btn" disabled={busy}>Save contact details</button></form></details>
+          <button className="btn light shopper-signout" disabled={busy} onClick={() => {
             setBusy(true); setError("");
             void accountRequest("/logout", { method: "POST" }).then(async () => {
               setShopper(null); setOrders([]);
               await clearSocialLogin();
             })
               .catch(failure => setError(String(failure))).finally(() => setBusy(false));
-          }}>Sign Out of Store</button>
-          <p>Manage sign-in security with your social login provider.</p>
+          }}>Sign out of store</button>
+          <p className="shopper-profile-note">Manage sign-in security with your social login provider.</p>
         </section>
-        <section><h2>My Orders</h2><button className="ops-link-btn" disabled={busy} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh Payment &amp; Shipping Status</button>
-          {!orders.length ? <p>No orders on this page.</p> : null}
+        <section className="shopper-orders" aria-labelledby="shopper-orders-title"><div className="shopper-orders-head"><h2 id="shopper-orders-title">My Orders</h2><button className="btn light" disabled={busy} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh status</button></div>
+          {!orders.length ? <p className="ops-card shopper-orders-empty">No orders yet. <Link to="/">Start shopping</Link></p> : null}
           {orders.map(order => <article className="ops-card shop-order" key={order.id}><h3>Order {order.id}</h3><p>{orderStatus(order.status)} · {paymentLabel(order.payment_method)}{order.fulfilment_method === "pickup" ? " · Store pickup" : ""}</p>{order.review_reason && order.status === "fulfilment_review" ? <p className="checkout-notice">The store is reviewing this order.</p> : null}<OrderItems items={order.items} /><p>{order.shipping_paise ? `Shipping ${rupees(order.shipping_paise)} · ` : ""}Total <strong>{rupees(order.total_paise)}</strong></p>
             {order.status === "awaiting_payment" ? (!order.expires_at || Date.now() < Date.parse(order.expires_at)) ? <button className="btn" disabled={busy} onClick={() => void pay(order)}>Pay with Razorpay</button> : <p>Checkout expired. If already charged, wait for payment verification or contact the store before placing another order.</p> : null}
             {order.status === "cod_requested" && order.expires_at ? <p>Awaiting store approval until {new Date(order.expires_at).toLocaleString()}.</p> : null}
@@ -106,9 +109,9 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
             }}>Already Paid? Verify Payment</button> : null}
             {order.awb ? <p>Tracking: {order.courier} · {order.awb}</p> : null}
           </article>)}
-          <div className="shop-actions"><button disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><button disabled={orders.length < 50 || busy} onClick={() => setOffset(offset + 50)}>Next</button></div>
+          {offset > 0 || orders.length >= 50 ? <div className="shop-actions"><button className="btn light" disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><button className="btn light" disabled={orders.length < 50 || busy} onClick={() => setOffset(offset + 50)}>Next</button></div> : null}
         </section>
-      </>}
+      </div>}
     </div>
   </main>;
 }
