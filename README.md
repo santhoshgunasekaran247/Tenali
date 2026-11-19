@@ -96,6 +96,9 @@ Render Environment settings, never in the static UI or the repository.
   shown, and it can be corrected and resubmitted. A timeout or 5xx is
   unconfirmed and must be recovered; if the Tenali order ID is not in
   Shiprocket, staff can use "Not in Shiprocket: allow resubmission" to retry.
+  AWB and courier sync automatically from Shiprocket while the Online Orders
+  tab is open (at most every 2 minutes, up to 10 booked orders without an AWB);
+  "Recover shipment / update tracking" remains available as a manual refresh.
 
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
   check shows problems first, with optional matching entries and store filtering.

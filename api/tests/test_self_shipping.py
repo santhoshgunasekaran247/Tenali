@@ -311,6 +311,27 @@ class SelfShippingTests(unittest.TestCase):
                 shop_checkout.release_shipment(db, str(uuid4()), str(row["id"]))
             db.commit.assert_not_called()
 
+    def test_tracking_sync_saves_awb_once_and_is_throttled(self):
+        company = str(uuid4())
+        mine, other = uuid4(), uuid4()
+        db, identity_db = MagicMock(), MagicMock()
+        db.execute.return_value.mappings.return_value.all.return_value = [
+            {"id": mine, "shiprocket_order_id": 991}, {"id": other, "shiprocket_order_id": 992}]
+        db.execute.return_value.rowcount = 1
+        responses = [{"token": "token"},
+                     {"data": {"channel_order_id": str(mine), "shipments": {"id": 552, "awb": "AWB1", "courier": "Delhivery"}}},
+                     {"data": {"channel_order_id": "someone-else", "shipments": {"awb": "WRONG"}}}]
+        with patch.object(checkout_providers, "provider_request", side_effect=lambda *a, **k: responses.pop(0)) as provider, \
+                patch.object(shop_checkout, "settings_for", return_value={"credentials": "workspace"}), \
+                patch.object(checkout_providers, "decrypt_credentials", return_value={"shiprocket_email": "a@b.invalid", "shiprocket_password": "x"}):
+            result = shop_checkout.sync_tracking(db, identity_db, company)
+            self.assertEqual(result, {"checked": 2, "updated": 1, "throttled": False})
+            updates = [call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0])]
+            self.assertEqual(updates, [{"company": company, "id": mine, "awb": "AWB1", "courier": "Delhivery"}])
+            self.assertTrue(shop_checkout.sync_tracking(db, identity_db, company)["throttled"])
+            self.assertEqual(provider.call_count, 3)
+        shop_checkout._tracking_synced_at.pop(company, None)
+
     def test_orders_without_shiprocket_booking_cannot_be_marked_delivered(self):
         order = {"fulfilment_method": "delivery", "status": "dispatched", "shipping_provider": "shiprocket", "shiprocket_order_id": None}
         db = MagicMock()

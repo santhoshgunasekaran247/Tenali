@@ -20,7 +20,7 @@ from app.services import shopper_federation as federation
 from app.services.customer_contacts import normalize_phone
 from app.services.federation_settings import public_config
 from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company
-from app.services.shop_checkout import ORDER_COLUMNS, checkout_availability, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, release_shipment, settings_for
+from app.services.shop_checkout import ORDER_COLUMNS, checkout_availability, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, release_shipment, settings_for, sync_tracking
 from app.services.storefront_access import ensure_storefront_enabled
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
@@ -351,6 +351,11 @@ def check_provider(provider: Literal["razorpay", "shiprocket"], identity=Depends
             raise
         return {"provider": provider, "status": "failed", "message": error.detail, "checked_at": datetime.now(timezone.utc)}
     return {"provider": provider, "status": "passed", "message": message, "checked_at": datetime.now(timezone.utc)}
+
+
+@admin_router.post("/tracking/sync")
+def tracking_sync(identity=Depends(administrator), db=Depends(get_db), privileged=Depends(identity_db)):
+    return sync_tracking(db, privileged, str(identity["company_id"]))
 
 
 @admin_router.get("/orders")

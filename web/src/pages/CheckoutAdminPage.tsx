@@ -93,6 +93,17 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
       void refreshOrders().catch(failure => setError(String(failure)));
     }
   }, [allowed, setupOnly, tab, offset, statusFilter, user?.company_id]);
+  // Pull AWB/courier from Shiprocket in the background; the server throttles and skips orders that already have tracking.
+  useEffect(() => {
+    if (!allowed || setupOnly || tab !== "orders") return;
+    let active = true;
+    const sync = () => void accountRequest<{ updated: number }>("/tracking/sync", { method: "POST" }, "checkout-admin")
+      .then(result => { if (active && result?.updated) return refreshOrders(); })
+      .catch(() => {});
+    sync();
+    const timer = window.setInterval(sync, 180_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [allowed, setupOnly, tab, user?.company_id]);
   const edit = (patch: Partial<typeof form>) => {
     setForm(previous => ({ ...previous, ...patch })); setDirty(true); setChecks({}); setMessage("");
   };

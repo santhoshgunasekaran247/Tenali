@@ -39,7 +39,7 @@ export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, on
     {order.shiprocket_order_id ? <dl className="order-shiprocket-facts">
       <div><dt>Shiprocket order</dt><dd>{order.shiprocket_order_id}</dd></div>
       <div><dt>Shipment</dt><dd>{order.shipment_id || "-"}</dd></div>
-      <div><dt>AWB</dt><dd>{order.awb || "Not yet assigned"}</dd></div>
+      <div><dt>AWB</dt><dd>{order.awb || "Not yet assigned - syncs from Shiprocket automatically"}</dd></div>
       {order.courier ? <div><dt>Courier</dt><dd>{order.courier}</dd></div> : null}
     </dl> : <p className="order-action-help">{testPayment ? "Razorpay test payment - this order cannot create a real Shiprocket shipment."
       : order.status === "delivered" ? "This order was marked delivered but was never submitted to Shiprocket. Submit it now (it returns to dispatched until delivery), or recover it if it already exists in Shiprocket."

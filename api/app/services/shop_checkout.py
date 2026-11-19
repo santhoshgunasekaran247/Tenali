@@ -376,6 +376,64 @@ def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: in
     return public_order(result)
 
 
+TRACKING_SYNC_SECONDS = 120
+_tracking_synced_at: dict[str, datetime] = {}
+
+
+def _shipment_tracking(remote: dict) -> tuple[str | None, str | None]:
+    shipments = remote.get("shipments") or []
+    shipment = shipments[0] if isinstance(shipments, list) and shipments else shipments
+    shipment = shipment if isinstance(shipment, dict) else {}
+    awb_data = remote.get("awb_data") if isinstance(remote.get("awb_data"), dict) else {}
+    awb = shipment.get("awb") or awb_data.get("awb")
+    courier = shipment.get("courier") or remote.get("courier_name")
+    return (str(awb)[:120] if awb else None), (str(courier)[:120] if courier else None)
+
+
+def sync_tracking(db, identity_db, company_id: str, limit: int = 10):
+    """Pull AWB/courier from Shiprocket for booked orders still waiting on them; throttled per workspace."""
+    now = datetime.now(timezone.utc)
+    last = _tracking_synced_at.get(company_id)
+    if last and (now - last).total_seconds() < TRACKING_SYNC_SECONDS:
+        return {"checked": 0, "updated": 0, "throttled": True}
+    _tracking_synced_at[company_id] = now
+    rows = db.execute(text("""select id,shiprocket_order_id from shop_orders where company_id=:company
+        and shipping_provider='shiprocket' and shiprocket_order_id is not null and coalesce(awb,'')=''
+        and status in ('shipment_booked','dispatched') order by created_at desc limit :limit"""),
+        {"company": company_id, "limit": limit}).mappings().all()
+    if not rows:
+        return {"checked": 0, "updated": 0, "throttled": False}
+    saved = settings_for(identity_db, company_id, False)["credentials"]
+    credentials = providers.decrypt_credentials(company_id, saved) if saved else {}
+    if not credentials.get("shiprocket_email") or not credentials.get("shiprocket_password"):
+        return {"checked": 0, "updated": 0, "throttled": False}
+    try:
+        token = providers.provider_request("shiprocket", "POST", "/auth/login", {}, {
+            "email": credentials["shiprocket_email"], "password": credentials["shiprocket_password"]}).get("token")
+    except HTTPException:
+        logger.warning("Shiprocket tracking sync login failed for company %s", company_id)
+        return {"checked": 0, "updated": 0, "throttled": False}
+    if not isinstance(token, str) or not token:
+        return {"checked": 0, "updated": 0, "throttled": False}
+    updated = 0
+    for row in rows:
+        try:
+            remote = providers.provider_request("shiprocket", "GET", f"/orders/show/{row['shiprocket_order_id']}", {"token": token}).get("data") or {}
+        except HTTPException:
+            logger.warning("Shiprocket tracking sync failed for order %s", row["id"])
+            continue
+        if not isinstance(remote, dict) or str(remote.get("channel_order_id")) != str(row["id"]):
+            continue
+        awb, courier = _shipment_tracking(remote)
+        if not awb:
+            continue
+        updated += db.execute(text("""update shop_orders set awb=:awb,courier=coalesce(:courier,courier)
+            where company_id=:company and id=:id and coalesce(awb,'')=''"""),
+            {"company": company_id, "id": row["id"], "awb": awb, "courier": courier}).rowcount or 0
+    db.commit()
+    return {"checked": len(rows), "updated": updated, "throttled": False}
+
+
 def release_shipment(db, company_id: str, order_id: str):
     """Staff confirmed the Tenali order is absent in Shiprocket, so an unconfirmed submission may be retried."""
     row = db.execute(text("select * from shop_orders where company_id=:company and id=:id for update"),
