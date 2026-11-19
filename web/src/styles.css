@@ -42,7 +42,8 @@
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 96px; }
+@media (max-width: 800px) { html { scroll-padding-top: 82px; } }
 
 body {
   margin: 0;

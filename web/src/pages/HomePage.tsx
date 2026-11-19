@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
+import { scrollToSection } from "../components/sectionScroll";
 import { api } from "../api";
 import type { CatalogHomeResponse } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
@@ -23,8 +24,12 @@ export function HomePage() {
   }, []);
   useEffect(() => {
     if (!data || !location.hash) return;
-    const frame = requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());
-    return () => cancelAnimationFrame(frame);
+    let stop: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target) stop = scrollToSection(target);
+    });
+    return () => { cancelAnimationFrame(frame); stop?.(); };
   }, [data, location.key, location.hash]);
 
   const publicCompany=storefront||{company_name:"Tenali",nickname:undefined,storefront_content:undefined};
