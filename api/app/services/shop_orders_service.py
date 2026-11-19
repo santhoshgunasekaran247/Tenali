@@ -275,6 +275,8 @@ def mark_delivered(db: Session, company_id: str, order_id: str) -> dict:
     order = _order(db, company_id, order_id)
     if order["fulfilment_method"] != "delivery" or order["status"] != "dispatched":
         raise HTTPException(409, "Only dispatched delivery orders can be marked delivered")
+    if order["shipping_provider"] == "shiprocket" and not order.get("shiprocket_order_id"):
+        raise HTTPException(409, "Submit this order to Shiprocket (or recover its Shiprocket order ID) before marking it delivered.")
     db.execute(text("update shop_orders set status='delivered',delivered_at=now() where id=:id"), {"id": order_id})
     db.commit()
     return _order_out(db, company_id, order_id)

@@ -147,3 +147,13 @@ test("booked shipments show Shiprocket references and test payments never submit
   assert.match(test.html, /test payment/);
   assert.equal(panel({ shipping_provider: "self", status: "paid" }).tree, null);
 });
+
+test("unbooked orders marked delivered can still be submitted and Mark delivered waits for Shiprocket", () => {
+  const delivered = panel({ status: "delivered", invoice_id: "invoice", shiprocket_order_id: null }, filled);
+  assert.match(delivered.html, /marked delivered but was never submitted/);
+  assert.equal(button(delivered.tree, "Submit packed order to Shiprocket").props.disabled, false);
+  const unbooked = harness({ ...shiprocket, status: "dispatched", invoice_id: "invoice", shiprocket_order_id: null }).render();
+  assert.equal(button(unbooked, "Mark delivered"), undefined);
+  const booked = harness({ ...shiprocket, status: "dispatched", invoice_id: "invoice", shiprocket_order_id: 991 }).render();
+  assert.ok(button(booked, "Mark delivered"));
+});

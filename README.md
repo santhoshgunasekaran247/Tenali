@@ -88,8 +88,10 @@ Render Environment settings, never in the static UI or the repository.
   user-profile field on account transactions.
 - Shiprocket delivery orders must be submitted to Shiprocket (package weight and
   dimensions are entered on each order card) before Dispatch & invoice unlocks.
-  Orders dispatched before this rule can still be submitted, or recovered with
-  their Shiprocket order ID, without changing their dispatched status. An
+  Orders dispatched (or marked delivered) before this rule can still be submitted,
+  or recovered with their Shiprocket order ID; they return to dispatched without
+  touching the invoice or stock. Mark delivered also waits for a Shiprocket
+  booking and asks for confirmation. An
   unconfirmed submission must be recovered, never resubmitted.
 
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock

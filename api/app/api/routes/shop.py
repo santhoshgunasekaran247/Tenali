@@ -424,8 +424,8 @@ def ship(order_id: UUID, payload: PackageInput, identity=Depends(administrator),
 
 
 @admin_router.post("/orders/{order_id}/reconcile-shipment")
-def reconcile(order_id: UUID, payload: ShipmentReconcile, identity=Depends(administrator), db=Depends(get_db)):
-    return reconcile_shipment(db, str(identity["company_id"]), str(order_id), payload.provider_order_id)
+def reconcile(order_id: UUID, payload: ShipmentReconcile, identity=Depends(administrator), db=Depends(get_db), privileged=Depends(identity_db)):
+    return reconcile_shipment(db, str(identity["company_id"]), str(order_id), payload.provider_order_id, privileged)
 
 
 @admin_router.post("/orders/{order_id}/reconcile-payment")

@@ -261,6 +261,16 @@ def reconcile_payment(db, company_id: str, order_id: str):
     return confirm_payment(db, company_id, order_id, payment_id)
 
 
+AFTER_DISPATCH = {"dispatched", "delivered"}
+PENDING_MARKER = "Shiprocket submission in progress. If this persists, recover it in Shiprocket using the Tenali order ID."
+
+
+def _late_shipment(row) -> bool:
+    """A Shiprocket order dispatched (or marked delivered) before it was ever booked with Shiprocket."""
+    return (row["status"] in AFTER_DISPATCH and not row.get("shiprocket_order_id") and row["fulfilment_method"] == "delivery"
+            and row["payment_method"] in {"prepaid", "cod"})
+
+
 def create_shipment(db, identity_db, company_id: str, order_id: str, package):
     row = db.execute(text("select * from shop_orders where company_id=:company and id=:id for update"),
                      {"company": company_id, "id": order_id}).mappings().first()
@@ -268,10 +278,9 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
         raise HTTPException(404, "Order not found")
     if row["shipping_provider"] != "shiprocket":
         raise HTTPException(409, "This order uses self-shipping. Dispatch it with your own courier instead.")
-    if row["status"] == "shipment_booked" or (row["status"] == "dispatched" and row.get("shiprocket_order_id")):
+    if row["status"] == "shipment_booked" or (row["status"] in AFTER_DISPATCH and row.get("shiprocket_order_id")):
         return public_order(row)
-    # Orders dispatched before Shiprocket submission was enforced keep their dispatched status (stock is already booked).
-    late = row["status"] == "dispatched" and row["fulfilment_method"] == "delivery" and row["payment_method"] in {"prepaid", "cod"}
+    late = _late_shipment(row)
     if late and row.get("shipping_error"):
         raise HTTPException(409, "A previous Shiprocket submission is unconfirmed. Find the order in Shiprocket using the Tenali order ID and recover it instead of resubmitting.")
     if not late and (row["fulfilment_method"] != "delivery" or row["status"] not in {"paid", "confirmed"} or (row["status"] == "confirmed" and row["payment_method"] != "cod")):
@@ -300,11 +309,11 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
     if not isinstance(token, str) or not token:
         raise HTTPException(502, "Shiprocket authentication failed")
     # Persist uncertainty before the external side effect; never automatically duplicate a shipment.
-    pending_marker = "Shiprocket submission in progress. If this persists, recover it in Shiprocket using the Tenali order ID."
-    db.execute(text("""update shop_orders set status=case when status='dispatched' then status else 'shipping_pending' end,
-        shipping_error=case when status='dispatched' then :marker else null end,credentials=:credentials
-        where company_id=:company and id=:id"""),
-               {"company": company_id, "id": order_id, "marker": pending_marker,
+    # Late orders stay dispatched (an unconfirmed "delivered" is undone); the marker blocks blind resubmission.
+    db.execute(text("""update shop_orders set status=:status,delivered_at=case when :late then null else delivered_at end,
+        shipping_error=:marker,credentials=:credentials where company_id=:company and id=:id"""),
+               {"company": company_id, "id": order_id, "late": late, "status": "dispatched" if late else "shipping_pending",
+                "marker": PENDING_MARKER if late else None,
                 "credentials": providers.encrypt_credentials(company_id, credentials)})
     db.commit()
     try:
@@ -316,22 +325,24 @@ def create_shipment(db, identity_db, company_id: str, order_id: str, package):
                    {"company": company_id, "id": order_id})
         db.commit()
         raise
-    result = db.execute(text("""update shop_orders set status=case when status='dispatched' then status else 'shipment_booked' end,
+    result = db.execute(text("""update shop_orders set status=:status,
         shiprocket_order_id=:provider,shipment_id=:shipment,shipping_error=null where company_id=:company and id=:id returning *"""),
-        {"company": company_id, "id": order_id, "provider": shipment["order_id"], "shipment": shipment["shipment_id"]}).mappings().one()
+        {"company": company_id, "id": order_id, "status": "dispatched" if late else "shipment_booked",
+         "provider": shipment["order_id"], "shipment": shipment["shipment_id"]}).mappings().one()
     db.commit()
     return public_order(result)
 
 
-def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: int):
+def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: int, identity_db=None):
     row = db.execute(text("select * from shop_orders where company_id=:company and id=:id for update"),
                      {"company": company_id, "id": order_id}).mappings().first()
-    if not row or row["shipping_provider"] != "shiprocket" or row["status"] not in {"shipping_pending", "shipment_booked", "dispatched"} \
-            or row["fulfilment_method"] != "delivery":
+    if not row or row["shipping_provider"] != "shiprocket" or row["fulfilment_method"] != "delivery" \
+            or row["status"] not in {"shipping_pending", "shipment_booked", *AFTER_DISPATCH}:
         raise HTTPException(409, "No shipment is pending reconciliation")
-    if not row.get("credentials"):
+    saved = row.get("credentials") or (settings_for(identity_db, company_id, False)["credentials"] if identity_db is not None else None)
+    credentials = providers.decrypt_credentials(company_id, saved) if saved else {}
+    if not credentials.get("shiprocket_email") or not credentials.get("shiprocket_password"):
         raise HTTPException(409, "Save Shiprocket API-user credentials before recovering this shipment.")
-    credentials = providers.decrypt_credentials(company_id, row["credentials"])
     token = providers.provider_request("shiprocket", "POST", "/auth/login", {}, {
         "email": credentials["shiprocket_email"], "password": credentials["shiprocket_password"]}).get("token")
     if not isinstance(token, str) or not token:
@@ -343,10 +354,12 @@ def reconcile_shipment(db, company_id: str, order_id: str, provider_order_id: in
     shipment = shipments[0] if isinstance(shipments, list) and shipments else shipments
     if not isinstance(shipment, dict) or not shipment.get("id"):
         raise HTTPException(409, "Shiprocket has not confirmed a shipment")
-    result = db.execute(text("""update shop_orders set status=case when status='dispatched' then status else 'shipment_booked' end,
+    late = _late_shipment(row)
+    status = "dispatched" if late else row["status"] if row["status"] in AFTER_DISPATCH else "shipment_booked"
+    result = db.execute(text("""update shop_orders set status=:status,delivered_at=case when :late then null else delivered_at end,
         shiprocket_order_id=:provider,shipment_id=:shipment,awb=:awb,courier=:courier,shipping_error=null
         where company_id=:company and id=:id returning *"""),
-        {"company": company_id, "id": order_id, "provider": provider_order_id, "shipment": shipment["id"],
+        {"company": company_id, "id": order_id, "status": status, "late": late, "provider": provider_order_id, "shipment": shipment["id"],
          "awb": shipment.get("awb"), "courier": shipment.get("courier")}).mappings().one()
     db.commit()
     return public_order(result)

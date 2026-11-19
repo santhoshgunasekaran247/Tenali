@@ -247,16 +247,39 @@ class SelfShippingTests(unittest.TestCase):
                 "items": [{"name": "Item", "sku": "SKU", "quantity": 1, "unit_paise": 10000}], **extra}
 
     def test_dispatched_orders_without_shiprocket_booking_can_be_submitted_without_changing_status(self):
-        db, provider, result = self._late_shipment(self._dispatched_row(), {"order_id": 991, "shipment_id": 552})
-        self.assertEqual(result["shiprocket_order_id"], 991)
-        self.assertEqual(provider.call_count, 2)
-        statements = [str(call.args[0]) for call in db.execute.call_args_list]
-        pending = next(sql for sql in statements if "shipping_error=case" in sql)
-        self.assertIn("when status='dispatched' then status", pending)
-        booked = next(sql for sql in statements if "shiprocket_order_id=:provider" in sql)
-        self.assertIn("when status='dispatched' then status else 'shipment_booked'", booked)
-        marker = next(call.args[1] for call in db.execute.call_args_list if "shipping_error=case" in str(call.args[0]))
-        self.assertIn("in progress", marker["marker"])
+        for status in ("dispatched", "delivered"):
+            db, provider, result = self._late_shipment(self._dispatched_row(status=status), {"order_id": 991, "shipment_id": 552})
+            self.assertEqual(result["shiprocket_order_id"], 991)
+            self.assertEqual(provider.call_count, 2)
+            updates = [call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0])]
+            self.assertEqual((updates[0]["status"], updates[0]["late"]), ("dispatched", True))
+            self.assertIn("in progress", updates[0]["marker"])
+            self.assertEqual(updates[-1]["status"], "dispatched")
+            self.assertIsNone(updates[-1].get("marker"))
+
+    def test_orders_without_shiprocket_booking_cannot_be_marked_delivered(self):
+        order = {"fulfilment_method": "delivery", "status": "dispatched", "shipping_provider": "shiprocket", "shiprocket_order_id": None}
+        db = MagicMock()
+        with patch.object(shop_orders_service, "_order", return_value=order):
+            with self.assertRaises(HTTPException) as error:
+                shop_orders_service.mark_delivered(db, str(uuid4()), str(uuid4()))
+        self.assertIn("Submit this order to Shiprocket", error.exception.detail)
+        db.commit.assert_not_called()
+
+    def test_recovery_of_unbooked_delivered_order_uses_workspace_credentials_and_reverts_to_dispatched(self):
+        row = self._dispatched_row(status="delivered", credentials=None)
+        db, identity_db = MagicMock(), MagicMock()
+        db.execute.return_value.mappings.return_value.first.return_value = row
+        db.execute.return_value.mappings.return_value.one.return_value = row
+        responses = [{"token": "token"}, {"data": {"channel_order_id": str(row["id"]), "shipments": [{"id": 552, "awb": "AWB1"}]}}]
+        with patch.object(checkout_providers, "provider_request", side_effect=lambda *args, **kwargs: responses.pop(0)), \
+                patch.object(shop_checkout, "settings_for", return_value={"credentials": "workspace"}) as settings, \
+                patch.object(checkout_providers, "decrypt_credentials", return_value={"shiprocket_email": "a@b.invalid", "shiprocket_password": "x"}), \
+                patch.object(shop_checkout, "public_order", side_effect=lambda value: value):
+            shop_checkout.reconcile_shipment(db, str(uuid4()), str(row["id"]), 991, identity_db)
+        settings.assert_called_once()
+        update = next(call.args[1] for call in db.execute.call_args_list if "update shop_orders" in str(call.args[0]))
+        self.assertEqual((update["status"], update["late"], update["provider"], update["awb"]), ("dispatched", True, 991, "AWB1"))
 
     def test_dispatched_orders_with_unconfirmed_or_existing_shiprocket_booking_are_not_resubmitted(self):
         for extra in ({"shipping_error": "Provider response uncertain"}, {"shiprocket_order_id": 991}):

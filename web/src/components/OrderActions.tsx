@@ -14,12 +14,12 @@ export function shiprocketActions(order: ShopOrder) {
   const applies = order.shipping_provider === "shiprocket" && order.fulfilment_method === "delivery";
   const testPayment = (order.provider_key_id || "").startsWith("rzp_test_");
   const ready = (order.status === "paid" && order.payment_method === "prepaid") || (order.status === "confirmed" && order.payment_method === "cod");
-  const late = order.status === "dispatched" && !order.shiprocket_order_id && ["prepaid", "cod"].includes(order.payment_method);
+  const late = ["dispatched", "delivered"].includes(order.status) && !order.shiprocket_order_id && ["prepaid", "cod"].includes(order.payment_method);
   return {
     applies,
     testPayment,
     canSubmit: applies && !testPayment && (ready || (late && !order.shipping_error)),
-    canRecover: applies && (["shipping_pending", "shipment_booked"].includes(order.status) || (order.status === "dispatched" && (late || !order.awb))),
+    canRecover: applies && (["shipping_pending", "shipment_booked"].includes(order.status) || late || (order.status === "dispatched" && !order.awb)),
   };
 }
 
@@ -37,6 +37,7 @@ export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, on
       <div><dt>AWB</dt><dd>{order.awb || "Not yet assigned"}</dd></div>
       {order.courier ? <div><dt>Courier</dt><dd>{order.courier}</dd></div> : null}
     </dl> : <p className="order-action-help">{testPayment ? "Razorpay test payment - this order cannot create a real Shiprocket shipment."
+      : order.status === "delivered" ? "This order was marked delivered but was never submitted to Shiprocket. Submit it now (it returns to dispatched until delivery), or recover it if it already exists in Shiprocket."
       : order.status === "dispatched" ? "This order was dispatched before it was submitted to Shiprocket. Submit it now, or recover it if it already exists in Shiprocket."
       : "Not yet submitted. Enter the packed size and submit; Dispatch & invoice unlocks once Shiprocket confirms the order."}</p>}
     {order.shipping_error ? <p role="alert" className="ops-error">{order.shipping_error}</p> : null}
@@ -105,7 +106,10 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
       </> : null}
       <button className="btn" disabled={disabled || (order.payment_method === "pay_at_pickup" && !collect.account_id)} onClick={() => void run("collect", order.payment_method === "pay_at_pickup" ? collect : {}, order.payment_method === "pay_at_pickup" ? "Collected: invoice created in the shop's series." : "Handed over to the shopper.")}>Mark collected</button>
     </div></section> : null}
-    {order.fulfilment_method === "delivery" && order.status === "dispatched" ? <button className="btn light" disabled={disabled} onClick={() => void run("delivered", {}, "Marked delivered.")}>Mark delivered</button> : null}
+    {order.fulfilment_method === "delivery" && order.status === "dispatched" && !awaitingShiprocket ? <button className="btn light" disabled={disabled} onClick={() => {
+      if (typeof window !== "undefined" && !window.confirm("Mark this order as delivered to the shopper?")) return;
+      void run("delivered", {}, "Marked delivered.");
+    }}>Mark delivered</button> : null}
     {!order.invoice_id && !["cancelled", "refunded", "expired"].includes(order.status) ? <details className="order-cancel-panel"><summary>Cancel order</summary><div className="shop-actions">
       <label className="order-cancel-reason">Cancellation reason<input maxLength={500} placeholder="Why is this order being cancelled?" value={cancel.reason} onChange={event => setCancel({ ...cancel, reason: event.target.value })} /></label>
       {order.payment_method === "prepaid" && order.razorpay_payment_id ? <label>Refund from<select value={cancel.refund_account_id} onChange={event => setCancel({ ...cancel, refund_account_id: event.target.value })}><option value="">Clearing account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.nickname}</option>)}</select></label> : null}
