@@ -6,6 +6,8 @@ import { useAuth } from "../features/auth";
 import { cartItemKey, useCart } from "../features/cart";
 import { accountRequest, rupees } from "../features/shop";
 import type { CatalogProduct } from "../types";
+import { Package, Trash2 } from "lucide-react";
+import { toAssetUrl } from "../features/catalog/utils";
 
 export function CartPage() {
   const { storefront, loading } = useAuth();
@@ -53,7 +55,7 @@ export function CartPage() {
       : Number(stock) < quantity ? "There is not enough stock for this quantity. Reduce it or contact the store." : "";
     return { item, product, variant, unit, quantity, minimum, problem };
   });
-  const subtotal = rows.reduce((total, row) => total + (Number.isFinite(row.unit) ? Math.round(row.unit * 100) * row.quantity : 0), 0);
+  const subtotal = rows.reduce((total, row) => total + (Number.isFinite(row.unit) && Number.isFinite(row.quantity) && row.quantity > 0 ? Math.round(row.unit * 100) * row.quantity : 0), 0);
   const checkout = (event: FormEvent) => {
     event.preventDefault();
     if (!ready || !enabled || rows.some(row => row.problem)) { setError("Resolve the cart messages before checkout."); return; }
@@ -61,24 +63,25 @@ export function CartPage() {
   };
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront) return <main className="loading">Open a workspace storefront to view its cart.</main>;
-  return <main className="shop-account-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>Your Cart</h1><p>{storefront.company_name} only · Products from other workspaces stay in their own carts.</p></header>
+  return <main className="shop-account-page shopping-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>Your Cart</h1><p>{storefront.company_name} · {cart.items.length} {cart.items.length === 1 ? "item" : "items"}</p></header>
     <div className="shop-account-content">
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {!cart.items.length ? <section className="ops-card"><h2>Your cart is empty</h2><p>Add products, choose quantities and pay for them together.</p><Link className="btn" to="/">Browse products</Link></section>
-        : !ready ? <p role="status">Checking current products and prices...</p> : <form onSubmit={checkout}>
+        : !ready ? <p role="status">Checking current products and prices...</p> : <form className="cart-layout" onSubmit={checkout}>
           <div className="cart-items">{rows.map(({ item, product, variant, unit, quantity, minimum, problem }) => <article className="ops-card cart-item" key={cartItemKey(item)}>
-            <div><h2><Link to={`/products/${item.product_id}`}>{product?.name || "Unavailable product"}</Link></h2>{variant ? <p>{variant.variant_name}</p> : null}<p>Minimum order: {minimum} units{product?.variants?.length ? " per size / colour" : ""}</p>{Number.isFinite(unit) && unit > 0 ? <p>{rupees(Math.round(unit * 100))} each</p> : null}</div>
-            <label>Quantity for {product?.name || "unavailable product"}{variant ? ` - ${variant.variant_name}` : ""}<input type="number" required min={minimum} max={100} step={1} value={drafts[cartItemKey(item)] ?? item.quantity} onChange={event => {
+            <Link className="cart-item-image" to={`/products/${item.product_id}`} aria-label={`View ${product?.name || "product"}`}>{product?.image_url ? <img src={toAssetUrl(product.image_url)} alt="" /> : <Package size={28} aria-hidden="true" />}</Link>
+            <div className="cart-item-details"><h2><Link to={`/products/${item.product_id}`}>{product?.name || "Unavailable product"}</Link></h2>{variant ? <p>{variant.variant_name}</p> : null}{Number.isFinite(unit) && unit > 0 ? <p>{rupees(Math.round(unit * 100))} each</p> : null}<small>Minimum: {minimum} {minimum === 1 ? "unit" : "units"}{product?.variants?.length ? " per size / colour" : ""}</small>
+            <button type="button" className="cart-remove" aria-label={`Remove ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} onClick={() => cart.remove(item)}><Trash2 size={14} aria-hidden="true" />Remove</button></div>
+            <div className="cart-item-quantity"><label>Quantity<input aria-label={`Quantity for ${product?.name || "unavailable product"}${variant ? ` - ${variant.variant_name}` : ""}`} type="number" required min={minimum} max={100} step={1} value={drafts[cartItemKey(item)] ?? item.quantity} onChange={event => {
               const value = event.target.value; setDrafts(previous => ({ ...previous, [cartItemKey(item)]: value }));
               if (Number.isInteger(Number(value)) && Number(value) >= minimum && Number(value) <= 100) cart.setQuantity(item, Number(value));
             }} /></label>
-            {quantity > 0 && Number.isFinite(unit) && unit > 0 ? <strong>{rupees(Math.round(unit * 100) * quantity)}</strong> : null}
-            <button type="button" className="btn light" onClick={() => cart.remove(item)}>Remove {product?.name || "unavailable product"}{variant ? ` - ${variant.variant_name}` : ""}</button>
+            {quantity > 0 && Number.isFinite(unit) && unit > 0 ? <strong>{rupees(Math.round(unit * 100) * quantity)}</strong> : null}</div>
             {problem ? <p className="ops-error" role="alert">{problem}</p> : null}
           </article>)}</div>
-          <section className="ops-card cart-summary"><h2>Estimated total</h2><p>Items: {rupees(subtotal)}</p><p>Delivery for the whole order: {rupees(shipping)}</p><p><strong>Total: {rupees(subtotal + shipping)}</strong></p><p>Final prices, minimum quantities and available stock are checked again before payment. Adding to cart does not reserve stock.</p>
+          <section className="ops-card cart-summary purchase-summary"><h2>Order summary</h2><dl className="order-totals"><div><dt>Subtotal</dt><dd>{rupees(subtotal)}</dd></div><div><dt>Estimated delivery</dt><dd>{shipping ? rupees(shipping) : "Free"}</dd></div><div className="order-total"><dt>Estimated total</dt><dd>{rupees(subtotal + shipping)}</dd></div></dl><p className="purchase-fine-print">Prices and stock are confirmed at checkout. Items in your cart are not reserved.</p>
             {!enabled ? <p role="alert">This store is not taking online payments right now. You can keep your cart and contact the store on WhatsApp.</p> : null}
-            <button className="btn" disabled={!enabled || rows.some(row => !!row.problem)}>Continue to checkout</button><p>You will sign in to a shopper account for this store before paying.</p>
+            <button className="btn" disabled={!enabled || rows.some(row => !!row.problem)}>Continue to checkout</button><p className="purchase-fine-print">Sign in at checkout to place your order.</p>
           </section>
         </form>}
     </div>

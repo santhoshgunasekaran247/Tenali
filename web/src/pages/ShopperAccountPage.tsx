@@ -67,11 +67,11 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
       {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <>
-        <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p><p>Phone: {shopper.phone || "Not recorded"} (unverified)</p>
+        <section className="ops-card"><h2>{shopper.display_name}</h2><p>{shopper.email}</p><p>Phone: {shopper.phone || "Not recorded"}</p>
           <details><summary>Edit contact details</summary><form className="ops-form" onSubmit={(event: FormEvent) => {
             event.preventDefault(); setBusy(true); setError(""); setMessage("");
             void accountRequest<Shopper>("/profile", { method: "POST", body: JSON.stringify(profile) })
-              .then(result => { setShopper(result); setMessage("Contact details updated. Your phone is unverified; no customer records were merged."); })
+              .then(result => { setShopper(result); setMessage("Contact details updated."); })
               .catch(failure => setError(String(failure))).finally(() => setBusy(false));
           }}><label>Your name<input required maxLength={150} value={profile.display_name} onChange={event => setProfile({ ...profile, display_name: event.target.value })} /></label>
             <label>Phone number<input required type="tel" maxLength={40} value={profile.phone} onChange={event => setProfile({ ...profile, phone: event.target.value })} /></label>

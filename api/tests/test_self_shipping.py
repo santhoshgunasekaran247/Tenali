@@ -16,6 +16,43 @@ RAZORPAY = {"razorpay_key_id": "rzp_live_fixture", "razorpay_key_secret": "fixtu
 
 
 class SelfShippingTests(unittest.TestCase):
+    def test_public_and_admin_checkout_status_share_online_store_readiness(self):
+        for enabled, online_ready in ((False, False), (False, True), (True, False), (True, True)):
+            with self.subTest(enabled=enabled, online_ready=online_ready):
+                settings = {**CheckoutSettingsInput(shipping_provider="self", shipping_paise=0,
+                    enabled=enabled).model_dump(), "credentials": "encrypted"}
+                db = MagicMock()
+                db.execute.return_value.mappings.return_value.first.return_value = settings
+                db.execute.return_value.mappings.return_value.__iter__.return_value = iter([])
+                with patch.object(shop_checkout, "find_online_store", return_value={"id": "online"} if online_ready else None), \
+                        patch.object(shop.providers, "decrypt_credentials", return_value=RAZORPAY), \
+                        patch.object(shop.orders_service, "whatsapp_number", return_value=None):
+                    company_id = str(uuid4())
+                    public = shop.availability({"id": company_id}, db)
+                    admin = shop.read_settings({"company_id": company_id}, db)
+                self.assertEqual(public["enabled"], enabled and online_ready)
+                self.assertEqual(admin["checkout_available"], public["enabled"])
+                self.assertEqual(admin["checkout_blocker"], public["disabled_reason"])
+                self.assertEqual(admin["online_store_ready"], online_ready)
+                self.assertEqual(admin["payment_mode"], "live")
+                if enabled and not online_ready:
+                    self.assertIn("fulfilment warehouse", admin["checkout_blocker"])
+
+    def test_readiness_uses_the_same_warehouse_requirements_as_order_creation(self):
+        db = MagicMock()
+        db.execute.return_value.mappings.return_value.first.return_value = None
+        result = shop_checkout.checkout_availability(db, "company", {"enabled": True})
+        self.assertFalse(result["enabled"])
+        sql = str(db.execute.call_args.args[0])
+        for condition in ("o.kind='online'", "o.is_active", "w.is_active", "w.holds_stock",
+                          "w.id=o.fulfilment_store_id", "o.company_id=:company"):
+            self.assertIn(condition, sql)
+        with self.assertRaises(HTTPException):
+            shop_checkout.online_store(db, "company")
+        result = shop_checkout.checkout_availability(db, "company", None)
+        self.assertFalse(result["enabled"])
+        self.assertIn("not been set up", result["disabled_reason"])
+
     def test_self_shipping_settings_need_only_enabled_payment_credentials(self):
         for prepaid in (True, False):
             db = MagicMock()

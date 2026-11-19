@@ -41,16 +41,29 @@ def checkout_policy(db, company_id: str) -> dict:
     return dict(row)
 
 
-def online_store(db, company_id: str) -> dict:
-    """The company's online channel store and the warehouse it fulfils from."""
+def find_online_store(db, company_id: str) -> dict | None:
     row = db.execute(text("""select o.id, o.code, o.name, o.state_code, o.gst_number, o.settlement_account_id,
             o.fulfilment_store_id, w.code as warehouse_code, w.state_code as warehouse_state
         from stores o join stores w on w.id=o.fulfilment_store_id
         where o.company_id=:company and o.kind='online' and o.is_active and w.is_active and w.holds_stock
         order by o.created_at limit 1"""), {"company": company_id}).mappings().first()
+    return dict(row) if row else None
+
+
+def checkout_availability(db, company_id: str, settings) -> dict:
+    online_ready = find_online_store(db, company_id) is not None
+    reason = ("Online checkout has not been set up." if not settings else
+              "Online checkout is switched off." if not settings["enabled"] else
+              "Configure an active Online store with an active fulfilment warehouse or shop in Stores." if not online_ready else None)
+    return {"enabled": reason is None, "disabled_reason": reason, "online_store_ready": online_ready}
+
+
+def online_store(db, company_id: str) -> dict:
+    """The company's online channel store and the warehouse it fulfils from."""
+    row = find_online_store(db, company_id)
     if not row:
         raise HTTPException(409, "Online checkout needs an active online store with a fulfilment warehouse in Company Setup")
-    return dict(row)
+    return row
 
 
 def pickup_store(db, company_id: str, store_id: str) -> dict:

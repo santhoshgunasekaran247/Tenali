@@ -9,6 +9,7 @@ export type PaymentMethod = "prepaid" | "cod" | "pay_at_pickup";
 export type FulfilmentMethod = "delivery" | "pickup";
 export type PickupStore = { id: string; code: string; name: string; address: string | null; pincode: string | null; whatsapp_number: string | null };
 export type Availability = {
+  disabled_reason?: string | null; online_store_ready?: boolean;
   enabled: boolean; shipping_paise: number | null; prepaid_enabled: boolean; cod_enabled: boolean; cod_limit: number | null;
   pickup_enabled: boolean; pickup_stores: PickupStore[]; whatsapp_number: string | null;
 };

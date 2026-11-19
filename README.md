@@ -53,6 +53,22 @@ Render Environment settings, never in the static UI or the repository.
 
 ## Inventory and customers
 
+- Online checkout requires both the Add to Cart switch in Payments & Delivery
+  Setup and an active Online store linked to an active stock-holding warehouse
+  or shop in Stores. The setup status and public availability use the same
+  readiness rules; blocked setup links to Stores instead of claiming checkout
+  is visible.
+- Razorpay mode comes from the keys saved in Tenali, not the dashboard's active
+  mode. Replace the key ID and secret together and configure the matching live
+  webhook secret when switching to real payments. Run the read-only connection
+  check after saving. Provider HTTP errors distinguish authentication, account
+  access, validation and availability without exposing provider response bodies
+  or credentials. Reconcile uncertain payment attempts before retrying.
+- Home and catalogue cards offer Add to Cart when checkout is available. Quick
+  add checks current product details and adds the minimum quantity; products
+  with variants open their detail page so shoppers can select a size / colour.
+  Cart and checkout totals are estimates until the server confirms the quote.
+
 - Inventory has separate Products, Reorder Alerts and Stock check tabs. Stock
   check shows problems first, with optional matching entries and store filtering.
   It compares on-hand balances with recorded activity, not a physical count.

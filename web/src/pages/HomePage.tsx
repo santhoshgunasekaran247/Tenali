@@ -9,9 +9,11 @@ import { toAssetUrl } from "../features/catalog/utils";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { Package } from "lucide-react";
 import { useAuth } from "../features/auth";
+import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
 
 export function HomePage() {
   const {storefront}=useAuth();
+  const { availability, error: checkoutError } = useCheckoutAvailability(storefront?.id);
   const location = useLocation();
   const [data, setData] = useState<CatalogHomeResponse>();
   const [error, setError] = useState<string>();
@@ -101,6 +103,7 @@ export function HomePage() {
         </section>
 
         <section id="best-sellers" className="home-section featured-section">
+          {checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null}
           <div className="section-heading">
             <p className="eyebrow">{text("best_sellers_eyebrow")}</p>
             <h2>
@@ -116,7 +119,7 @@ export function HomePage() {
           </div>
           <div className="product-grid home-product-grid">
             {data.best_sellers.map((product) => (
-              <ProductCard key={product.id} product={product} phone={phone} />
+              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
             ))}
           </div>
         </section>
@@ -137,7 +140,7 @@ export function HomePage() {
           </div>
           <div className="product-grid home-product-grid">
             {data.sru_specials.map((product) => (
-              <ProductCard key={product.id} product={product} phone={phone} />
+              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
             ))}
           </div>
         </section>

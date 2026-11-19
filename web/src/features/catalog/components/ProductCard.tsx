@@ -1,16 +1,24 @@
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import type { CatalogProduct } from "../../../types";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../utils";
 import { useAuth } from "../../auth";
 import { storefrontText } from "../storefrontText";
+import { api } from "../../../api";
+import { useCart } from "../../cart";
 
 type ProductCardProps = {
   product: CatalogProduct;
   phone: string;
+  checkoutEnabled: boolean;
 };
 
-export function ProductCard({ product, phone }: ProductCardProps) {
+export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProps) {
   const navigate = useNavigate();
+  const cart = useCart();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const {storefront,user}=useAuth();
   const company=storefront||{company_name:user?.company_name||"Tenali",nickname:undefined};
   const copy=storefront?.storefront_content?.product||{};
@@ -20,6 +28,20 @@ export function ProductCard({ product, phone }: ProductCardProps) {
     .map((img) => img.trim())
     .filter(Boolean);
   const image = gallery[0] || product.image_url;
+  const addToCart = async () => {
+    setBusy(true); setMessage(""); setError("");
+    try {
+      const current = (await api.product(product.id)).product;
+      if (current.variants?.length) { navigate(`/products/${product.id}`); return; }
+      const quantity = current.minimum_order_quantity;
+      if (!(Number(current.selling_price_display) > 0)) throw new Error("Contact the store for a quote on this item.");
+      const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
+      if (Number(current.stock_qty) < quantity + (existing?.quantity || 0)) throw new Error("Not enough stock. Review your cart or contact the store.");
+      cart.add({ product_id: product.id, variant_id: null, quantity });
+      setMessage(`${quantity} ${quantity === 1 ? "unit" : "units"} added`);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setBusy(false); }
+  };
 
   return (
     <article
@@ -28,7 +50,7 @@ export function ProductCard({ product, phone }: ProductCardProps) {
       tabIndex={0}
       onClick={() => navigate(`/products/${product.id}`)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") navigate(`/products/${product.id}`);
+        if (e.key === "Enter" && e.target === e.currentTarget) navigate(`/products/${product.id}`);
       }}
     >
       <div className="product-image">
@@ -58,6 +80,8 @@ export function ProductCard({ product, phone }: ProductCardProps) {
           </div>
         </div>
         <p title={product.description}>{product.description}</p>
+        <div className="product-card-actions" onClick={event => event.stopPropagation()}>
+        {checkoutEnabled ? <button className="btn" type="button" disabled={busy} onClick={() => void addToCart()}>{busy ? "Adding..." : text("add_to_cart", "Add to Cart")}</button> : null}
         {phone?<a
           className="btn whatsapp-btn"
           href={whatsappLink(phone, product.name, product.brand_name || company.nickname || company.company_name, text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
@@ -65,6 +89,9 @@ export function ProductCard({ product, phone }: ProductCardProps) {
         >
           {text("whatsapp_enquiry","WhatsApp enquiry")}
         </a>:null}
+        </div>
+        {message ? <p className="cart-feedback" role="status" onClick={event => event.stopPropagation()}>{message}. <Link to="/cart">View cart</Link></p> : null}
+        {error ? <p className="ops-error" role="alert">{error}</p> : null}
       </div>
     </article>
   );

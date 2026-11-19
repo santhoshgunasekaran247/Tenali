@@ -54,7 +54,6 @@ export function FederatedShopperLogin({ onSignedIn }: { onSignedIn: (shopper: Sh
         <label>Email from your login provider<input type="email" value={form.email} readOnly /></label>
         <label>Your name<input required autoComplete="name" maxLength={150} value={form.display_name} onChange={event => setForm({ ...form, display_name: event.target.value })} /></label>
         <label>Phone number<input required type="tel" autoComplete="tel" maxLength={40} value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="Mobile number or +country code" /></label>
-        <p>No OTP is sent. Your phone is unverified. Online and counter customer records stay separate.</p>
         <button className="btn" disabled={busy}>{busy ? "Saving..." : "Create shopper account"}</button>
         <button className="ops-link-btn" type="button" disabled={busy} onClick={() => setSocial(null)}>Use a different social account</button>
       </fieldset></form> : <>

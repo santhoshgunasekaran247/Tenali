@@ -75,7 +75,7 @@ export function ProductPage() {
       const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === (variantId || null));
       if (count + (existing?.quantity || 0) > Number(stock)) throw new Error("Your cart already contains this item. Reduce the quantity or update it in your cart.");
       cart.add({ product_id: product.id, variant_id: variantId || null, quantity: count });
-      setCartMessage(`${count} units added to your cart.`);
+      setCartMessage(`${count} ${count === 1 ? "unit" : "units"} added to your cart.`);
     } catch (failure) { setCartError(String(failure)); }
   };
 
@@ -138,13 +138,13 @@ export function ProductPage() {
             </div>
             <div className="detail-actions">
               {checkoutEnabled ? <div className="product-cart-controls">
-                <p>Minimum order: <strong>{minimum} units</strong>{product.variants?.length ? " per size / colour" : ""}</p>
+                <p className="product-cart-minimum">Minimum order: <strong>{minimum} {minimum === 1 ? "unit" : "units"}</strong>{product.variants?.length ? " per size / colour" : ""}</p>
                 <label>Quantity<input type="number" min={minimum} max={100} step={1} value={quantity} onChange={event => { setQuantity(event.target.value); setCartMessage(""); }} /></label>
                 {product.variants?.length && !variantId ? <p>{text("checkout_variant_required","Select a size / colour to add to your cart.")}</p>
                   : canPurchase ? <button className="btn" type="button" onClick={addToCart}>{text("add_to_cart","Add to Cart")}</button>
                     : <p>{Number(price) > 0 ? "Not enough stock for the minimum order. Contact the store." : "Contact the store for a quote on this item."}</p>}
                 <Link className="btn light" to="/cart">View cart</Link>
-                {cartMessage ? <p role="status">{cartMessage} <Link to="/cart">Review cart &amp; checkout</Link></p> : null}
+                {cartMessage ? <p className="cart-feedback" role="status">{cartMessage} <Link to="/cart">Review cart</Link></p> : null}
                 {cartError ? <FloatingAlert>{cartError}</FloatingAlert> : null}
               </div> : null}
               {company?.phone?<a

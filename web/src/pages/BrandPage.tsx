@@ -10,9 +10,11 @@ import { tenantBase } from "../features/tenantTransport";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { useAuth } from "../features/auth";
 import { Package } from "lucide-react";
+import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
 
 export function BrandPage() {
   const {storefront}=useAuth();
+  const { availability, error: checkoutError } = useCheckoutAvailability(storefront?.id);
   const [searchParams] = useSearchParams();
   const [data, setData] = useState<CatalogListResponse>();
   const [error, setError] = useState<string>();
@@ -202,10 +204,11 @@ export function BrandPage() {
             <span>{catalogText("best_pricing_description")}</span>
           </div>
 
+          {checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null}
           {data.products.length ? (
             <div className="product-grid">
               {data.products.map((product) => (
-                <ProductCard key={product.id} product={product} phone={phone} />
+                <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
               ))}
             </div>
           ) : (

@@ -20,7 +20,7 @@ from app.services import shopper_federation as federation
 from app.services.customer_contacts import normalize_phone
 from app.services.federation_settings import public_config
 from app.services.customer_security import SHOP_COOKIE, SHOP_CSRF, check_write, ensure_csrf, expiry, set_cookies, shopper_identity, storefront_company
-from app.services.shop_checkout import ORDER_COLUMNS, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
+from app.services.shop_checkout import ORDER_COLUMNS, checkout_availability, confirm_payment, create_order, create_shipment, quote_order, reconcile_payment, reconcile_shipment, settings_for
 from app.services.storefront_access import ensure_storefront_enabled
 from app.services.tenant_auth import TenantAuth
 from app.services.tenant_context import company_by_slug, host_company, platform_host
@@ -157,9 +157,9 @@ def availability(company=Depends(open_store), db=Depends(identity_db)):
         from checkout_settings where company_id=:company"""), {"company": company["id"]}).mappings().first()
     pickup_stores = [dict(row) for row in db.execute(text("""select id,code,name,address,pincode,whatsapp_number from stores
         where company_id=:company and is_active and holds_stock and allows_pickup order by name"""), {"company": company["id"]}).mappings()]
-    online = db.execute(text("select 1 from stores where company_id=:company and kind='online' and is_active"), {"company": company["id"]}).first()
+    readiness = checkout_availability(db, str(company["id"]), settings)
     whatsapp = orders_service.whatsapp_number(db, str(company["id"]), None)
-    return {"enabled": bool(settings and settings["enabled"] and online), "shipping_paise": settings["shipping_paise"] if settings else None,
+    return {**readiness, "shipping_paise": settings["shipping_paise"] if settings else None,
             "prepaid_enabled": bool(settings and settings["prepaid_enabled"]), "cod_enabled": bool(settings and settings["cod_enabled"]),
             "cod_limit": float(settings["cod_limit"]) if settings else None, "pickup_enabled": bool(settings and settings["pickup_enabled"]),
             "pickup_stores": pickup_stores, "whatsapp_number": whatsapp}
@@ -274,7 +274,10 @@ def read_settings(identity=Depends(administrator), db=Depends(identity_db)):
         credentials = providers.decrypt_credentials(str(identity["company_id"]), settings["credentials"])
         if credentials.get("razorpay_key_id"):
             payment_mode = "test" if credentials["razorpay_key_id"].startswith("rzp_test_") else "live"
+    readiness = checkout_availability(db, str(identity["company_id"]), settings)
     return {"configured": True, "enabled": settings["enabled"], "shipping_paise": settings["shipping_paise"],
+            "checkout_available": readiness["enabled"], "checkout_blocker": readiness["disabled_reason"],
+            "online_store_ready": readiness["online_store_ready"],
             "pickup_location": settings["pickup_location"], "payment_mode": payment_mode, "credentials_saved": bool(settings["credentials"]),
             "razorpay_saved": all(credentials.get(key) for key in ("razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret")),
             "shiprocket_saved": bool(settings["credentials"] and credentials.get("shiprocket_email") and credentials.get("shiprocket_password")),

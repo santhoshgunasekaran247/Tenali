@@ -9,7 +9,7 @@ import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
 
 type Policy = { shipping_provider: "shiprocket" | "self"; prepaid_enabled: boolean; shipping_sac: string; shipping_gst_rate: number | string; cod_enabled: boolean; cod_limit: number | string; cod_approval_hours: number;
   cod_overdue_days: number; cod_serviceable_pincodes: string[]; pickup_enabled: boolean; pickup_hold_hours: number; pickup_reminder_hours: number; prepaid_hold_minutes: number };
-type Settings = { configured: boolean; enabled?: boolean; shipping_paise?: number; pickup_location?: string; payment_mode: "test" | "live" | null; credentials_saved?: boolean; razorpay_saved?: boolean; shiprocket_saved?: boolean } & Partial<Policy>;
+type Settings = { configured: boolean; enabled?: boolean; checkout_available?: boolean; checkout_blocker?: string | null; online_store_ready?: boolean; shipping_paise?: number; pickup_location?: string; payment_mode: "test" | "live" | null; credentials_saved?: boolean; razorpay_saved?: boolean; shiprocket_saved?: boolean } & Partial<Policy>;
 const defaultPolicy: Policy = { prepaid_enabled: true, shipping_sac: "9968", shipping_gst_rate: 18, cod_enabled: false, cod_limit: 5000, cod_approval_hours: 24, cod_overdue_days: 15,
   cod_serviceable_pincodes: [], pickup_enabled: false, pickup_hold_hours: 72, pickup_reminder_hours: 48, prepaid_hold_minutes: 20, shipping_provider: "shiprocket" };
 type CodRow = { order_id: string; status: string; dispatched_at: string | null; invoice_number: string; total: number; amount_received: number; outstanding: number; days_since_dispatch: number | null; overdue: boolean };
@@ -132,7 +132,11 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
     finally { setBusy(false); }
   };
   if (!allowed) return <main className="loading">Workspace administrator access is required.</main>;
-  const statusLabel = !loaded ? "Loading setup" : !settings.configured ? "Not set up" : !settings.enabled ? "Online purchase hidden" : settings.payment_mode === "test" ? "Test checkout visible - no real payments" : "Live-key checkout visible - approval not verified";
+  const statusLabel = !loaded ? "Loading setup" : !settings.configured ? "Not set up" : !settings.enabled ? "Online purchase hidden"
+    : !settings.checkout_available ? "Checkout blocked - store setup required"
+    : !settings.prepaid_enabled ? "Checkout visible - online payment off"
+    : settings.payment_mode === "test" ? "Test checkout visible - no real payments"
+    : settings.payment_mode === "live" ? "Live-key checkout visible - approval not verified" : "Razorpay setup required";
   return <main className="shop-account-page checkout-admin-page">
     <header className="shop-account-heading"><Link to="/portal">Back to Workspace</Link><h1>{setupOnly ? "Payments & Delivery Setup" : "Online Orders"}</h1>
       <p>{setupOnly ? "Connect payment and delivery providers, configure checkout and activate online purchases." : "Manage shopper orders, courier COD settlements and customer enquiries."}</p>
@@ -153,6 +157,8 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
           <div><p className="checkout-kicker">Your store status</p><h2>{statusLabel}</h2><p>Choose your payment and shipping methods, save the required credentials and test before turning on Add to Cart. Self-shipping uses your own delivery team or courier; Shiprocket is optional. Turning on checkout does not activate a provider account.</p></div>
           <ol className="checkout-milestones"><li><CheckCircle2 size={18} aria-hidden="true" />Setup: {settings.configured ? "saved" : "required"}</li><li><CreditCard size={18} aria-hidden="true" />Razorpay: {settings.payment_mode ? `${settings.payment_mode} keys saved` : "not configured"}</li><li><Truck size={18} aria-hidden="true" />Delivery: {policy.shipping_provider === "self" ? "Self-shipping / own courier" : "Shiprocket"}</li></ol>
         </section>
+        {settings.configured && settings.checkout_blocker ? <p className="checkout-notice" role="status">{settings.checkout_blocker} <Link to="/portal/stores">Open Stores</Link></p> : null}
+        {settings.payment_mode === "test" ? <p className="checkout-notice">Test keys are saved in Tenali. Activating Live Mode in Razorpay does not replace them here. To accept real payments, save the matching live key ID and secret, configure the Live Mode webhook secret, then run the connection check.</p> : null}
         <section className="checkout-choice-guide" aria-labelledby="selling-options"><h2 id="selling-options">WhatsApp enquiry or online purchase?</h2>
           <div className="checkout-guide-grid">
             <article><MessageCircle size={24} aria-hidden="true" /><h3>WhatsApp: talk before buying</h3><p>For bulk discounts, customisation, quote-only products or availability questions. Opens a chat with the store; no payment, stock reservation or order is created in Tenali.</p><p>Add your business phone in <Link to="/portal/company#company-profile">Company Setup</Link>. Enquiries can stay available even when online checkout is off.</p></article>
@@ -192,7 +198,7 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
               <label>Flat shipping charge (INR)<input type="number" required min={0} max={10000} step="0.01" value={form.shipping_rupees} onChange={event => edit({ shipping_rupees: event.target.value })} /><small>0 means free shipping. This is your customer-facing flat India rate, not a live courier quote. Confirm it covers your delivery areas and costs.</small></label>
             </section>
             <section className="checkout-step" aria-labelledby="storefront-setup">
-              <div className="checkout-step-heading"><span className="checkout-step-number">3</span><div><h2 id="storefront-setup">Save and choose what shoppers see</h2><p>Keep online checkout off while preparing your accounts. WhatsApp enquiries can continue.</p></div></div>
+              <div className="checkout-step-heading"><span className="checkout-step-number">3</span><div><h2 id="storefront-setup">Save and choose what shoppers see</h2><p>Keep online checkout off while preparing your accounts. WhatsApp enquiries can continue. Checkout also requires an active Online store linked to an active fulfilment warehouse or shop in <Link to="/portal/stores">Stores</Link>.</p></div></div>
               <label className="checkout-switch"><input type="checkbox" checked={form.enabled} onChange={event => edit({ enabled: event.target.checked })} /><span><strong>Show Add to Cart on this workspace&apos;s storefront</strong><small>Test keys let you practise without real money. Live keys can charge shoppers. Complete checks for the providers you use and arrange delivery coverage before accepting real orders.</small></span></label>
               <div className="company-fields">
                 <label className="ops-toggle"><input type="checkbox" checked={policy.prepaid_enabled} onChange={event => { setPolicy({ ...policy, prepaid_enabled: event.target.checked }); setDirty(true); }} />Online payment (Razorpay)</label>

@@ -66,6 +66,40 @@ def shiprocket_failure(method: str, path: str, status: int | None = None) -> str
     return prefix + detail
 
 
+def razorpay_failure(method: str, path: str, status: int | None = None, body=None) -> str:
+    order_creation = method.upper() == "POST" and path == "/orders"
+    stage = "order creation" if order_creation else "API request"
+    prefix = f"Razorpay {stage} failed" + (f" (HTTP {status})" if status else "") + ". "
+    error = body.get("error") if isinstance(body, dict) else None
+    field = error.get("field") if isinstance(error, dict) else None
+    safe_field = field if field in ("amount", "currency", "receipt", "notes") else None
+    description = error.get("description") if isinstance(error, dict) else None
+    description = description.strip().rstrip(".").casefold() if isinstance(description, str) else ""
+    # Razorpay also uses HTTP 400 for authentication failures.
+    authentication_failed = status == 401 or (status == 400 and description == "authentication failed")
+    if authentication_failed:
+        detail = "The saved API key ID and secret were rejected. Ask the store administrator to replace them together with a matching Test or Live key pair and run the Razorpay connection check."
+    elif status == 403:
+        detail = "API access was denied. Ask the store administrator to check Razorpay account activation, permissions and Live Mode access."
+    elif status == 429:
+        detail = "Razorpay is rate-limiting requests. Wait before checking payment status again."
+    elif status in (400, 422):
+        if description == "the amount must be at least inr 1.00":
+            detail = "Razorpay requires an order total of at least INR 1.00."
+        else:
+            detail = "Razorpay rejected the order details or account configuration. "
+            detail += f"Check the {safe_field} field in the store's Razorpay integration." if safe_field else "Ask the store administrator to inspect the failed request in Razorpay and check the account setup."
+    else:
+        detail = "Razorpay is unavailable or returned an unusable response. Ask the store administrator to check provider availability."
+    if order_creation or method.upper() not in ("GET", "HEAD"):
+        detail += " Reconcile provider status before retrying; do not create another checkout if already charged."
+    else:
+        detail += " This check does not create an order or charge a payment."
+    logger.warning("Razorpay failure category: HTTP %s, authentication=%s, field=%s",
+                   status, authentication_failed, safe_field or "unspecified")
+    return prefix + detail
+
+
 def provider_request(provider: str, method: str, path: str, credentials: dict, payload=None):
     headers = {"Content-Type": "application/json"}
     if provider == "razorpay":
@@ -83,19 +117,26 @@ def provider_request(provider: str, method: str, path: str, credentials: dict, p
             data = json.loads(response.read(2_000_000))
     except HTTPError as error:
         logger.warning("%s request failed (HTTP %s, %s %s)", provider, error.code, method, path.split("?")[0])
-        error.close()
+        error_body = None
+        try:
+            if provider == "razorpay":
+                error_body = json.loads(error.read(16_384))
+        except (ValueError, OSError) as parse_error:
+            logger.warning("Razorpay error response could not be decoded (%s)", type(parse_error).__name__)
+        finally:
+            error.close()
         if provider == "shiprocket":
             raise HTTPException(502, shiprocket_failure(method, path, error.code)) from error
-        raise HTTPException(502, f"{provider.title()} could not complete the request. Reconcile provider status before retrying.") from error
+        raise HTTPException(502, razorpay_failure(method, path, error.code, error_body)) from error
     except (URLError, TimeoutError, ValueError, OSError) as error:
         logger.warning("%s request failed (%s)", provider, type(error).__name__)
         if provider == "shiprocket":
             raise HTTPException(502, shiprocket_failure(method, path)) from error
-        raise HTTPException(502, f"{provider.title()} could not complete the request. Reconcile provider status before retrying.") from error
+        raise HTTPException(502, razorpay_failure(method, path)) from error
     if not isinstance(data, dict):
         if provider == "shiprocket":
             raise HTTPException(502, shiprocket_failure(method, path))
-        raise HTTPException(502, f"{provider.title()} returned an invalid response")
+        raise HTTPException(502, razorpay_failure(method, path))
     return data
 
 

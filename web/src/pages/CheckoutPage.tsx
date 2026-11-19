@@ -71,14 +71,16 @@ export function CheckoutPage() {
       await accountRequest(`/orders/${created.id}/confirm`, { method: "POST", body: JSON.stringify(result) });
       cart.removePurchased(created.items);
       navigate("/account", { replace: true });
-    } catch (failure) { setError(`${String(failure)} Check My Orders before creating another checkout.`); }
+    } catch (failure) { setError(`${failure instanceof Error ? failure.message : String(failure)} Check My Orders before creating another checkout.`); }
     finally { setBusy(false); }
   };
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront || !cart.items.length) return <main className="loading">Your cart is empty. <Link to="/">Browse products</Link></main>;
-  return <main className="shop-account-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
+  return <main className="shop-account-page shopping-page checkout-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
     <p className="policy-notice">Review this seller&apos;s <Link to={policyPath("tenant", "terms")}>terms</Link>, <Link to={policyPath("tenant", "privacy")}>privacy</Link>, <Link to={policyPath("tenant", "shipping")}>shipping and delivery</Link>, <Link to={policyPath("tenant", "payment")}>payment</Link> and <Link to={policyPath("tenant", "returns")}>cancellation, refund, return and exchange policies</Link>. <Link to={policyPath("tenant", "contact")}>Contact the seller</Link> for missing or unclear terms.</p>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
+    {order ? <p className="checkout-notice">Order created. Finish this payment or check <Link to="/account">My Orders</Link> before starting another checkout. <Link to="/account">View payment status</Link></p> : null}
+    <div className="checkout-layout">
     {!shopper ? <p>Loading shopper session...</p> : <form className="ops-form ops-card" onSubmit={getQuote}>
       <fieldset className="access-fields" disabled={busy || !!order}><legend>Delivery Details</legend><div className="company-fields">
         {(["name", "phone", "address", "city", "state", "pincode"] as const).map(key => <label key={key}>{({ name: "Full Name", phone: "Mobile Number", address: "Street Address", city: "City", state: "State", pincode: "PIN Code" })[key]}<input required value={address[key]} maxLength={key === "address" ? 250 : key === "phone" ? 10 : key === "pincode" ? 6 : 80} pattern={key === "phone" ? "[6-9][0-9]{9}" : key === "pincode" ? "[1-9][0-9]{5}" : undefined} onChange={event => { setAddress({ ...address, [key]: event.target.value }); setQuote(null); setRequestKey(crypto.randomUUID()); }} /></label>)}
@@ -94,10 +96,9 @@ export function CheckoutPage() {
       </div> : null}
       <p>{cart.items.length} products / variants in your cart. <Link to="/cart">Edit products and quantities</Link></p><button className="btn" disabled={busy || (fulfilment === "pickup" && !pickupStore)}>Review Order</button></fieldset>
     </form>}
-    {order ? <p className="checkout-notice">Order created. Finish this payment or check <Link to="/account">My Orders</Link> before starting another checkout. <Link to="/account">View payment status</Link></p> : null}
-    {quote ? <section className="ops-card"><h2>Order Summary</h2><ul>{quote.items.map(item => <li key={cartItemKey(item)}>{item.name} × {item.quantity} · {rupees(item.unit_paise * item.quantity)}</li>)}</ul><p>Items: {rupees(quote.subtotal_paise)}</p>{fulfilment === "pickup" ? <p>Pickup at {quote.pickup_store || "the chosen store"} · no shipping charge</p> : <p>Flat-rate India shipping: {rupees(quote.shipping_paise)}</p>}<p>Listed item prices include applicable taxes. Final total: <strong>{rupees(quote.total_paise)}</strong></p>{fulfilment === "delivery" ? <p>Your delivery details will be shared with this store&apos;s shipping provider for fulfillment.</p> : null}
+    {quote ? <section className="ops-card purchase-summary"><h2>Order summary</h2><ul className="checkout-summary-items">{quote.items.map(item => <li key={cartItemKey(item)}><div><strong>{item.name}</strong><span>Qty {item.quantity} · {rupees(item.unit_paise)} each</span></div><strong>{rupees(item.unit_paise * item.quantity)}</strong></li>)}</ul><dl className="order-totals"><div><dt>Subtotal</dt><dd>{rupees(quote.subtotal_paise)}</dd></div><div><dt>{fulfilment === "pickup" ? "Store pickup" : "Delivery"}</dt><dd>{quote.shipping_paise ? rupees(quote.shipping_paise) : "Free"}</dd></div><div className="order-total"><dt>Total</dt><dd>{rupees(quote.total_paise)}</dd></div></dl><p className="purchase-fine-print">Includes applicable taxes.{fulfilment === "pickup" ? ` Collect at ${quote.pickup_store || "the chosen store"}.` : " Delivery details are shared with the store's shipping provider to fulfil your order."}</p>
       {effectivePayment === "cod" ? <p>The store reviews cash-on-delivery requests before confirming. You pay the courier {rupees(quote.total_paise)} on delivery.</p> : null}
       {effectivePayment === "pay_at_pickup" ? <p>Your items are held at the store for a limited time. Pay {rupees(quote.total_paise)} at the counter when you collect.</p> : null}
-      <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : null}
-  </div></main>;
+      <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : <section className="ops-card purchase-summary"><h2>Order summary</h2><p className="purchase-fine-print">Complete your delivery details and select Review Order to confirm prices, delivery and the final total.</p><Link to="/cart">View your cart ({cart.items.length})</Link></section>}
+  </div></div></main>;
 }

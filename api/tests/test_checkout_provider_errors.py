@@ -95,12 +95,52 @@ class CheckoutProviderErrorTests(unittest.TestCase):
             providers.provider_request("shiprocket", "POST", "/orders/create/adhoc", {"token": "private-token"})
         self.assertIn("shipment recovery", raised.exception.detail)
 
-    def test_razorpay_error_contract_is_unchanged(self):
+    def test_razorpay_authentication_failure_is_actionable_without_leaking_provider_body(self):
         opener = MagicMock()
         opener.open.side_effect = self.http_error(401)
         with patch.object(providers, "build_opener", return_value=opener), self.assertRaises(HTTPException) as raised:
             providers.provider_request("razorpay", "GET", "/orders", {
                 "razorpay_key_id": "fixture-key", "razorpay_key_secret": "fixture-secret",
             })
-        self.assertEqual(raised.exception.detail,
-                         "Razorpay could not complete the request. Reconcile provider status before retrying.")
+        self.assertIn("HTTP 401", raised.exception.detail)
+        self.assertIn("matching Test or Live key pair", raised.exception.detail)
+        self.assertIn("does not create an order", raised.exception.detail)
+        self.assertNotIn("private-provider-response", raised.exception.detail)
+
+    def test_razorpay_order_failures_keep_reconciliation_guidance_and_safe_field(self):
+        for status, expected in [(400, "amount"), (401, "key pair"), (403, "activation"),
+                                 (429, "rate-limiting"), (503, "unavailable")]:
+            opener = MagicMock()
+            opener.open.side_effect = HTTPError("https://api.razorpay.com/v1/orders", status, "private",
+                {}, io.BytesIO(b'{"error":{"field":"amount","description":"private-secret"}}'))
+            with self.subTest(status=status), patch.object(providers, "build_opener", return_value=opener), \
+                    self.assertRaises(HTTPException) as raised:
+                providers.provider_request("razorpay", "POST", "/orders", {
+                    "razorpay_key_id": "fixture-key", "razorpay_key_secret": "fixture-secret"})
+            self.assertIn(f"HTTP {status}", raised.exception.detail)
+            self.assertIn(expected, raised.exception.detail)
+            self.assertIn("Reconcile provider status before retrying", raised.exception.detail)
+            self.assertNotIn("private-secret", raised.exception.detail)
+
+    def test_razorpay_unparseable_errors_and_timeouts_remain_safe_and_explicit(self):
+        for error in [TimeoutError(), URLError("private-secret"),
+                      HTTPError("https://api.razorpay.com/v1/orders", 400, "private", {}, io.BytesIO(b"<html>private-secret</html>"))]:
+            opener = MagicMock()
+            opener.open.side_effect = error
+            with self.subTest(error=type(error).__name__), patch.object(providers, "build_opener", return_value=opener), \
+                    self.assertRaises(HTTPException) as raised:
+                providers.provider_request("razorpay", "POST", "/orders", {
+                    "razorpay_key_id": "fixture-key", "razorpay_key_secret": "fixture-secret"})
+            self.assertIn("before retrying", raised.exception.detail)
+            self.assertNotIn("private-secret", raised.exception.detail)
+
+    def test_documented_razorpay_http_400_errors_are_not_misclassified(self):
+        for description, expected in [
+                ("Authentication failed.", "matching Test or Live key pair"),
+                ("The amount must be at least INR 1.00", "at least INR 1.00"),
+                ("private-provider-response", "account configuration")]:
+            with self.subTest(description=description):
+                detail = providers.razorpay_failure("POST", "/orders", 400, {
+                    "error": {"description": description}})
+                self.assertIn(expected, detail)
+                self.assertNotIn("private-provider-response", detail)
