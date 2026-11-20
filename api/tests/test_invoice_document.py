@@ -171,6 +171,17 @@ class InvoiceDocumentTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 CompanyUpdate(company_name="SRU Global", tenant_slug=value)
 
+    def test_storefront_display_settings_default_and_validate(self):
+        legacy = StorefrontContent.model_validate({"home": {"bulk_title": "Bulk"}})
+        self.assertTrue(legacy.display.show_bulk_pricing)
+        self.assertTrue(legacy.display.whatsapp_enquiry_enabled)
+        self.assertEqual(legacy.display.corner_style, "rounded")
+        saved = StorefrontContent.model_validate({"display": {"show_bulk_pricing": False, "whatsapp_enquiry_enabled": False, "corner_style": "square"}})
+        self.assertEqual(saved.model_dump()["display"], {"show_bulk_pricing": False, "whatsapp_enquiry_enabled": False, "corner_style": "square"})
+        for display in [{"corner_style": "pill"}, {"unknown": True}]:
+            with self.assertRaises(ValidationError):
+                StorefrontContent.model_validate({"display": display})
+
 
 if __name__ == "__main__":
     unittest.main()

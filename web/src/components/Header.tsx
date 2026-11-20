@@ -5,6 +5,7 @@ import type { Company,SiteTheme } from "../types";
 import { useAuth } from "../features/auth";
 import { toAssetUrl } from "../features/catalog/utils";
 import { setSavedSiteTheme } from "../features/siteTheme";
+import { applyCornerStyle, storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { tenantBase } from "../features/tenantTransport";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { storefrontText } from "../features/catalog/storefrontText";
@@ -24,9 +25,9 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   useEffect(() => {
     let active = true;
     const load = () => {
-      if(!auth.user){setCompany(auth.storefront);setSavedSiteTheme(auth.storefront?.site_theme);return;}
+      if(!auth.user){setCompany(auth.storefront);setSavedSiteTheme(auth.storefront?.site_theme);applyCornerStyle(storefrontDisplay(auth.storefront).corner_style);return;}
       void api.company().then((result) => {
-        if (active) { setCompany(result); setSavedSiteTheme(result.site_theme); }
+        if (active) { setCompany(result); setSavedSiteTheme(result.site_theme); applyCornerStyle(storefrontDisplay(result).corner_style); }
       }).catch(() => {});
     };
     load();

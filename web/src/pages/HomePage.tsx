@@ -6,6 +6,8 @@ import { api } from "../api";
 import type { CatalogHomeResponse } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { ProductCard } from "../features/catalog/components/ProductCard";
+import { ProductRail } from "../components/ProductRail";
+import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { toAssetUrl } from "../features/catalog/utils";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { Package } from "lucide-react";
@@ -42,10 +44,18 @@ export function HomePage() {
     return <main className="loading">{storefrontText(loadingCopy.catalogue_loading||"Loading catalogue...",publicCompany)}</main>;
   }
 
-  const phone = data.company.phone || FALLBACK_PHONE;
+  const display = storefrontDisplay(data.company);
+  const contactPhone = data.company.phone || FALLBACK_PHONE;
+  const phone = display.whatsapp_enquiry_enabled ? contactPhone : "";
   const email = data.company.email || FALLBACK_EMAIL;
   const copy = data.company.storefront_content?.home || {};
   const text = (key: string) => storefrontText(copy[key], data.company);
+  const bulkStrip = display.show_bulk_pricing ? (
+    <p className="bulk-pricing" title={`${text("bulk_title")} ${text("bulk_description")}`}>
+      <strong>{text("bulk_title")}</strong>
+      <span>{text("bulk_description")}</span>
+    </p>
+  ) : null;
 
   return (
     <>
@@ -118,15 +128,12 @@ export function HomePage() {
             </h2>
             <p>{text("best_sellers_description")}</p>
           </div>
-          <div className="bulk-pricing">
-            <strong>{text("bulk_title")}</strong>
-            <span>{text("bulk_description")}</span>
-          </div>
-          <div className="product-grid home-product-grid">
+          {bulkStrip}
+          <ProductRail label={text("best_sellers_eyebrow") || "Best sellers"}>
             {data.best_sellers.map((product) => (
               <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
             ))}
-          </div>
+          </ProductRail>
         </section>
 
         <section id="sru-specials" className="home-section specials-section">
@@ -139,15 +146,12 @@ export function HomePage() {
             </h2>
             <p>{text("specials_description")}</p>
           </div>
-          <div className="bulk-pricing">
-            <strong>{text("bulk_title")}</strong>
-            <span>{text("bulk_description")}</span>
-          </div>
-          <div className="product-grid home-product-grid">
+          {bulkStrip}
+          <ProductRail label={text("specials_eyebrow") || "Specials"}>
             {data.sru_specials.map((product) => (
               <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
             ))}
-          </div>
+          </ProductRail>
         </section>
 
         <section id="brands" className="brands-section">
@@ -202,6 +206,9 @@ export function HomePage() {
           <div className="contact-actions">
             {phone?<a className="btn whatsapp-btn" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
               {text("contact_whatsapp_label")} {phone}
+            </a>:null}
+            {!phone && contactPhone?<a className="btn light" href={`tel:${contactPhone.replace(/[^\d+]/g, "")}`}>
+              {contactPhone}
             </a>:null}
             {email?<a className="link" href={`mailto:${email}`}>
               {email}

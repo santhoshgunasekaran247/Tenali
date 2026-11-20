@@ -40,6 +40,14 @@ def open_store(company=Depends(store), db=Depends(identity_db)):
     return company
 
 
+def enquiries_open(company=Depends(open_store), db=Depends(identity_db)):
+    enabled = db.execute(text("""select coalesce((storefront_content->'display'->>'whatsapp_enquiry_enabled')::boolean, true)
+        from companies where id=:company"""), {"company": str(company["id"])}).scalar_one_or_none()
+    if enabled is False:
+        raise HTTPException(403, "WhatsApp enquiries are turned off for this store")
+    return company
+
+
 def customer(request: Request, company=Depends(store), db=Depends(identity_db)):
     return shopper_identity(db, request, str(company["id"]))
 
@@ -174,7 +182,7 @@ def nearby(product_id: UUID, variant_id: UUID | None = None, lat: float | None =
 
 
 @router.post("/enquiries", status_code=201)
-def enquire(payload: EnquiryInput, request: Request, company=Depends(open_store), db=Depends(public_db), privileged=Depends(identity_db)):
+def enquire(payload: EnquiryInput, request: Request, company=Depends(enquiries_open), db=Depends(public_db), privileged=Depends(identity_db)):
     throttle(privileged, request, company["id"])
     return orders_service.create_enquiry(db, str(company["id"]), payload)
 

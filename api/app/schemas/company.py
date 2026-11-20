@@ -1,5 +1,6 @@
 import base64
 import binascii
+from typing import Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -228,9 +229,18 @@ class StorefrontFooterCopy(BaseModel):
     catalogue_label: str = Field(default="Product Catalogue", max_length=120)
 
 
+class StorefrontDisplay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    show_bulk_pricing: bool = True
+    whatsapp_enquiry_enabled: bool = True
+    corner_style: Literal["rounded", "square"] = "rounded"
+
+
 class StorefrontContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    display: StorefrontDisplay = Field(default_factory=StorefrontDisplay)
     navigation: StorefrontNavigation = Field(default_factory=StorefrontNavigation)
     home: StorefrontHomeCopy = Field(default_factory=StorefrontHomeCopy)
     catalog: StorefrontCatalogCopy = Field(default_factory=StorefrontCatalogCopy)

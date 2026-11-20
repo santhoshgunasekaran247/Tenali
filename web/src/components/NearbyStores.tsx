@@ -5,8 +5,8 @@ import { MapPin, MessageCircle } from "lucide-react";
 import { accountRequest, type NearbyStore } from "../features/shop";
 
 /** Pickup-enabled shops with availability bands for a product, plus a WhatsApp enquiry that records an enquiry reference. */
-export function NearbyStores({ productId, variantId, productName, quantity, checkoutEnabled }:
-  { productId: string; variantId: string | null; productName: string; quantity: number; checkoutEnabled: boolean }) {
+export function NearbyStores({ productId, variantId, productName, quantity, checkoutEnabled, whatsappEnabled = true }:
+  { productId: string; variantId: string | null; productName: string; quantity: number; checkoutEnabled: boolean; whatsappEnabled?: boolean }) {
   const [stores, setStores] = useState<NearbyStore[] | null>(null);
   const [defaultNumber, setDefaultNumber] = useState<string | null>(null);
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -48,17 +48,17 @@ export function NearbyStores({ productId, variantId, productName, quantity, chec
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     <div className="shop-actions"><button type="button" className="btn light" onClick={locate}>Use my location</button>
       <label>PIN code<input inputMode="numeric" maxLength={6} value={pincode} onChange={event => setPincode(event.target.value)} placeholder="600001" /></label></div>
-    {stores === null ? <p>Checking stores...</p> : !stores.length ? <p>No pickup stores are available yet. Delivery and WhatsApp enquiry remain available.</p>
+    {stores === null ? <p>Checking stores...</p> : !stores.length ? <p>{whatsappEnabled ? "No pickup stores are available yet. Delivery and WhatsApp enquiry remain available." : "No pickup stores are available yet. Delivery remains available."}</p>
       : <ul className="nearby-store-list">{stores.map(store => <li key={store.store_id}>
         <strong>{store.name}</strong>{store.distance_km !== null ? ` · ${store.distance_km} km` : store.pincode ? ` · ${store.pincode}` : ""}
         <span className={`availability-${store.availability}`}>{label[store.availability]}</span>
         {store.address ? <small>{store.address}</small> : null}
         <span className="shop-actions">
           {checkoutEnabled && store.availability !== "unavailable" ? <Link className="btn light" to={`/cart?pickup=${store.store_id}`}>Reserve for pickup</Link> : null}
-          {(store.whatsapp_number || defaultNumber) ? <button type="button" className="btn light" onClick={() => { setEnquiry(previous => ({ ...previous, store: store.store_id })); setEnquiryOpen(true); }}><MessageCircle size={16} aria-hidden="true" /> Ask this store</button> : null}
+          {whatsappEnabled && (store.whatsapp_number || defaultNumber) ? <button type="button" className="btn light" onClick={() => { setEnquiry(previous => ({ ...previous, store: store.store_id })); setEnquiryOpen(true); }}><MessageCircle size={16} aria-hidden="true" /> Ask this store</button> : null}
         </span>
       </li>)}</ul>}
-    {enquiryOpen && !sent ? <form className="ops-form" onSubmit={submitEnquiry}><h3>WhatsApp enquiry · {productName}</h3>
+    {whatsappEnabled && enquiryOpen && !sent ? <form className="ops-form" onSubmit={submitEnquiry}><h3>WhatsApp enquiry · {productName}</h3>
       <div className="company-fields">
         <label>Your name<input required maxLength={120} value={enquiry.name} onChange={event => setEnquiry({ ...enquiry, name: event.target.value })} /></label>
         <label>Mobile number<input required pattern="(\\+[1-9][0-9]{7,14}|[6-9][0-9]{9})" value={enquiry.phone} onChange={event => setEnquiry({ ...enquiry, phone: event.target.value })} /></label>

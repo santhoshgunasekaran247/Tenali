@@ -13,6 +13,7 @@ import { storefrontText } from "../features/catalog/storefrontText";
 import { accountRequest } from "../features/shop";
 import { useCart } from "../features/cart";
 import { QuantityStepper } from "../components/QuantityStepper";
+import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 
 export function ProductPage() {
   const {storefront}=useAuth();
@@ -54,6 +55,8 @@ export function ProductPage() {
   }, [product]);
 
   const displayCompany=company||storefront;
+  const display=storefrontDisplay(displayCompany);
+  const whatsappPhone=display.whatsapp_enquiry_enabled?company?.phone:undefined;
   const productCopy=displayCompany?.storefront_content?.product||{};
   const text=(key:string,fallback:string,variables:Record<string,string|number>={})=>storefrontText(productCopy[key]||fallback,displayCompany||{company_name:"Tenali"},variables);
   if (error) return <main className="loading">{text("product_unavailable","Product unavailable.")} {error}</main>;
@@ -131,10 +134,10 @@ export function ProductPage() {
             {details.discount_percent!=null?<p>{Number(details.discount_percent)}{text("discount_suffix","% off MRP")}</p>:null}
             <p className="detail-desc">{variant?.description||product.description}</p>
             <dl className="inventory-specs">{[[text("item_name_label","Item name"),details.item_name],[text("size_label","Size"),details.size],[text("colour_label","Colour"),details.colour],[text("weight_label","Weight (kg)"),details.weight],[text("height_label","Height (cm)"),details.height],[text("width_label","Width (cm)"),details.width],[text("length_label","Length (cm)"),details.length],...Object.entries(details.attributes||{})].filter(([,value])=>value!=null&&value!=='').map(([label,value])=><div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-            <div className="bulk-pricing">
+            {display.show_bulk_pricing ? <p className="bulk-pricing">
               <strong>{text("bulk_heading","Better pricing on bulk orders.")}</strong>
               <span>{text("bulk_description","WhatsApp us for best price and price matching with comparable offers.")}</span>
-            </div>
+            </p> : null}
             <div className="detail-note">
               {text("price_note","Our listed price is for individual requirements. Bulk orders will have better pricing. WhatsApp us for best quote.")}
             </div>
@@ -151,9 +154,9 @@ export function ProductPage() {
                 {cartMessage ? <p className="cart-feedback" role="status">{cartMessage} <Link to="/cart">Review cart</Link></p> : null}
                 {cartError ? <FloatingAlert>{cartError}</FloatingAlert> : null}
               </div> : null}
-              {company?.phone?<a
+              {whatsappPhone?<a
                 className="btn whatsapp-btn"
-                href={whatsappLink(company.phone, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || company.nickname || company.company_name, text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
+                href={whatsappLink(whatsappPhone, `${product.name}${variant?` - ${variant.variant_name}`:''}`, product.brand_name || company?.nickname || company?.company_name || "", text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
               >
                 {text("whatsapp_action","WhatsApp for best price")}
               </a>:null}
@@ -163,10 +166,10 @@ export function ProductPage() {
             </div>
             <div className="product-purchase-help">
               {checkoutEnabled?<p>{text("online_purchase_help","Add products to your cart, change quantities and pay for them together. Sign in at checkout; delivery charges are shown before payment.")}</p>:null}
-              {company?.phone?<p>{text("whatsapp_purchase_help","Use WhatsApp for bulk pricing, customisation or availability questions. An enquiry does not place an order or take payment.")}</p>:null}
+              {whatsappPhone?<p>{text("whatsapp_purchase_help","Use WhatsApp for bulk pricing, customisation or availability questions. An enquiry does not place an order or take payment.")}</p>:null}
             </div>
             {checkoutError?<p role="alert" className="ops-error">Online checkout unavailable: {checkoutError}. You can still enquire with the store.</p>:null}
-            {product.id?<NearbyStores productId={product.id} variantId={variantId||null} productName={`${product.name}${variant?` - ${variant.variant_name}`:''}`} quantity={Math.max(1,Number(quantity)||1)} checkoutEnabled={checkoutEnabled}/>:null}
+            {product.id?<NearbyStores productId={product.id} variantId={variantId||null} productName={`${product.name}${variant?` - ${variant.variant_name}`:''}`} quantity={Math.max(1,Number(quantity)||1)} checkoutEnabled={checkoutEnabled} whatsappEnabled={display.whatsapp_enquiry_enabled}/>:null}
           </div>
         </section>
       </main>

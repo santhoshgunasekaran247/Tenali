@@ -43,7 +43,7 @@ function cardHarness(current = {}, existing = []) {
   });
   return {
     added, navigated, updated, removed,
-    render(enabled = true) { cursor = 0; return ProductCard({ product, phone: "example", checkoutEnabled: enabled }); },
+    render(enabled = true, phone = "example") { cursor = 0; return ProductCard({ product, phone, checkoutEnabled: enabled }); },
   };
 }
 
@@ -130,4 +130,45 @@ test("shopper-facing copy omits verification notices without changing staff iden
     assert.doesNotMatch(readFileSync(path.join(__dirname, "..", "src", file), "utf8"), /unverified/i);
   }
   assert.match(readFileSync(path.join(__dirname, "..", "src", "components", "OnlineCustomerLinks.tsx"), "utf8"), /unverified/);
+});
+
+const classed = (tree, name) => find(tree, node => String(node.props?.className || "").split(" ").includes(name));
+
+test("cards show price and MRP on one line and keep Add to Cart beside WhatsApp", () => {
+  const h = cardHarness({ mrp_display: "600" });
+  const tree = h.render();
+  const price = renderToStaticMarkup(classed(tree, "price-block"));
+  assert.match(price, /class="our-price".*450.*class="mrp".*600/);
+  const buttons = renderToStaticMarkup(classed(tree, "product-card-buttons"));
+  assert.match(buttons, /Add to Cart.*whatsapp-btn.*WhatsApp enquiry/);
+  assert.doesNotMatch(renderToStaticMarkup(cardHarness({ mrp_display: "450" }).render()), /class="mrp"/);
+});
+
+test("cards omit WhatsApp when the store turns enquiries off", () => {
+  const html = renderToStaticMarkup(cardHarness().render(true, ""));
+  assert.match(html, /Add to Cart/);
+  assert.doesNotMatch(html, /whatsapp/i);
+});
+
+test("storefront display settings default safely and products group in catalogue order", () => {
+  const { storefrontDisplay } = load("features/catalog/storefrontDisplay.ts", {});
+  assert.deepEqual({ ...storefrontDisplay(undefined) }, { show_bulk_pricing: true, whatsapp_enquiry_enabled: true, corner_style: "rounded" });
+  assert.deepEqual({ ...storefrontDisplay({ storefront_content: { display: { show_bulk_pricing: false, whatsapp_enquiry_enabled: false, corner_style: "square" } } }) },
+    { show_bulk_pricing: false, whatsapp_enquiry_enabled: false, corner_style: "square" });
+  const { groupProducts } = load("features/catalog/productGroups.ts", {});
+  const groups = groupProducts([{ id: 1, brand_name: "B" }, { id: 2, brand_name: "A" }, { id: 3, brand_name: "B" }], product => product.brand_name);
+  assert.equal(JSON.stringify(groups.map(group => [group.name, group.products.map(product => product.id)])), JSON.stringify([["B", [1, 3]], ["A", [2]]]));
+});
+
+test("storefront pages honour the bulk-pricing and WhatsApp toggles and use horizontal rails", () => {
+  const source = file => readFileSync(path.join(__dirname, "..", "src", file), "utf8");
+  for (const file of ["pages/HomePage.tsx", "pages/BrandPage.tsx", "pages/ProductPage.tsx"]) {
+    const page = source(file);
+    assert.match(page, /show_bulk_pricing \?/, file);
+    assert.match(page, /whatsapp_enquiry_enabled \?|whatsapp_enquiry_enabled\?/, file);
+  }
+  assert.equal((source("pages/HomePage.tsx").match(/<ProductRail /g) || []).length, 2);
+  assert.match(source("pages/BrandPage.tsx"), /<ProductRail /);
+  assert.match(source("pages/CompanySetupPage.tsx"), /id="storefront-display"[\s\S]*show_bulk_pricing[\s\S]*whatsapp_enquiry_enabled[\s\S]*corner_style/);
+  assert.match(source("components/Header.tsx"), /applyCornerStyle\(storefrontDisplay\(/);
 });

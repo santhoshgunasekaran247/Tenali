@@ -48,6 +48,21 @@ class StorefrontToggleTests(TenantDatabaseCase):
         self.assertEqual(self.client.get("/catalog/home", headers=public).status_code, 200)
         self.assertEqual(self.client.get("/shop/availability", headers=public).status_code, 200)
 
+    def test_display_settings_reach_storefront_and_block_enquiries(self):
+        owner, cookies, _ = self.register("shop-display")
+        public = {"X-Tenant-Slug": owner["user"]["tenant_slug"]}
+        self.use_cookies(cookies)
+        content = self.client.get("/company").json()["storefront_content"]
+        self.assertEqual(content["display"], {"show_bulk_pricing": True, "whatsapp_enquiry_enabled": True, "corner_style": "rounded"})
+        content["display"] = {"show_bulk_pricing": False, "whatsapp_enquiry_enabled": False, "corner_style": "square"}
+        saved = self.save_company(cookies, storefront_content=content)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.client.cookies.clear()
+        self.assertEqual(self.client.get("/catalog/company", headers=public).json()["storefront_content"]["display"], content["display"])
+        enquiry = self.client.post("/shop/enquiries", json={}, headers={**public, "Origin": "http://localhost"})
+        self.assertEqual(enquiry.status_code, 403, enquiry.text)
+        self.assertEqual(enquiry.json()["detail"], "WhatsApp enquiries are turned off for this store")
+
     def test_workflow_guidance_toggle_is_kept_unless_sent(self):
         _, cookies, _ = self.register("guide-toggle")
         self.use_cookies(cookies)

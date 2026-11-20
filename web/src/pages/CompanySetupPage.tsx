@@ -11,8 +11,9 @@ import { toAssetUrl } from "../features/catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "../features/invoiceSettings";
 import { DEFAULT_SITE_THEME, SITE_THEME_FIELDS, endSiteThemePreview, normalizeSiteTheme, previewSiteTheme, setSavedSiteTheme } from "../features/siteTheme";
 import { STOREFRONT_COPY_FIELDS, STOREFRONT_COPY_GROUP_LABELS, type StorefrontCopyGroup } from "../features/catalog/storefrontCopyFields";
+import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { tenantBase } from "../features/tenantTransport";
-import type { CompanySetup, CompanyUpdateInput, Invoice, InvoiceSettings } from "../types";
+import type { CompanySetup, CompanyUpdateInput, Invoice, InvoiceSettings, StorefrontDisplay } from "../types";
 
 type AssetInputProps = {
   label: string;
@@ -111,6 +112,13 @@ export function CompanySetupPage() {
         ...previous.storefront_content,
         [group]: { ...previous.storefront_content[group], [key]: value },
       },
+    } : previous);
+    setMessage("");
+  };
+  const updateDisplay = (patch: Partial<StorefrontDisplay>) => {
+    setCompany((previous) => previous ? {
+      ...previous,
+      storefront_content: { ...previous.storefront_content, display: { ...storefrontDisplay(previous), ...patch } },
     } : previous);
     setMessage("");
   };
@@ -216,6 +224,7 @@ export function CompanySetupPage() {
         <Link to="/portal/policies">Store Policies</Link>
         <a href="#company-profile">Profile & Contact</a>
         <a href="#storefront-copy">Storefront Copy</a>
+        <a href="#storefront-display">Storefront Display</a>
         <a href="#portal-settings">Portal Settings</a>
         <a href="#site-colours">Site Colours</a>
         <a href="#brand-assets">Logo & Signature</a>
@@ -267,6 +276,18 @@ export function CompanySetupPage() {
             </details>
           ))}
         </section>
+        <fieldset id="storefront-display" disabled={saving} className="company-setup-section">
+          <legend>Storefront Display</legend>
+          <label className="ops-toggle"><input type="checkbox" checked={storefrontDisplay(company).show_bulk_pricing} onChange={(event) => updateDisplay({ show_bulk_pricing: event.target.checked })} />Show the &quot;Better pricing on bulk orders&quot; strip</label>
+          <label className="ops-toggle"><input type="checkbox" checked={storefrontDisplay(company).whatsapp_enquiry_enabled} onChange={(event) => updateDisplay({ whatsapp_enquiry_enabled: event.target.checked })} />Show WhatsApp enquiry buttons and links</label>
+          <label className="company-corner-style">Corner style for buttons, cards and boxes
+            <select value={storefrontDisplay(company).corner_style} onChange={(event) => updateDisplay({ corner_style: event.target.value === "square" ? "square" : "rounded" })}>
+              <option value="rounded">Rounded corners</option>
+              <option value="square">Square corners</option>
+            </select>
+          </label>
+          <p className="ops-copy-note">Applies to the public storefront (corner style also applies to this portal). Save to apply.</p>
+        </fieldset>
         <fieldset id="portal-settings" disabled={saving} className="company-setup-section">
           <legend>Operations Portal</legend>
           <TenantAISettings />

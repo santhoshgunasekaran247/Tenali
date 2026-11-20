@@ -5,6 +5,9 @@ import { api } from "../api";
 import type { CatalogListResponse } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { ProductCard } from "../features/catalog/components/ProductCard";
+import { ProductRail } from "../components/ProductRail";
+import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
+import { groupProducts } from "../features/catalog/productGroups";
 import { toAssetUrl } from "../features/catalog/utils";
 import { tenantBase } from "../features/tenantTransport";
 import { storefrontText } from "../features/catalog/storefrontText";
@@ -39,7 +42,8 @@ export function BrandPage() {
     return <main className="loading">{storefrontText(publicCopy?.catalog.catalogue_loading||"Loading catalogue...",publicCompany)}</main>;
   }
 
-  const phone = (data.company.phone || FALLBACK_PHONE).replace(/\D/g, "");
+  const display = storefrontDisplay(data.company);
+  const phone = display.whatsapp_enquiry_enabled ? (data.company.phone || FALLBACK_PHONE).replace(/\D/g, "") : "";
   const email = data.company.email || FALLBACK_EMAIL;
   const homeCopy=data.company.storefront_content?.home||{};
   const catalogCopy=data.company.storefront_content?.catalog||{};
@@ -159,6 +163,7 @@ export function BrandPage() {
     ? toAssetUrl(firstProductImage || data.selected_category!.image_url)
     : toAssetUrl(`brand-logos/${data.selected_brand!.code}.png`);
   const heroAlt = isCategoryView ? heading : `${heading} logo`;
+  const productGroups = groupProducts(data.products, (product) => (isCategoryView ? product.brand_name : product.category_title) || heading);
 
   return (
     <>
@@ -190,28 +195,30 @@ export function BrandPage() {
         </div>
 
         <section className="product-section">
-          <div className="section-heading">
+          <div className="section-heading compact-heading">
             <p className="eyebrow">{productRangeEyebrow}</p>
             <h2>
-              {catalogText("choose_heading_first")}
-              <br />
+              {catalogText("choose_heading_first")}{" "}
               <span>{catalogText("choose_heading_second")}</span>
             </h2>
             <p>{catalogText("choose_description")}</p>
           </div>
-          <div className="bulk-pricing">
+          {display.show_bulk_pricing ? <p className="bulk-pricing" title={`${catalogText("best_pricing_heading")} ${catalogText("best_pricing_description")}`}>
             <strong>{catalogText("best_pricing_heading")}</strong>
             <span>{catalogText("best_pricing_description")}</span>
-          </div>
+          </p> : null}
 
           {checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null}
-          {data.products.length ? (
-            <div className="product-grid">
-              {data.products.map((product) => (
-                <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
-              ))}
+          {data.products.length ? productGroups.map((group) => (
+            <div className="product-rail-group" key={group.name}>
+              {productGroups.length > 1 ? <h3 className="product-rail-heading">{group.name} <span>{group.products.length}</span></h3> : null}
+              <ProductRail label={productGroups.length > 1 ? `${heading}: ${group.name}` : heading}>
+                {group.products.map((product) => (
+                  <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
+                ))}
+              </ProductRail>
             </div>
-          ) : (
+          )) : (
             <div className="empty">{catalogText("no_products")}</div>
           )}
         </section>

@@ -37,7 +37,14 @@ export type Company = {
   is_active: boolean;
 };
 
+export type StorefrontDisplay = {
+  show_bulk_pricing: boolean;
+  whatsapp_enquiry_enabled: boolean;
+  corner_style: "rounded" | "square";
+};
+
 export type StorefrontContent = {
+  display?: StorefrontDisplay;
   navigation: Record<string, string>;
   home: Record<string, string>;
   catalog: Record<string, string>;

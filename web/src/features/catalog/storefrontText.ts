@@ -1,6 +1,6 @@
 import type { Company,StorefrontContent } from "../../types";
 
-export type StorefrontGroup = keyof StorefrontContent;
+export type StorefrontGroup = Exclude<keyof StorefrontContent, "display">;
 
 export function storefrontText(
   value: string | undefined,
