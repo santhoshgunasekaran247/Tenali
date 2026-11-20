@@ -3,7 +3,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 from uuid import UUID
 
 import httpx
@@ -167,6 +167,20 @@ class FileStore:
         validate_image_source(source)
         header, encoded = source.split(",", 1)
         return base64.b64decode(encoded, validate=True), header[5:].split(";", 1)[0]
+
+    def stored_product_image(self, company_id, url):
+        """Bytes of a public product image this workspace uploaded to Tenali storage. Other URLs are refused
+        rather than fetched, so the server never downloads arbitrary addresses."""
+        storage = ObjectStorage()
+        prefix = storage.url + "/storage/v1/object/public/" + PUBLIC_BUCKET + "/"
+        path = unquote(url[len(prefix):]) if url and url.startswith(prefix) else ""
+        if not path.startswith(f"{UUID(str(company_id))}/"):
+            raise HTTPException(422, "Only photos uploaded to Tenali can be fixed with AI. Upload the photo file instead of a link.")
+        storage.object_location(PUBLIC_BUCKET, path)
+        if not self.db.execute(text("""select 1 from stored_files where company_id=:company and bucket=:bucket
+            and object_path=:path and file_kind='image'"""), {"company": company_id, "bucket": PUBLIC_BUCKET, "path": path}).first():
+            raise HTTPException(422, "This photo is not stored for this workspace. Upload the photo file again.")
+        return storage.read(PUBLIC_BUCKET, path)
 
     def product_image(self, company_id, source):
         """Publish an uploaded product photo as an enhanced website display image and keep the original.

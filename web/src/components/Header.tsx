@@ -10,6 +10,8 @@ import { tenantBase } from "../features/tenantTransport";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { useCart } from "../features/cart";
+import { useCartMode } from "../features/useCheckoutAvailability";
+import { cartWords } from "../features/cartMode";
 import { PortalNavigation } from "./PortalNavigation";
 
 type HeaderProps = {
@@ -45,6 +47,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
   const storefrontOpen=(auth.storefront||company)?.storefront_enabled!==false;
   const navText=(key:string,fallback:string)=>storefrontText(navigation[key]||fallback,displayBrand);
   const inPortal=location.pathname.startsWith("/portal");
+  const cartModeState=useCartMode(!inPortal);
   const storefrontHref=auth.user?(auth.storefront?.id===auth.user.company_id?(tenantBase()||"/"):`/c/${auth.user.tenant_slug}`):"/";
   const brandHref=auth.user&&inPortal?"/portal":"/";
   const browserTitle=storefrontText(storefrontCompany?.storefront_content?.home.browser_title||"{nickname} | Catalogue & Workspace",displayBrand);
@@ -84,7 +87,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
           <Link to="/#brands">{navText("brands","Brands")}</Link>
           <Link to="/#contact">{navText("contact","Contact")}</Link>
         </> : null}
-        {auth.storefront&&storefrontOpen&&!inPortal?<Link to="/cart">Cart ({cart.items.reduce((total,item)=>total+item.quantity,0)})</Link>:null}
+        {auth.storefront&&storefrontOpen&&!inPortal&&cartModeState.mode&&(cartModeState.mode!=="none"||cart.items.length)?<Link to="/cart" className={cartModeState.mode==="enquiry"?"header-enquiry-link":undefined}>{cartWords(cartModeState.mode).list} ({cart.items.reduce((total,item)=>total+item.quantity,0)})</Link>:null}
         {storefrontCompany&&!inPortal?<Link to="/account">{navText("shopper_account","Shopper Account")}</Link>:null}
         {!auth.user?<Link to="/login" onClick={()=>menuOpen&&onMenuToggle()}>{navText("sign_in","Workspace Staff Sign In")}</Link>:null}
         <WorkspaceBar/>

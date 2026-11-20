@@ -39,6 +39,7 @@ function cardHarness(current = {}, existing = []) {
     "../../../api": { api: { product: async () => ({ product }) } },
     "../utils": { moneyLabel: value => value, toAssetUrl: value => value, whatsappLink: () => "https://wa.me/example" },
     "../storefrontText": { storefrontText: value => value },
+    "../../cartMode": load("features/cartMode.ts", {}),
     "../../../components/QuantityStepper": { QuantityStepper: props => React.createElement("quantity-stepper", { "data-value": props.value, "data-min": props.min, "data-max": props.max, "aria-label": props.label }) },
   });
   return {
@@ -176,4 +177,154 @@ test("storefront pages honour the bulk-pricing and WhatsApp toggles and use hori
   assert.match(source("pages/BrandPage.tsx"), /className="product-grid compact-product-grid"/);
   assert.match(source("pages/CompanySetupPage.tsx"), /id="storefront-display"[\s\S]*show_bulk_pricing[\s\S]*whatsapp_enquiry_enabled[\s\S]*corner_style/);
   assert.match(source("components/Header.tsx"), /applyCornerStyle\(storefrontDisplay\(/);
+});
+
+
+test("product page variant picker groups size/colour and keeps the parent selectable", () => {
+  const { variantOptions, variantLayout, pickVariant } = load("features/catalog/variants.ts", {});
+  const parent = { name: "Kurta", size: "M", colour: "Blue" };
+  const variants = [
+    { id: "v1", variant_name: "Kurta L Blue", size: "L", colour: "Blue", stock_qty: 4 },
+    { id: "v2", variant_name: "Kurta M Red", size: "M", colour: "Red", stock_qty: 0 },
+    { id: "v3", variant_name: "Kurta L Red", size: "L", colour: "Red", stock_qty: 2 },
+  ];
+  const options = variantOptions(parent, variants);
+  assert.equal(options[0].id, "");
+  const layout = variantLayout(options);
+  assert.equal(layout.kind, "dimensions");
+  assert.deepEqual(JSON.parse(JSON.stringify(layout.dimensions)), [{ key: "size", values: ["M", "L"] }, { key: "colour", values: ["Blue", "Red"] }]);
+  // From the parent (M / Blue), clicking L keeps Blue; clicking Red keeps M.
+  assert.equal(pickVariant(options, options[0], layout.dimensions, "size", "L").id, "v1");
+  assert.equal(pickVariant(options, options[0], layout.dimensions, "colour", "Red").id, "v2");
+  // From a variant, the parent's values lead back to the parent.
+  assert.equal(pickVariant(options, options[1], layout.dimensions, "size", "M").id, "");
+
+  // A parent without its own size cannot sit in a Size group, so every option is shown by name instead.
+  const named = variantOptions({ name: "T-shirt" }, [{ id: "a", variant_name: "Small", size: "S" }, { id: "b", variant_name: "Large", size: "L" }]);
+  assert.equal(variantLayout(named).kind, "names");
+  assert.deepEqual([...named.map(option => option.label)], ["T-shirt", "Small", "Large"]);
+
+  const page = readFileSync(path.join(__dirname, "..", "src", "pages", "ProductPage.tsx"), "utf8");
+  assert.doesNotMatch(page, /<select value=\{variantId\}/);
+  assert.match(page, /className=\{`variant-chip/);
+  assert.match(page, /aria-pressed=\{pressed\}/);
+  assert.match(page, /setSearch\(next, \{ replace: true \}\)/);
+});
+
+test("variant chips drop the repeated product name", () => {
+  const { shortVariantLabel } = load("features/catalog/variants.ts", {});
+  assert.equal(shortVariantLabel("Brass Lotus Diya - 3.5 inch", "Brass Lotus Diya"), "3.5 inch");
+  assert.equal(shortVariantLabel("brass lotus diya (4.5 inch)", "Brass Lotus Diya"), "4.5 inch");
+  assert.equal(shortVariantLabel("Brass Lotus Diya", "Brass Lotus Diya"), "Brass Lotus Diya");
+  assert.equal(shortVariantLabel("Large", "Brass Lotus Diya"), "Large");
+});
+
+test("number boxes drop leading zeros and the product page keeps buying above the fold", () => {
+  const { withoutLeadingZeros } = load("features/numberInputs.ts", {});
+  assert.equal(withoutLeadingZeros("010"), "10");
+  assert.equal(withoutLeadingZeros("007"), "7");
+  assert.equal(withoutLeadingZeros("0"), "0");
+  assert.equal(withoutLeadingZeros("0.5"), "0.5");
+  assert.equal(withoutLeadingZeros("-05"), "-5");
+  assert.match(readFileSync(path.join(__dirname, "..", "src", "main.tsx"), "utf8"), /installNumberInputs\(\);/);
+
+  const page = readFileSync(path.join(__dirname, "..", "src", "pages", "ProductPage.tsx"), "utf8");
+  assert.match(page, /className="product-cart-row"[\s\S]*<QuantityStepper[\s\S]*add_to_cart[\s\S]*whatsapp-btn/);
+  assert.match(page, /<details className="detail-more" open>[\s\S]*inventory-specs/);
+  assert.match(page, /pickup_heading[\s\S]*<NearbyStores [\s\S]*help_heading/);
+  assert.doesNotMatch(page, /<details className="detail-more">/);
+  const css = readFileSync(path.join(__dirname, "..", "src", "styles.css"), "utf8");
+  assert.match(css, /\.detail-image-wrap \{ height: min\(calc\(100vh - 230px\), 520px\)/);
+  assert.match(css, /\.detail-copy h1 \{ font-size: clamp\(22px, 2\.3vw, 32px\)/);
+});
+
+test("product editor can fix a saved product image with the AI photo models", () => {
+  const editor = readFileSync(path.join(__dirname, "..", "src", "components", "InventoryForms.tsx"), "utf8");
+  const client = readFileSync(path.join(__dirname, "..", "src", "api.ts"), "utf8");
+  assert.match(client, /\/images\/enhance`/);
+  assert.match(editor, /api\.inventoryEnhanceImage\(product\.id, imageUrl\)/);
+  assert.match(editor, /Fix with AI/);
+  assert.match(editor, /Save the product first, then fix this image/);
+});
+
+
+test("party search shows clickable matches and explains when nothing matches", () => {
+  const { matchParties, PartySelect } = load("components/PartySelect.tsx", {});
+  const vendors = [{ id: "a", legal_name: "Anand Traders", email: "sales@anand.in", phone: "+91 98400 11111" },
+    { id: "b", legal_name: "Bala Metals", email: "", phone: "044-2345" }];
+  assert.deepEqual([...matchParties(vendors, "anand")].map(v => v.id), ["a"]);
+  assert.deepEqual([...matchParties(vendors, "98400")].map(v => v.id), ["a"]);
+  assert.equal(matchParties(vendors, "").length, 2);
+  const source = readFileSync(path.join(__dirname, "..", "src", "components", "PartySelect.tsx"), "utf8");
+  assert.match(source, /className=\{party\.id === value \? "party-result is-selected" : "party-result"\}/);
+  assert.match(source, /event\.key === "Enter"/);
+  assert.equal(typeof PartySelect, "function");
+  const editor = readFileSync(path.join(__dirname, "..", "src", "components", "InventoryForms.tsx"), "utf8");
+  assert.match(editor, /emptyHint="Only vendors mapped to this product can be preferred/);
+});
+
+test("category and brand pages use a slim hero with a green WhatsApp action", () => {
+  const page = readFileSync(path.join(__dirname, "..", "src", "pages", "BrandPage.tsx"), "utf8");
+  const css = readFileSync(path.join(__dirname, "..", "src", "styles.css"), "utf8");
+  assert.match(page, /className="catalog-hero catalog-hero-slim"/);
+  assert.match(page, /productCount\(data\.products\.length\)/);
+  assert.doesNotMatch(page, /\{email\} \u2192/);
+  assert.match(css, /\.catalog-hero-slim \.btn\.whatsapp-btn \{ background: #25d366/);
+});
+
+test("without online payment the cart becomes a WhatsApp enquiry list", async () => {
+  const { cartMode, cartWords, enquiryMessage, enquiryWhatsappLink } = load("features/cartMode.ts", {});
+  assert.equal(cartMode(true, "+91 98400"), "buy");
+  assert.equal(cartMode(false, "+91 98400"), "enquiry");
+  assert.equal(cartMode(false, ""), "none");
+  assert.equal(cartWords("enquiry").add, "Add to enquiry");
+  assert.equal(cartWords("buy").add, "Add to Cart");
+  const message = enquiryMessage("SRU Global", [{ name: "Diya", option: "4 inch", quantity: 12, price: "450" }, { name: "Lamp", quantity: 3 }]);
+  assert.equal(message, [
+    "Hello SRU Global,", "I would like a quote for the following items.", "",
+    "*Enquiry list*",
+    "1. *Diya*", "   Option: 4 inch", "   Qty: *12*", "   Listed: \u20b9450 each", "",
+    "2. *Lamp*", "   Qty: *3*", "",
+    "*Summary*", "Products: 2", "Total units: 15", "Listed value: \u20b95,400", "",
+    "Please share your best price, availability and delivery details.",
+    "_This is an enquiry, not an order._",
+  ].join("\n"));
+  assert.match(enquiryWhatsappLink("+91 98400 11111", message), /^https:\/\/wa\.me\/919840011111\?text=Hello%20SRU%20Global%2C%0A/);
+
+  // Enquiry cards add without a price or stock and keep WhatsApp as a small icon.
+  const h = cardHarness({ selling_price_display: "", stock_qty: 0 });
+  const html = renderToStaticMarkup(h.render(false, "9840011111"));
+  assert.match(html, /Add to enquiry/);
+  assert.match(html, /whatsapp-icon-only/);
+  assert.doesNotMatch(html, /Add to Cart/);
+  await find(h.render(false, "9840011111"), node => node.type === "button").props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.added.length, 1);
+  assert.doesNotMatch(renderToStaticMarkup(cardHarness().render(false, "")), /Add to enquiry|Add to Cart/);
+
+  const source = file => readFileSync(path.join(__dirname, "..", "src", file), "utf8");
+  const cartPage = source("pages/CartPage.tsx");
+  assert.match(cartPage, /enquiryMessage\(/);
+  assert.match(cartPage, /Send enquiry on WhatsApp/);
+  assert.match(cartPage, /does not place an order or take payment/);
+  assert.match(source("pages/ProductPage.tsx"), /className="btn enquiry-add"/);
+  assert.match(source("components/Header.tsx"), /useCartMode\(!inPortal\)/);
+});
+
+test("bulk notes fold open when cut off and the category hero stays compact", () => {
+  const source = file => readFileSync(path.join(__dirname, "..", "src", file), "utf8");
+  for (const file of ["pages/HomePage.tsx", "pages/BrandPage.tsx", "pages/ProductPage.tsx"]) assert.match(source(file), /<BulkPricingNote /, file);
+  assert.match(source("components/BulkPricingNote.tsx"), /scrollWidth > element\.clientWidth/);
+  assert.match(source("styles.css"), /\.bulk-pricing\.is-open \{ flex-wrap: wrap; white-space: normal; \}/);
+  const brand = source("pages/BrandPage.tsx");
+  assert.match(brand, /whatsapp-btn hero-whatsapp/);
+  assert.doesNotMatch(brand, /get_best_pricing/);
+  // A quiet back-link row, then the heading, description and bulk note stacked with spacing.
+  assert.match(brand, /className="brand-page-nav catalog-toolbar"[\s\S]*catalog-count[\s\S]*className="catalog-choose"[\s\S]*<BulkPricingNote /);
+  assert.match(source("styles.css"), /\.catalog-choose \{ display: grid; justify-items: start; gap: 8px/);
+});
+test("cart rows give the quantity stepper its full width so plus is never clipped", () => {
+  const css = readFileSync(path.join(__dirname, "..", "src", "styles.css"), "utf8");
+  assert.match(css, /\.cart-item \{ grid-template-columns: 80px minmax\(0, 1fr\) auto; \}/);
+  assert.match(css, /\.cart-item-quantity \.quantity-stepper \{ grid-template-columns: 36px 52px 36px;/);
 });

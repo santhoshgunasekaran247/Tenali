@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductImageEnhance, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
 from app.services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -57,6 +57,11 @@ def update_product(product_id: UUID, payload: ProductInput, service: InventorySe
 @router.post("/products/{product_id}/confirm")
 def confirm_product(product_id: UUID, service: InventoryService = Depends(inventory_service)):
     return service.confirm_draft(str(product_id))
+
+
+@router.post("/products/{product_id}/images/enhance")
+def enhance_product_image(product_id: UUID, payload: ProductImageEnhance, service: InventoryService = Depends(inventory_service)):
+    return service.enhance_product_image(str(product_id), payload.image_url)
 
 
 @router.post("/products/{product_id}/merge")

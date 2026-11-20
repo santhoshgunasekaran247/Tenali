@@ -15,7 +15,7 @@ from app.services.access import allowed_stores
 from app.services.inventory_pricing import resolve_catalog_price
 from app.services.period_lock_service import assert_period_open
 from app.services.posting_service import replay_posting, finish_posting, request_hash
-from app.services.object_storage import FileStore
+from app.services.object_storage import FileStore, ObjectStorage
 
 
 class InventoryService:
@@ -278,6 +278,39 @@ class InventoryService:
         if commit:
             self.db.commit()
         return self.detail(product_id)
+
+    def enhance_product_image(self, product_id: str, image_url: str) -> dict:
+        """Re-render one published product image with the product-photo pipeline (AI background removal and
+        super-resolution when TENALI_IMAGE_AI is on), starting from the kept original upload when there is one,
+        and swap it in wherever the product uses that image."""
+        from app.services import vision_models
+        from app.services.product_images import display_image
+
+        def images_of(product: dict) -> list[str]:
+            return [image for image in [product.get("image_url"), *(product.get("image_urls") or "").split("|")] if image]
+
+        product = self._product(product_id)
+        if image_url not in images_of(product):
+            raise HTTPException(422, "This image is not on the product. Save the product first, then fix its image.")
+        files = FileStore(self.db)
+        original = (product.get("image_originals") or {}).get(image_url)
+        content = files.stored_product_image(self.company_id, original or image_url)
+        self.db.commit()  # Nothing is written yet; do not hold a transaction open while the models run.
+        display = display_image(content)
+        product = self._product(product_id, lock=True)
+        if image_url not in images_of(product):
+            raise HTTPException(409, "The product images changed while the photo was being fixed. Reload and try again.")
+        enhanced = ObjectStorage().public_url(files.save(self.company_id, display, "image/webp", public=True, kind="image"))
+        swap = lambda image: enhanced if image == image_url else image
+        gallery = list(dict.fromkeys(swap(image) for image in (product.get("image_urls") or "").split("|") if image))
+        originals = {display_url: kept for display_url, kept in (product.get("image_originals") or {}).items() if display_url != image_url}
+        if enhanced != (original or image_url):
+            # Keep the source beside the new display image so it can be re-rendered again later.
+            originals[enhanced] = original or image_url
+        self._write("products", {"image_url": swap(product.get("image_url")), "image_urls": "|".join(gallery),
+                                 "image_originals": originals}, product_id)
+        self.db.commit()
+        return {"product": self.detail(product_id), "image_url": enhanced, "ai_models": vision_models.enabled()}
 
     def confirm_draft(self, product_id: str, *, commit: bool = True) -> dict:
         product = self._product(product_id, lock=True)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BulkPricingNote } from "../components/BulkPricingNote";
 import { Link, useLocation } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { scrollToSection } from "../components/sectionScroll";
@@ -51,10 +52,7 @@ export function HomePage() {
   const copy = data.company.storefront_content?.home || {};
   const text = (key: string) => storefrontText(copy[key], data.company);
   const bulkStrip = display.show_bulk_pricing ? (
-    <p className="bulk-pricing" title={`${text("bulk_title")} ${text("bulk_description")}`}>
-      <strong>{text("bulk_title")}</strong>
-      <span>{text("bulk_description")}</span>
-    </p>
+    <BulkPricingNote heading={text("bulk_title")} description={text("bulk_description")} />
   ) : null;
 
   return (

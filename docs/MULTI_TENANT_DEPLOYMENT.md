@@ -454,6 +454,12 @@ tier). Set `TENALI_IMAGE_AI=1` only on a server with at least 2 GB. When off, di
 images use classic trimming, fitting, tone and sharpening (about 0.4 s, no model
 loads; OpenCV is never imported).
 
+Saved product photos can be re-processed from **Product Inventory → edit product → Fix
+images with AI**. The original upload is reused when Tenali kept one; the new display image
+replaces the old one on the product immediately. Only photos uploaded to Tenali can be fixed
+(external image links must be uploaded as files first). With `TENALI_IMAGE_AI` off the same
+button applies the classic clean-up.
+
 When enabled, the models run through OpenCV DNN
 (`numpy` and `opencv-contrib-python-headless` in `api/requirements.txt`). The small
 U2-Net-p and FSRCNN models are bundled; prefetch the pinned ISNet (179 MB) and EDSR

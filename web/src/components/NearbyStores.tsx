@@ -1,7 +1,7 @@
 import { FloatingAlert } from "./Notifications";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MapPin, MessageCircle } from "lucide-react";
+import { LocateFixed, MapPin, MessageCircle } from "lucide-react";
 import { accountRequest, type NearbyStore } from "../features/shop";
 
 /** Pickup-enabled shops with availability bands for a product, plus a WhatsApp enquiry that records an enquiry reference. */
@@ -46,9 +46,10 @@ export function NearbyStores({ productId, variantId, productName, quantity, chec
   return <section className="ops-card nearby-stores" aria-labelledby="nearby-heading">
     <h2 id="nearby-heading"><MapPin size={18} aria-hidden="true" /> Pick up at a nearby store</h2>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
-    <div className="shop-actions"><button type="button" className="btn light" onClick={locate}>Use my location</button>
-      <label>PIN code<input inputMode="numeric" maxLength={6} value={pincode} onChange={event => setPincode(event.target.value)} placeholder="600001" /></label></div>
-    {stores === null ? <p>Checking stores...</p> : !stores.length ? <p>{whatsappEnabled ? "No pickup stores are available yet. Delivery and WhatsApp enquiry remain available." : "No pickup stores are available yet. Delivery remains available."}</p>
+    <div className="nearby-locate"><button type="button" className="btn light nearby-locate-btn" onClick={locate}><LocateFixed size={15} aria-hidden="true" /> Use my location</button>
+      <span className="nearby-or">or</span>
+      <label className="nearby-pin"><span>PIN code</span><input inputMode="numeric" maxLength={6} value={pincode} onChange={event => setPincode(event.target.value.replace(/\D/g, ""))} placeholder="e.g. 600001" aria-label="PIN code" /></label></div>
+    {stores === null ? <p className="nearby-empty">Checking stores...</p> : !stores.length ? <p className="nearby-empty">{whatsappEnabled ? "No pickup stores are available yet. Delivery and WhatsApp enquiry remain available." : "No pickup stores are available yet. Delivery remains available."}</p>
       : <ul className="nearby-store-list">{stores.map(store => <li key={store.store_id}>
         <strong>{store.name}</strong>{store.distance_km !== null ? ` · ${store.distance_km} km` : store.pincode ? ` · ${store.pincode}` : ""}
         <span className={`availability-${store.availability}`}>{label[store.availability]}</span>

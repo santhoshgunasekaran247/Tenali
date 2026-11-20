@@ -1,7 +1,7 @@
 import { FloatingAlert } from "./Notifications";
 import { useClearDrafts, useDraftState } from "../features/drafts";
 import { FormEvent, useState } from "react";
-import { Plus, Save, Trash2, X } from "lucide-react";
+import { Plus, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api } from "../api";
 import { PartySelect } from "./PartySelect";
 import { toAssetUrl } from "../features/catalog/utils";
@@ -57,6 +57,12 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const [saving, setSaving] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [error, setError] = useState("");
+  const [fixingImage, setFixingImage] = useState("");
+  const [imageNotice, setImageNotice] = useState("");
+  const [savedImages, setSavedImages] = useState(() => ({
+    urls: new Set([product?.image_url, ...(product?.image_urls || "").split("|")].filter((value): value is string => !!value)),
+    originals: product?.image_originals || {},
+  }));
   const offers = (variantMode ? variant?.offers : product?.offers) || [];
   const current = variantMode ? variant : product;
   const selectedOffer = offers.find((offer) => offer.vendor_id === draft.preferred_vendor_id && offer.is_active && offer.vendor_active);
@@ -107,6 +113,25 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
     } catch(failure){setError(failure instanceof Error?failure.message:"Unable to upload image.");}
     finally{setImageBusy(false);}
   };
+  const draftImages = [...new Set([draft.image_url, ...gallery.split(/\r?\n/)].map(value => value?.trim()).filter((value): value is string => !!value))];
+  const fixImage = async (imageUrl: string) => {
+    if (!product) return;
+    setFixingImage(imageUrl); setError(""); setImageNotice("");
+    try {
+      const result = await api.inventoryEnhanceImage(product.id, imageUrl);
+      const swap = (value: string) => value.trim() === imageUrl ? result.image_url : value;
+      if (draft.image_url === imageUrl) patch({ image_url: result.image_url });
+      setGallery(previous => previous.split(/\r?\n/).map(swap).join("\n"));
+      setSavedImages({
+        urls: new Set([result.product.image_url, ...(result.product.image_urls || "").split("|")].filter((value): value is string => !!value)),
+        originals: result.product.image_originals || {},
+      });
+      setImageNotice(result.ai_models
+        ? "Image fixed with the AI photo models: background removed, upscaled and cleaned. The original upload is kept."
+        : "Image cleaned up (trim, tone and sharpen). AI background removal is off on this server (TENALI_IMAGE_AI); the original upload is kept.");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to fix the image."); }
+    finally { setFixingImage(""); }
+  };
   return <section className="inventory-editor" aria-label={variantMode ? "Variant editor" : "Product editor"}>
     <div className="inventory-section-head"><h2>{variantMode ? variant ? "Edit Variant" : "Add Variant" : product ? "Edit Product" : "Add Product"}</h2><button className="ops-link-btn" type="button" title="Close editor" aria-label="Close product editor" disabled={saving} onClick={() => { clearDrafts(draftKey); onClose(); }}><X size={18}/></button></div>
     {error?<FloatingAlert>{error}</FloatingAlert>:null}
@@ -132,15 +157,31 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
         phone: lookups.vendors.find(vendor => vendor.id === offer.vendor_id)?.phone,
         email: lookups.vendors.find(vendor => vendor.id === offer.vendor_id)?.email,
       }))} value={draft.preferred_vendor_id || ""} label="Preferred vendor"
-        placeholder={variantMode ? "Use parent preference" : "Not selected"} onChange={id => patch({ preferred_vendor_id: id || null })} />
+        placeholder={variantMode ? "Use parent preference" : "Not selected"} onChange={id => patch({ preferred_vendor_id: id || null })}
+        emptyHint="Only vendors mapped to this product can be preferred. Map one first in the Vendor Offers tab (Map Vendor)." />
       <label>Pricing Rule<select value={draft.pricing_mode} onChange={event=>patch({pricing_mode:event.target.value as InventoryItemInput['pricing_mode'],selling_price:price??null,discount_percent:Number(discount||0)})}>{variantMode?<option value="inherit">Use parent pricing</option>:null}<option value="price">Keep catalog price</option><option value="discount">Keep discount %</option></select></label>
       <label>Catalog Price (INR)<input type="number" min="0" step="0.01" disabled={draft.pricing_mode==="inherit"} value={price??""} onChange={event=>patch({pricing_mode:"price",selling_price:event.target.value===""?null:Number(event.target.value)})}/></label>
       <label>Discount %<input type="number" min="0" max="100" step="0.01" disabled={draft.pricing_mode==="inherit"} value={discount??""} onChange={event=>patch({pricing_mode:"discount",discount_percent:Number(event.target.value)})}/></label>
       <div className="inventory-price-reference"><span>Preferred vendor MRP</span><strong>{inventoryMoney(mrp)}</strong><span>Buying price</span><strong>{inventoryMoney(buyingPrice)}</strong></div>
       <label className="inventory-check"><input type="checkbox" checked={draft.is_active} onChange={event=>patch({is_active:event.target.checked})}/>Active</label>
       {!variantMode?<><label>Primary Image URL / Asset Path<input value={draft.image_url?.startsWith('data:')?"":draft.image_url||""} placeholder={draft.image_url?.startsWith('data:')?"Uploaded image":""} onChange={event=>patch({image_url:event.target.value||null})}/></label>
-        <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>{draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}{draft.image_url&&product?.image_originals?.[draft.image_url]?<a className="social-caption" href={product.image_originals[draft.image_url]} target="_blank" rel="noreferrer">View original upload</a>:null}<span className="social-caption">On save, uploads are enhanced into a 1000×1000 WebP for the website; the original is kept too. Up to 1 MB.</span></label>
+        <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>        {draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}{draft.image_url&&savedImages.originals[draft.image_url]?<a className="social-caption" href={savedImages.originals[draft.image_url]} target="_blank" rel="noreferrer">View original upload</a>:null}<span className="social-caption">On save, uploads are enhanced into a 1000×1000 WebP for the website; the original is kept too. Up to 1 MB.</span></label>
         <label className="inventory-wide">Gallery Image URLs<textarea rows={2} value={gallery} onChange={event=>setGallery(event.target.value)}/></label>
+        {product&&draftImages.length?<div className="inventory-wide inventory-image-fixes" aria-label="Fix product images with AI">
+          <strong>Fix images with AI</strong>
+          <span className="social-caption">Re-runs the AI photo models on a saved image (from its original upload when kept): removes the background, upscales small photos and cleans tone. The website image is replaced right away.</span>
+          <ul>{draftImages.map(image => {
+            const saved = savedImages.urls.has(image);
+            return <li key={image}>
+              <img src={toAssetUrl(image)} alt="" loading="lazy"/>
+              <button type="button" className="btn light" disabled={!saved || !!fixingImage || imageBusy} aria-busy={fixingImage === image || undefined}
+                title={saved ? "Fix this image with AI" : "Save the product first, then fix this image"} onClick={() => void fixImage(image)}>
+                <Sparkles size={14} aria-hidden="true"/>{fixingImage === image ? "Fixing..." : "Fix with AI"}</button>
+              {!saved?<small>Save first</small>:null}
+            </li>;
+          })}</ul>
+          {imageNotice?<p className="social-caption" role="status">{imageNotice}</p>:null}
+        </div>:null}
         <label className="inventory-check"><input type="checkbox" checked={draft.catalog_visible} onChange={event=>patch({catalog_visible:event.target.checked})}/>Visible in customer catalog</label>
         <label>Minimum online order quantity<input required type="number" min={1} max={100} step={1} value={draft.minimum_order_quantity} onChange={event=>patch({minimum_order_quantity:Number(event.target.value)})}/><small>Starts the cart at this quantity. Applies separately to each size / colour. Use 1 for no bulk minimum; online checkout supports up to 100 units per item.</small></label>
         <label className="inventory-check"><input type="checkbox" checked={draft.best_seller} onChange={event=>patch({best_seller:event.target.checked})}/>Best seller</label>

@@ -8,6 +8,7 @@ import { storefrontText } from "../storefrontText";
 import { api } from "../../../api";
 import { useCart } from "../../cart";
 import { QuantityStepper } from "../../../components/QuantityStepper";
+import { cartMode, cartWords } from "../../cartMode";
 
 type ProductCardProps = {
   product: CatalogProduct;
@@ -31,7 +32,11 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
     .filter(Boolean);
   const image = gallery[0] || product.image_url;
   const minimum = Math.max(1, product.minimum_order_quantity || 1);
-  const maximum = Math.max(minimum, Math.min(100, Number(product.stock_qty) || 100));
+  const mode = cartMode(checkoutEnabled, phone);
+  const words = cartWords(mode);
+  const listEnabled = mode !== "none";
+  // Enquiries can ask about items that are out of stock or priced on request, so only the 100-unit cap applies.
+  const maximum = mode === "enquiry" ? 100 : Math.max(minimum, Math.min(100, Number(product.stock_qty) || 100));
   const inCart = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
   const [quantity, setQuantity] = useState(String(minimum));
   const [cartDraft, setCartDraft] = useState<string | null>(null);
@@ -51,11 +56,13 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
       const count = Number(quantity);
       const floor = current.minimum_order_quantity;
       if (!Number.isInteger(count) || count < floor || count > 100) throw new Error(`Choose ${floor} to 100 whole units.`);
-      if (!(Number(current.selling_price_display) > 0)) throw new Error("Contact the store for a quote on this item.");
-      const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
-      if (Number(current.stock_qty) < count + (existing?.quantity || 0)) throw new Error("Not enough stock. Review your cart or contact the store.");
+      if (mode === "buy") {
+        if (!(Number(current.selling_price_display) > 0)) throw new Error("Contact the store for a quote on this item.");
+        const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
+        if (Number(current.stock_qty) < count + (existing?.quantity || 0)) throw new Error("Not enough stock. Review your cart or contact the store.");
+      }
       cart.add({ product_id: product.id, variant_id: null, quantity: count });
-      setMessage(`${count} ${count === 1 ? "unit" : "units"} added`);
+      setMessage(`${count} ${count === 1 ? "unit" : "units"} ${mode === "enquiry" ? "added to enquiry" : "added"}`);
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
     finally { setBusy(false); }
   };
@@ -92,19 +99,19 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
         </div>
         {product.description ? <p title={product.description}>{product.description}</p> : null}
         <div className="product-card-actions" onClick={event => event.stopPropagation()}>
-        {checkoutEnabled && !hasVariants ? inCart ? <div className="product-card-incart">
-            <span>In cart</span>
+        {listEnabled && !hasVariants ? inCart ? <div className="product-card-incart">
+            <span>{words.inList}</span>
             <QuantityStepper label={`Quantity for ${product.name}`} value={cartDraft ?? String(inCart.quantity)} min={minimum} max={maximum}
               onChange={changeCartQuantity} onBelowMin={() => { cart.remove(inCart); setCartDraft(null); setMessage(""); }} />
           </div>
           : <QuantityStepper label={`Quantity for ${product.name}`} value={quantity} min={minimum} max={maximum} disabled={busy}
               onChange={value => { setQuantity(value); setMessage(""); setError(""); }} /> : null}
         <div className="product-card-buttons">
-          {checkoutEnabled ? hasVariants ? <button className="btn" type="button" onClick={() => navigate(`/products/${product.id}`)}>Choose options</button>
-            : inCart ? <Link className="btn light" to="/cart">View cart</Link>
-            : <button className="btn" type="button" disabled={busy} onClick={() => void addToCart()}>{busy ? "Adding..." : text("add_to_cart", "Add to Cart")}</button> : null}
+          {listEnabled ? hasVariants ? <button className="btn" type="button" onClick={() => navigate(`/products/${product.id}`)}>Choose options</button>
+            : inCart ? <Link className="btn light" to="/cart">{mode === "enquiry" ? "View list" : "View cart"}</Link>
+            : <button className={mode === "enquiry" ? "btn enquiry-add" : "btn"} type="button" disabled={busy} onClick={() => void addToCart()}>{busy ? "Adding..." : mode === "enquiry" ? text("add_to_enquiry", words.add) : text("add_to_cart", words.add)}</button> : null}
           {phone?<a
-            className="btn whatsapp-btn"
+            className={mode === "enquiry" ? "btn whatsapp-btn whatsapp-icon-only" : "btn whatsapp-btn"}
             href={whatsappLink(phone, product.name, product.brand_name || company.nickname || company.company_name, text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options."))}
             title={text("whatsapp_enquiry","WhatsApp enquiry")}
             onClick={(e) => e.stopPropagation()}
@@ -113,7 +120,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
           </a>:null}
         </div>
         </div>
-        {message ? <p className="cart-feedback" role="status" onClick={event => event.stopPropagation()}>{message}. <Link to="/cart">View cart</Link></p> : null}
+        {message ? <p className="cart-feedback" role="status" onClick={event => event.stopPropagation()}>{message}. <Link to="/cart">{words.view}</Link></p> : null}
         {error ? <p className="ops-error" role="alert">{error}</p> : null}
       </div>
     </article>

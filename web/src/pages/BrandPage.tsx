@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BulkPricingNote } from "../components/BulkPricingNote";
 import { Link, useSearchParams } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { api } from "../api";
@@ -11,7 +12,7 @@ import { toAssetUrl } from "../features/catalog/utils";
 import { tenantBase } from "../features/tenantTransport";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { useAuth } from "../features/auth";
-import { Package } from "lucide-react";
+import { MessageCircle, Package } from "lucide-react";
 import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
 
 export function BrandPage() {
@@ -48,6 +49,8 @@ export function BrandPage() {
   const catalogCopy=data.company.storefront_content?.catalog||{};
   const homeText=(key:string)=>storefrontText(homeCopy[key],data.company);
   const catalogText=(key:string,variables:Record<string,string|number>={})=>storefrontText(catalogCopy[key],data.company,variables);
+  // "{count} products" reads "1 product" for a single item; custom wording without "products" is left as written.
+  const productCount=(count:number)=>{const label=catalogText("product_count",{count});return count===1?label.replace(/\b(products)\b/i,word=>word.slice(0,-1)):label;};
 
   if (category === "all") {
     return (
@@ -153,7 +156,6 @@ export function BrandPage() {
     ? data.selected_category!.category_description
     : data.selected_brand!.description || catalogText("brand_description_fallback", { brand_name: data.selected_brand!.name });
   const eyebrow = catalogText(isCategoryView ? "category_page_eyebrow" : "products_page_eyebrow");
-  const productRangeEyebrow = `${heading} · ${catalogText("product_range_suffix")}`;
   const backHref = tenantBase()+(isCategoryView ? "/brand.html?category=all" : "/#brands");
   const backLabel = catalogText(isCategoryView ? "all_categories_link" : "all_brands_link");
   const bestPricingMessage = encodeURIComponent(storefrontText(catalogCopy.whatsapp_prefilled_message,data.company,{brand_name:heading}));
@@ -167,46 +169,38 @@ export function BrandPage() {
   return (
     <>
       <main id="brand-page">
-        <section className="catalog-hero">
-          <div>
+        <section className="catalog-hero catalog-hero-slim">
+          <div className="catalog-brand-logo">
+            {isCategoryView&&!heroImage?<Package size={32} aria-label="Category"/>:<img src={heroImage} alt={heroAlt} loading="lazy" />}
+          </div>
+          <div className="catalog-hero-copy">
             <p className="eyebrow">{eyebrow}</p>
             <h1>{heading}</h1>
-            <p className="lead">{lead}</p>
-            <p className="catalog-note">{catalogText("product_count", { count: data.products.length })} · {catalogText("sample_price_note")}</p>
-            <div className="actions">
-              {phone?<a className="btn whatsapp-btn" href={`https://wa.me/${phone}`}>
-                {catalogText("whatsapp_best_pricing")}
-              </a>:null}
-              {email?<a className="link" href={`mailto:${email}`}>
-                {email} →
-              </a>:null}
-            </div>
+            {lead?<p className="lead">{lead}</p>:null}
+            <p className="catalog-note">{catalogText("sample_price_note")}</p>
           </div>
-          <div className="catalog-brand-logo">
-            {isCategoryView&&!data.selected_category!.image_url?<Package size={72} aria-label="Category"/>:<img src={heroImage} alt={heroAlt} loading="lazy" />}
+          <div className="actions catalog-hero-actions">
+            {phone?<a className="btn whatsapp-btn hero-whatsapp" href={`https://wa.me/${phone}?text=${bestPricingMessage}`}>
+              <MessageCircle size={15} aria-hidden="true" /><span>{catalogText("whatsapp_best_pricing")}</span>
+            </a>:null}
+            {email?<a className="catalog-hero-email" href={`mailto:${email}`}>{email}</a>:null}
           </div>
         </section>
 
-        <div className="brand-page-nav">
+        <div className="brand-page-nav catalog-toolbar">
           <a href={backHref}>{backLabel}</a>
-          <span className="catalog-count">{catalogText("product_count", { count: data.products.length })}</span>
-          {phone?<a href={`https://wa.me/${phone}?text=${bestPricingMessage}`}>{catalogText("get_best_pricing")}</a>:null}
+          <span className="catalog-count">{productCount(data.products.length)}</span>
         </div>
 
-        <section className="product-section">
-          <div className="section-heading compact-heading">
-            <p className="eyebrow">{productRangeEyebrow}</p>
+        <section className="product-section catalog-products">
+          <div className="catalog-choose">
             <h2>
               {catalogText("choose_heading_first")}{" "}
               <span>{catalogText("choose_heading_second")}</span>
             </h2>
             <p>{catalogText("choose_description")}</p>
+            {display.show_bulk_pricing ? <BulkPricingNote heading={catalogText("best_pricing_heading")} description={catalogText("best_pricing_description")} /> : null}
           </div>
-          {display.show_bulk_pricing ? <p className="bulk-pricing" title={`${catalogText("best_pricing_heading")} ${catalogText("best_pricing_description")}`}>
-            <strong>{catalogText("best_pricing_heading")}</strong>
-            <span>{catalogText("best_pricing_description")}</span>
-          </p> : null}
-
           {checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null}
           {data.products.length ? productGroups.map((group) => (
             <div className="product-rail-group" key={group.name}>

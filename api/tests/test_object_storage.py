@@ -243,6 +243,62 @@ class VisionModelTests(unittest.TestCase):
             self.assertIsNone(vision_models.product_mask(Image.new("RGB", (200, 150), (180, 120, 60))))
 
 
+class ProductImageFixTests(unittest.TestCase):
+    BASE = "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/" + PUBLIC_BUCKET + "/"
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"TENALI_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
+                                         "TENALI_SUPABASE_STORAGE_KEY": "server-fixture-secret"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.company = str(uuid4())
+
+    def db(self, known=True):
+        from unittest.mock import MagicMock
+        db = MagicMock()
+        db.execute.return_value.first.return_value = (1,) if known else None
+        return db
+
+    def test_only_this_workspaces_stored_photos_are_read(self):
+        other = str(uuid4())
+        for url in ["https://cdn.example.com/a.png", self.BASE + other + "/image-a.webp", "", self.BASE + "../x.png"]:
+            with patch.object(ObjectStorage, "read") as read, self.assertRaises(HTTPException) as error:
+                FileStore(self.db()).stored_product_image(self.company, url)
+            self.assertEqual(error.exception.status_code, 422, url)
+            read.assert_not_called()
+        with patch.object(ObjectStorage, "read") as read, self.assertRaisesRegex(HTTPException, "not stored"):
+            FileStore(self.db(known=False)).stored_product_image(self.company, self.BASE + self.company + "/image-a.webp")
+        read.assert_not_called()
+        with patch.object(ObjectStorage, "read", return_value=PNG) as read:
+            self.assertEqual(FileStore(self.db()).stored_product_image(self.company, self.BASE + self.company + "/image-a.webp"), PNG)
+        read.assert_called_once_with(PUBLIC_BUCKET, self.company + "/image-a.webp")
+
+    def test_fix_rerenders_from_the_original_and_swaps_every_use(self):
+        old, original, other = (self.BASE + self.company + f"/image-{name}.webp" for name in ("old", "original", "other"))
+        product = {"id": "p", "image_url": old, "image_urls": f"{old}|{other}",
+                   "image_originals": {old: original, other: self.BASE + self.company + "/image-o2.png"}}
+        service = InventoryService.__new__(InventoryService)
+        service.db, service.company_id = self.db(), self.company
+        writes = []
+        with patch.object(InventoryService, "_product", side_effect=lambda *args, **kwargs: dict(product)), \
+                patch.object(InventoryService, "_write", side_effect=lambda table, values, row: writes.append(values)), \
+                patch.object(InventoryService, "detail", return_value={"id": "p"}), \
+                patch.object(FileStore, "stored_product_image", return_value=PNG) as stored, \
+                patch("app.services.product_images.display_image", return_value=b"webp") as render, \
+                patch.object(FileStore, "save", return_value={"bucket": PUBLIC_BUCKET, "object_path": self.company + "/image-new.webp"}) as save:
+            result = service.enhance_product_image("p", old)
+            with self.assertRaises(HTTPException) as error:
+                service.enhance_product_image("p", "https://cdn.example.com/not-on-product.png")
+        self.assertEqual(error.exception.status_code, 422)
+        new = self.BASE + self.company + "/image-new.webp"
+        self.assertEqual(stored.call_args.args, (self.company, original))
+        render.assert_called_once_with(PNG)
+        self.assertEqual(save.call_args.args[1:3], (b"webp", "image/webp"))
+        self.assertEqual(result["image_url"], new)
+        self.assertEqual(writes, [{"image_url": new, "image_urls": f"{new}|{other}",
+                                   "image_originals": {other: product["image_originals"][other], new: original}}])
+
+
 class AIBillPhotoTests(unittest.TestCase):
     def test_bill_is_stored_sharp_and_sent_to_the_model_at_bounded_size(self):
         from app.ai.media import model_image

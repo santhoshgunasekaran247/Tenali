@@ -1029,7 +1029,11 @@ require operational approval.
   the locked save then only uploads. The display URL
   becomes `image_url`/`image_urls`; `products.image_originals` maps it to the
   original and keeps the pair only while that display image stays on the product.
-  Already-published URLs are stored unchanged. Dropdown options, including optional ones, are listed in the model context
+  Already-published URLs are stored unchanged. Staff can re-run the pipeline on a saved
+  image with **Fix with AI** in the product editor (`POST /api/inventory/products/{id}/images/enhance`):
+  it renders from the kept original (or the image itself), with no transaction open during the render,
+  swaps the new display URL into `image_url`/`image_urls` and re-points `image_originals`. Only
+  images stored in this workspace's public bucket are accepted; external links are never fetched. Dropdown options, including optional ones, are listed in the model context
   (`choices`) so values such as payment mode come from the allowed set.
 - Current product/variant/offer/brand/category fields are loaded before full
   replacements; account and party updates retain patch semantics. Updated chat
