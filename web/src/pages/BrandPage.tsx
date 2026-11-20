@@ -5,7 +5,6 @@ import { api } from "../api";
 import type { CatalogListResponse } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { ProductCard } from "../features/catalog/components/ProductCard";
-import { ProductRail } from "../components/ProductRail";
 import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { groupProducts } from "../features/catalog/productGroups";
 import { toAssetUrl } from "../features/catalog/utils";
@@ -212,11 +211,11 @@ export function BrandPage() {
           {data.products.length ? productGroups.map((group) => (
             <div className="product-rail-group" key={group.name}>
               {productGroups.length > 1 ? <h3 className="product-rail-heading">{group.name} <span>{group.products.length}</span></h3> : null}
-              <ProductRail label={productGroups.length > 1 ? `${heading}: ${group.name}` : heading}>
+              <div className="product-grid compact-product-grid" role="region" aria-label={productGroups.length > 1 ? `${heading}: ${group.name}` : heading}>
                 {group.products.map((product) => (
                   <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
                 ))}
-              </ProductRail>
+              </div>
             </div>
           )) : (
             <div className="empty">{catalogText("no_products")}</div>

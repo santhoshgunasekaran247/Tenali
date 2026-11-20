@@ -167,8 +167,13 @@ test("storefront pages honour the bulk-pricing and WhatsApp toggles and use hori
     assert.match(page, /show_bulk_pricing \?/, file);
     assert.match(page, /whatsapp_enquiry_enabled \?|whatsapp_enquiry_enabled\?/, file);
   }
-  assert.equal((source("pages/HomePage.tsx").match(/<ProductRail /g) || []).length, 2);
-  assert.match(source("pages/BrandPage.tsx"), /<ProductRail /);
+  assert.equal((source("pages/HomePage.tsx").match(/<ProductRail /g) || []).length, 3);
+  assert.match(source("pages/HomePage.tsx"), /<ProductRail [^>]*className="brand-rail"/);
+  assert.match(source("components/ProductRail.tsx"), /data-more-next=/);
+  assert.match(source("styles.css"), /\.product-rail\[data-more-next\] \.product-rail-track \{[^}]*mask-image/);
+  assert.match(source("styles.css"), /grid-auto-columns: calc\(\(100vw - var\(--rail-bleed\) - 2 \* var\(--rail-gap\)\) \/ 2\.2\)/);
+  assert.doesNotMatch(source("pages/BrandPage.tsx"), /<ProductRail /);
+  assert.match(source("pages/BrandPage.tsx"), /className="product-grid compact-product-grid"/);
   assert.match(source("pages/CompanySetupPage.tsx"), /id="storefront-display"[\s\S]*show_bulk_pricing[\s\S]*whatsapp_enquiry_enabled[\s\S]*corner_style/);
   assert.match(source("components/Header.tsx"), /applyCornerStyle\(storefrontDisplay\(/);
 });

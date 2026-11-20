@@ -2553,9 +2553,10 @@ html[data-busy] body::before {
 }
 
 /* Horizontal product rows. */
-.product-rail { position: relative; }
+.product-rail { position: relative; --rail-gap: 12px; }
 .product-rail-track {
-  display: grid; grid-auto-flow: column; grid-auto-columns: clamp(180px, 19vw, 236px); gap: 12px;
+  /* Column width always leaves part of the next card visible so shoppers can tell the row scrolls. */
+  display: grid; grid-auto-flow: column; grid-auto-columns: clamp(176px, calc((100% - 4 * var(--rail-gap)) / 4.35), 236px); gap: var(--rail-gap);
   overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 2px;
   padding: 6px 2px 12px; scrollbar-width: thin;
 }
@@ -2572,7 +2573,26 @@ html[data-busy] body::before {
 .product-rail-arrow.next { right: -16px; }
 .product-rail-arrow[hidden] { display: none; }
 @media (hover: none) { .product-rail-arrow { display: none; } }
+/* Fade the edge that has more cards behind it. */
+.product-rail[data-more-next] .product-rail-track { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); }
+.product-rail[data-more-previous] .product-rail-track { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent); }
+.product-rail[data-more-previous][data-more-next] .product-rail-track { -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+.brand-rail .product-rail-track { grid-auto-columns: clamp(160px, calc((100% - 5 * var(--rail-gap)) / 5.35), 220px); }
+.brand-rail .brand-card { min-height: 0; padding: 12px 12px 14px; gap: 4px; }
+.brand-rail .logo-box { height: 86px; }
+.brand-rail .logo-box img { max-height: 66px; }
+.brand-rail .brand-card strong { font-size: 20px; line-height: 1.15; }
+.brand-rail .brand-card span { font-size: 11px; }
+.brand-rail .brand-card em { padding-top: 10px; }
+.brand-rail .brand-card:hover { transform: translateY(-3px); }
 .product-rail-group + .product-rail-group { margin-top: 18px; }
+/* Category and brand pages list every product in wrapping rows instead of a scroller. */
+.product-section .product-grid.compact-product-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.compact-product-grid .product-card .product-image, .product-section .compact-product-grid .product-card .product-image { height: 150px; padding: 8px; }
+@media (max-width: 520px) {
+  .product-section .product-grid.compact-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .compact-product-grid .product-card .product-image, .product-section .compact-product-grid .product-card .product-image { height: 125px; }
+}
 .product-rail-heading { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 16px; }
 .product-rail-heading span { font-size: 11px; font-weight: 400; color: var(--site-muted); }
 .product-section { padding-top: 48px; padding-bottom: 52px; }
@@ -2595,7 +2615,13 @@ html[data-busy] body::before {
 .section-heading.compact-heading > p:last-child { font-size: 12.5px; line-height: 1.4; margin: 0; }
 .compact-heading + .bulk-pricing { margin: 0 0 12px; }
 @media (max-width: 520px) {
-  .product-rail-track { grid-auto-columns: minmax(156px, 47%); gap: 10px; }
+  .product-rail { --rail-gap: 10px; --rail-bleed: 8vw; }
+  .product-section .product-rail { --rail-bleed: 7vw; }
+  .home-section, .brands-section, .product-section { overflow-x: clip; }
+  /* Full-bleed on phones: rows run to the screen edge so two cards fit with a peek of the third. */
+  .product-rail-track { margin-inline: calc(-1 * var(--rail-bleed)); padding-inline: var(--rail-bleed); scroll-padding-inline: var(--rail-bleed); }
+  .product-rail-track, .brand-rail .product-rail-track { grid-auto-columns: calc((100vw - var(--rail-bleed) - 2 * var(--rail-gap)) / 2.2); }
+  .product-rail[data-more-next] .product-rail-track, .product-rail[data-more-previous] .product-rail-track { -webkit-mask-image: none; mask-image: none; }
   .product-rail-track .product-card .product-image, .product-section .product-rail-track .product-card .product-image { height: 125px; }
   .product-card .product-body h3, .product-section .product-card .product-body h3 { font-size: 15.5px; }
 }

@@ -4,10 +4,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 type ProductRailProps = {
   label: string;
   children: ReactNode;
+  className?: string;
 };
 
-/** A single horizontally scrolling row of product cards with previous/next controls. */
-export function ProductRail({ label, children }: ProductRailProps) {
+/** A single horizontally scrolling row of cards with previous/next controls and edge fades. */
+export function ProductRail({ label, children, className }: ProductRailProps) {
   const track = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ previous: false, next: false });
   useEffect(() => {
@@ -28,7 +29,11 @@ export function ProductRail({ label, children }: ProductRailProps) {
     if (element) element.scrollBy({ left: direction * Math.max(160, element.clientWidth * 0.85), behavior: "smooth" });
   };
   return (
-    <div className="product-rail">
+    <div
+      className={className ? `product-rail ${className}` : "product-rail"}
+      data-more-previous={edges.previous ? "true" : undefined}
+      data-more-next={edges.next ? "true" : undefined}
+    >
       <button type="button" className="product-rail-arrow previous" aria-label={`Scroll ${label} back`} hidden={!edges.previous} onClick={() => move(-1)}>
         <ChevronLeft size={20} aria-hidden="true" />
       </button>

@@ -164,7 +164,7 @@ export function HomePage() {
             </h2>
             <p>{text("brands_description")}</p>
           </div>
-          <div className="brand-grid">
+          <ProductRail label={text("brands_eyebrow") || "Brands"} className="brand-rail">
             {data.brands.map((brand) => (
               <Link className="brand-card" to={`/brand.html?brand=${encodeURIComponent(brand.code)}`} key={brand.code}>
                 <div className="logo-box">
@@ -175,7 +175,7 @@ export function HomePage() {
                 <em>{text("brand_action")}</em>
               </Link>
             ))}
-          </div>
+          </ProductRail>
         </section>
 
         <section className="corporate">
