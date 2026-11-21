@@ -10,7 +10,7 @@ function load(file, overrides) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, Error, require: name => overrides[name] || require(name) });
+  vm.runInNewContext(compiled, { exports, Error, require: name => name === "../components/PaginatedTableBody" ? { PaginatedTableBody: "tbody" } : overrides[name] || require(name) });
   return exports;
 }
 function nodes(tree) {

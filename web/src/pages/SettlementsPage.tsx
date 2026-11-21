@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -248,7 +249,7 @@ export function SettlementsPage() {
                   <th>They owe you</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {loading ? (
                   <tr>
                     <td colSpan={7}>Loading...</td>
@@ -270,7 +271,7 @@ export function SettlementsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -283,6 +284,7 @@ export function SettlementsPage() {
             <span className="catalog-count">{entries.length} entries</span>
           </div>
 
+          <p className="ops-copy-note">This timeline loads at most the newest 200 matching entries; older entries are not shown.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -295,7 +297,7 @@ export function SettlementsPage() {
                   <th>Notes</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {entries.length === 0 ? (
                   <tr>
                     <td colSpan={6}>No entries found.</td>
@@ -312,7 +314,7 @@ export function SettlementsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>

@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, ShoppingBag, Truck } from "lucide-react";
@@ -302,8 +303,8 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
           </form>
           <h3>Recent settlements</h3>
           <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Date</th><th>Courier</th><th>Reference</th><th>Expected</th><th>Received</th>          <th>Shortfall reason</th><th>Actions</th></tr></thead>
-                      <tbody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td>
-                        <td>{allowed ? <button type="button" className="ops-link-btn" onClick={() => setSettlementDelete(row)}>Delete</button> : null}</td></tr>) : <tr><td colSpan={7}>No settlements yet.</td></tr>}</tbody></table></div>
+                      <PaginatedTableBody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td>
+                        <td>{allowed ? <button type="button" className="ops-link-btn" onClick={() => setSettlementDelete(row)}>Delete</button> : null}</td></tr>) : <tr><td colSpan={7}>No settlements yet.</td></tr>}</PaginatedTableBody></table></div>
                     {settlementDelete ? <DeleteTransactionDialog kind="cod_settlement" id={settlementDelete.id} title={`COD settlement ${settlementDelete.settlement_reference}`}
                       onClose={() => setSettlementDelete(null)} onDone={async result => { setSettlementDelete(null); setMessage(`Deleted ${result.label}.`); await refreshCod(); }} /> : null}
         </>}
@@ -311,12 +312,12 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
       {!setupOnly && tab === "enquiries" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>WhatsApp enquiries</h2><p>Recorded when shoppers tap &quot;Ask this store&quot;. Convert to an invoice from Billing, then link it here.</p></div><button className="btn light" disabled={locked} onClick={() => void refreshEnquiries().catch(failure => setError(String(failure)))}>Refresh</button></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Ref</th><th>When</th><th>Product</th><th>Qty</th><th>Shopper</th><th>Store</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{enquiries.length ? enquiries.map(row => <tr key={row.id}><td>{row.reference}</td><td>{new Date(row.created_at).toLocaleString()}</td><td>{row.product_name}{row.variant_name ? ` - ${row.variant_name}` : ""}{row.message ? <small> · {row.message}</small> : null}</td><td>{Number(row.quantity)}</td><td>{row.shopper_name}<br /><a href={`https://wa.me/${row.shopper_phone.replace("+", "")}`} target="_blank" rel="noopener noreferrer">{row.shopper_phone}</a></td><td>{row.store_code || ""}</td><td>{row.status}</td>
+          <PaginatedTableBody>{enquiries.length ? enquiries.map(row => <tr key={row.id}><td>{row.reference}</td><td>{new Date(row.created_at).toLocaleString()}</td><td>{row.product_name}{row.variant_name ? ` - ${row.variant_name}` : ""}{row.message ? <small> · {row.message}</small> : null}</td><td>{Number(row.quantity)}</td><td>{row.shopper_name}<br /><a href={`https://wa.me/${row.shopper_phone.replace("+", "")}`} target="_blank" rel="noopener noreferrer">{row.shopper_phone}</a></td><td>{row.store_code || ""}</td><td>{row.status}</td>
             <td>{row.status !== "converted" ? <span className="shop-actions">
               {["quoted", "closed"].filter(value => value !== row.status).map(value => <button key={value} type="button" className="ops-link-btn" disabled={locked} onClick={() => void accountRequest(`/enquiries/${row.id}`, { method: "PUT", body: JSON.stringify({ status: value }) }, "checkout-admin").then(refreshEnquiries).catch(failure => setError(String(failure)))}>{value}</button>)}
               <input aria-label={`Invoice id for ${row.reference}`} placeholder="Invoice ID" value={enquiryInvoice[row.id] || ""} onChange={event => setEnquiryInvoice({ ...enquiryInvoice, [row.id]: event.target.value })} />
               <button type="button" className="ops-link-btn" disabled={locked || !enquiryInvoice[row.id]} onClick={() => void accountRequest(`/enquiries/${row.id}`, { method: "PUT", body: JSON.stringify({ status: "converted", invoice_id: enquiryInvoice[row.id] }) }, "checkout-admin").then(refreshEnquiries).catch(failure => setError(String(failure)))}>Mark converted</button>
-            </span> : <span>Invoice {row.invoice_id}</span>}</td></tr>) : <tr><td colSpan={8}>No enquiries.</td></tr>}</tbody></table></div>
+            </span> : <span>Invoice {row.invoice_id}</span>}</td></tr>) : <tr><td colSpan={8}>No enquiries.</td></tr>}</PaginatedTableBody></table></div>
       </section> : null}
     </div>
   </main>;

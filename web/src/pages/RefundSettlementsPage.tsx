@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -89,7 +90,7 @@ export function RefundSettlementsPage() {
             <option value="PENDING">Pending</option><option value="SETTLED">Settled</option></select></div></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
           <th>Document</th><th>Contact</th><th>Direction</th><th>Amount</th><th>Originally</th><th>{status === "PENDING" ? "Reversed on" : "Settled"}</th><th></th></tr></thead>
-          <tbody>{loading ? <tr><td colSpan={7}>Loading refunds...</td></tr> : !items.length ? <tr><td colSpan={7}>{status === "PENDING" ? "No refunds are waiting for confirmation." : "No settled refunds yet."}</td></tr> :
+          <PaginatedTableBody>{loading ? <tr><td colSpan={7}>Loading refunds...</td></tr> : !items.length ? <tr><td colSpan={7}>{status === "PENDING" ? "No refunds are waiting for confirmation." : "No settled refunds yet."}</td></tr> :
             items.map(item => <tr key={item.id}>
               <td><Link className="ops-inline-link" to={item.document_type === "invoice" ? "/portal/billing" : "/portal/purchases"}>{item.document_type === "invoice" ? "Invoice" : "Bill"} {item.document_number || ""}</Link>{item.reason ? <><br /><small>{item.reason}</small></> : null}</td>
               <td>{item.party_name || "-"}</td>
@@ -98,7 +99,7 @@ export function RefundSettlementsPage() {
               <td>{item.original_account_name || "-"} · {item.original_payment_mode || "-"}<br /><small>{item.paid_on}</small></td>
               <td>{status === "PENDING" ? item.reversal_date : <>{item.settled_on} · {item.account_name} · {item.payment_mode || "-"}{item.reference ? <><br /><small>Ref {item.reference}</small></> : null}</>}</td>
               <td>{item.status === "PENDING" ? <button type="button" className="ops-link-btn" onClick={() => open(item)}>Settle / change account</button> : null}</td>
-            </tr>)}</tbody></table></div>
+            </tr>)}</PaginatedTableBody></table></div>
       </article>
       {target ? <article className="ops-card" ref={formCard}>
         <div className="ops-card-head"><h2>Confirm refund · {money(target.amount)}</h2>

@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
@@ -62,7 +63,7 @@ const SUPPLY_STATES = [
 
 export function BillingPage() {
   const [cancelTarget, setCancelTarget] = useState<Invoice | null>(null);
-  const reconcilePageSize = 10;
+  const [reconcilePageSize, setReconcilePageSize] = useState(10);
   const [parties, setParties] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [company, setCompany] = useState<CompanySetup | null>(null);
@@ -82,6 +83,7 @@ export function BillingPage() {
   const [reconcileRuns, setReconcileRuns] = useState<InvoiceReconcileRun[]>([]);
   const [reconcileOffset, setReconcileOffset] = useState(0);
   const [reconcileTotal, setReconcileTotal] = useState(0);
+  const [reconcileLoading, setReconcileLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [invoiceLoading, setInvoiceLoading] = useState(true);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -162,12 +164,13 @@ export function BillingPage() {
 
   useEffect(() => {
     let active = true;
-    setReconcileError("");
+    setReconcileError(""); setReconcileLoading(true); setReconcileRuns([]);
     api.invoiceReconcileRuns(reconcilePageSize, reconcileOffset).then(result => {
       if (active) { setReconcileRuns(result.items); setReconcileTotal(result.total); }
-    }).catch(failure => { if (active) setReconcileError(failure instanceof Error ? failure.message : "Unable to load reconciliation history."); });
+    }).catch(failure => { if (active) setReconcileError(failure instanceof Error ? failure.message : "Unable to load reconciliation history."); })
+      .finally(() => { if (active) setReconcileLoading(false); });
     return () => { active = false; };
-  }, [reconcileOffset, refreshVersion]);
+  }, [reconcileOffset, reconcilePageSize, refreshVersion]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -489,7 +492,7 @@ export function BillingPage() {
           {quotationLoading ? <p role="status">Loading quotations...</p> : null}
           <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
             <th>Quotation #</th><th>Store</th><th>Date</th><th>Customer</th><th>Total</th><th>Actions</th>
-          </tr></thead><tbody>
+          </tr></thead><PaginatedTableBody>
             {quotations.length ? quotations.map(item => <tr key={item.id}>
               <td>{item.quotation_number}</td><td>{item.store_code}</td><td>{item.quotation_date}</td>
               <td>{item.document_data.bill_to.name}</td><td>{Number(item.document_data.total).toFixed(2)}</td>
@@ -497,7 +500,7 @@ export function BillingPage() {
                 onClick={() => void exportQuotation(item)} aria-label={`Download PDF for ${item.quotation_number}`}>
                 <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}</button></td>
             </tr>) : !quotationLoading && !quotationError ? <tr><td colSpan={6}>No quotations found.</td></tr> : null}
-          </tbody></table></div>
+          </PaginatedTableBody></table></div>
         </article>
 
         <article className="ops-card ops-list-card billing-invoices-card" aria-labelledby="billing-invoices-heading">
@@ -544,7 +547,7 @@ export function BillingPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {invoices.length === 0 ? (
                   <tr>
                     <td colSpan={9}>No invoices found.</td>
@@ -589,7 +592,7 @@ export function BillingPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           {cancelTarget ? <CancelDocumentDialog kind="invoice" id={cancelTarget.id} number={cancelTarget.invoice_number} paid={Number(cancelTarget.amount_received || 0)}
@@ -604,11 +607,12 @@ export function BillingPage() {
           </div>
 
           <div className="ops-list-tools">
+            <label>Rows per page <select value={reconcilePageSize} onChange={event => { setReconcilePageSize(Number(event.target.value)); setReconcileOffset(0); }}>{[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
             <button
               className="btn"
               type="button"
               onClick={() => setReconcileOffset((prev) => Math.max(prev - reconcilePageSize, 0))}
-              disabled={reconcileOffset === 0}
+              disabled={reconcileLoading || reconcileOffset === 0}
             >
               Prev
             </button>
@@ -616,7 +620,7 @@ export function BillingPage() {
               className="btn"
               type="button"
               onClick={() => setReconcileOffset((prev) => prev + reconcilePageSize)}
-              disabled={reconcileOffset + reconcileRuns.length >= reconcileTotal}
+              disabled={reconcileLoading || !!reconcileError || reconcileOffset + reconcileRuns.length >= reconcileTotal}
             >
               Next
             </button>
@@ -639,9 +643,9 @@ export function BillingPage() {
                 </tr>
               </thead>
               <tbody>
-                {reconcileRuns.length === 0 ? (
+                {reconcileLoading || reconcileError || reconcileRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={3}>No reconcile runs yet.</td>
+                    <td colSpan={3}>{reconcileLoading ? "Loading reconciliation history..." : reconcileError ? "Unable to load reconciliation history." : "No reconcile runs yet."}</td>
                   </tr>
                 ) : (
                   reconcileRuns.map((run) => (

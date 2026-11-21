@@ -549,6 +549,13 @@ deploying the API, because line resolution and the inventory list read it.
   line and the store holding the most of it as the source. The displayed source
   quantity is on-hand stock, including reservations; the server checks available
   stock when the transfer is submitted.
+- **Stock by store:** select the owned-stock value on a product to open its
+  store/warehouse and variant balances. Balances include reservations and are
+  restricted to accessible stores. The Stock History view currently loads only
+  the latest 50 movements.
+- **Record table pages:** page-size controls operate on rows already loaded by
+  the view. Some endpoints impose separate limits; paging those rows does not
+  retrieve older records.
 - **Reorder alerts** only appear when alerts are enabled on the product or
   variant and stock is at or below the reorder level. Entering a level in the
   editor turns alerts on and raises the target to at least the level; a level

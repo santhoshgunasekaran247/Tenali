@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
@@ -96,10 +97,10 @@ export function StoresPage() {
         </form></article>
       <article className="ops-card ops-list-card"><div className="ops-card-head"><h2>All stores</h2></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Code</th><th>Invoice ID</th><th>Name</th><th>Kind</th><th>Pickup</th><th>Fulfils from</th><th>State</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{stores.map(store => <tr key={store.id}><td>{store.code}{store.is_default ? <Star size={14} aria-label="Default store" /> : null}</td><td>{store.invoice_code}</td><td>{store.name}</td><td>{store.kind}</td><td>{store.allows_pickup ? "Yes" : ""}</td>
+          <PaginatedTableBody>{stores.map(store => <tr key={store.id}><td>{store.code}{store.is_default ? <Star size={14} aria-label="Default store" /> : null}</td><td>{store.invoice_code}</td><td>{store.name}</td><td>{store.kind}</td><td>{store.allows_pickup ? "Yes" : ""}</td>
             <td>{store.fulfilment_store_id ? stores.find(item => item.id === store.fulfilment_store_id)?.code : ""}</td><td>{store.state_code || ""}</td><td>{store.is_active ? "Active" : "Inactive"}</td>
             <td><button className="ops-link-btn" type="button" aria-label={`Edit ${store.code}`} onClick={() => { setEditing(store); setForm(storeInput(store)); }}><Pencil size={16} /></button>
-              {!store.is_default && store.holds_stock && store.is_active ? <button className="ops-link-btn" type="button" disabled={busy} onClick={() => void makeDefault(store)}>Make default</button> : null}</td></tr>)}</tbody></table></div>
+              {!store.is_default && store.holds_stock && store.is_active ? <button className="ops-link-btn" type="button" disabled={busy} onClick={() => void makeDefault(store)}>Make default</button> : null}</td></tr>)}</PaginatedTableBody></table></div>
         <p className="ops-copy-note">The default store receives documents posted without a store choice. Deactivating a store requires zero stock and no online store fulfilling from it.</p>
       </article>
     </section>

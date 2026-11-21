@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "./PaginatedTableBody";
 import { FloatingAlert } from "./Notifications";
 import { useEffect, useState } from "react";
 import { accountRequest, type Shopper } from "../features/shop";
@@ -50,10 +51,10 @@ export function OnlineCustomerLinks() {
     {loading ? <p role="status">Loading online customer accounts...</p> : null}
     {error ? <button className="ops-link-btn" type="button" disabled={loading} onClick={() => void load().catch(failure => setError(String(failure)))}>Retry</button> : null}
     <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Name</th><th>Email</th><th>Phone (unverified)</th><th>Counter link</th></tr></thead>
-      <tbody>{filtered.map(item =>
+      <PaginatedTableBody>{filtered.map(item =>
         <tr key={item.id}><td>{item.display_name}</td><td>{item.email}</td><td>{item.phone}</td><td>{item.customer_party_id ? "Linked" :
           <button className="ops-link-btn" type="button" disabled={busy||loading} onClick={() => { setSelected(item); setCustomer(""); setConfirmed(false); setError(""); }}>Link manually</button>}</td></tr>)}
-        {!loading&&!error&&!filtered.length?<tr><td colSpan={4}>{query?"No matching online customers.":"No online customer accounts yet."}</td></tr>:null}</tbody>
+        {!loading&&!error&&!filtered.length?<tr><td colSpan={4}>{query?"No matching online customers.":"No online customer accounts yet."}</td></tr>:null}</PaginatedTableBody>
     </table></div>
     {selected ? <fieldset disabled={busy}><legend>Link {selected.display_name} ({selected.email})</legend>
       <PartySelect parties={parties} value={customer} onChange={setCustomer} label="Counter customer" />

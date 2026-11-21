@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "./PaginatedTableBody";
 import { useState } from "react";
 import type { InventoryMissingSource, InventoryReconciliation } from "../types";
 
@@ -37,13 +38,13 @@ export function StockCheckPanel({ rows, missingSources, busy, onOpen, onAttribut
         <th title="Quantity currently stored as on hand">On hand</th>
         <th title="All stock added minus all stock removed">Expected from activity</th>
         <th title="On hand minus expected. Zero means the records match.">Difference</th><th>What to do</th></tr></thead>
-      <tbody>{visible.map(row => <tr key={`${row.store_id}:${row.product_id}:${row.variant_id || "base"}`}>
+      <PaginatedTableBody>{visible.map(row => <tr key={`${row.store_id}:${row.product_id}:${row.variant_id || "base"}`}>
         <td>{row.store_code}</td><td><button className="ops-link-btn" type="button" onClick={() => onOpen(row.product_id)}>{row.product_name}</button><small>{row.variant_name}</small></td>
         <td>{Number(row.balance_quantity)}</td><td>{Number(row.movement_quantity)}</td>
         <td>{Number(row.difference) > 0 ? "+" : ""}{Number(row.difference)}</td>
         <td>{Number(row.difference) !== 0 ? "Review stock history and compare it with a physical count." : "Quantities match."}
           {Number(row.missing_document_references) > 0 ? <small>{row.missing_document_references} source document(s) need investigation.</small> : null}</td>
-      </tr>)}</tbody></table></div> : null}
+      </tr>)}</PaginatedTableBody></table></div> : null}
     <details className="stock-check-help"><summary>How to read this check</summary>
       <ul><li><strong>On hand:</strong> the quantity the system currently says you own.</li>
         <li><strong>Expected from activity:</strong> opening adjustments, purchases and transfers in, minus sales and transfers out.</li>

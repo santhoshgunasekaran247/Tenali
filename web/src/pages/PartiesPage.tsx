@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -243,7 +244,7 @@ export function PartiesPage() {
                     <th>Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <PaginatedTableBody>
                   {items.map((party) => (
                     <tr key={party.id}>
                       <td>
@@ -268,7 +269,7 @@ export function PartiesPage() {
                       <td colSpan={5}>No contacts found.</td>
                     </tr>
                   )}
-                </tbody>
+                </PaginatedTableBody>
               </table>
             </div>
           </article>

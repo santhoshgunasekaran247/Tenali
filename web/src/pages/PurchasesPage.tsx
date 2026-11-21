@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -540,7 +541,7 @@ export function PurchasesPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {purchases.length === 0 ? (
                   <tr>
                     <td colSpan={11}>No purchases found.</td>
@@ -588,7 +589,7 @@ export function PurchasesPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
 
@@ -717,7 +718,7 @@ export function PurchasesPage() {
                       {canDelete ? <th>Actions</th> : null}
                     </tr>
                   </thead>
-                  <tbody>
+                  <PaginatedTableBody>
                     {paymentHistoryLoading ? (
                       <tr>
                         <td colSpan={5}>Loading payment history...</td>
@@ -738,7 +739,7 @@ export function PurchasesPage() {
                         </tr>
                       ))
                     )}
-                  </tbody>
+                  </PaginatedTableBody>
                 </table>
               </div>
             </div>

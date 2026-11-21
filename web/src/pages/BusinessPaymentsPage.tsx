@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
@@ -251,15 +252,16 @@ export function BusinessPaymentsPage() {
           <div className="ops-card-head"><h2>Recent Business Payments</h2>
             <button className="ops-link-btn" type="button" onClick={() => void load()} disabled={loading}>Refresh</button>
           </div>
+          <p className="ops-copy-note">This view loads at most the newest 100 business payments; older payments are not shown.</p>
           <div className="ops-table-wrap"><table className="ops-table">
             <thead><tr><th>Date</th><th>Account</th><th>Purpose</th><th>Reference</th><th>Amount</th><th>Status</th><th>Files</th></tr></thead>
-            <tbody>{payments.length ? payments.map((payment) => <tr key={payment.id}>
+            <PaginatedTableBody>{payments.length ? payments.map((payment) => <tr key={payment.id}>
               <td>{payment.transaction_date}</td><td>{payment.from_account_name || "-"}</td>
               <td>{payment.category?.replace("business_", "")}</td><td>{payment.reference || payment.description || "-"}</td>
               <td>{payment.amount.toFixed(2)}</td><td>{payment.is_reversed ? "Reversed" : "Posted"}</td>
               <td><button className="ops-link-btn" type="button" title="Receipts and bills" aria-label={`Attachments for payment ${payment.reference || payment.id}`}
                 onClick={() => setAttachmentTarget(payment)}><Paperclip size={16} aria-hidden="true" /></button></td>
-            </tr>) : <tr><td colSpan={7}>{loading ? "Loading..." : "No business payments found."}</td></tr>}</tbody>
+            </tr>) : <tr><td colSpan={7}>{loading ? "Loading..." : "No business payments found."}</td></tr>}</PaginatedTableBody>
           </table></div>
           {attachmentTarget ? <AttachmentManager key={attachmentTarget.id} entity="business_payment" recordId={attachmentTarget.id}
             title={attachmentTarget.reference || attachmentTarget.id} onClose={() => setAttachmentTarget(null)} /> : null}

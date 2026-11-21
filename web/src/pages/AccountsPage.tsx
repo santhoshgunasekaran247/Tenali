@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -546,7 +547,7 @@ export function AccountsPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {loading ? (
                   <tr>
                     <td colSpan={6}>Loading...</td>
@@ -584,7 +585,7 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -620,7 +621,7 @@ export function AccountsPage() {
                   <th>Last Date</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {tallyLoading ? (
                   <tr>
                     <td colSpan={8}>Loading tally...</td>
@@ -643,7 +644,7 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -705,7 +706,7 @@ export function AccountsPage() {
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {periodLocks.length === 0 ? (
                   <tr>
                     <td colSpan={5}>No active period locks.</td>
@@ -729,7 +730,7 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -931,7 +932,7 @@ export function AccountsPage() {
             </button>
           </div>
 
-          <p className="ops-copy-note">CSV export includes at most the newest 2,000 matching transactions and may be incomplete. Narrow the date range and verify the results.</p>
+          <p className="ops-copy-note">This view loads at most the newest 200 matching transactions. CSV export includes at most 2,000. Either may be incomplete; narrow the date range and verify the results.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -949,7 +950,7 @@ export function AccountsPage() {
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {transactions.length === 0 ? (
                   <tr>
                     <td colSpan={11}>No transactions yet.</td>
@@ -991,7 +992,7 @@ export function AccountsPage() {
                     );
                   })
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           {deleteTarget ? <DeleteTransactionDialog kind="account_transaction" id={deleteTarget.id}
@@ -1094,7 +1095,7 @@ export function AccountsPage() {
             </button>
           </div>
 
-          <p className="ops-copy-note">CSV export includes at most the newest 5,000 matching journal rows and may be incomplete. Narrow the date range and verify the results.</p>
+          <p className="ops-copy-note">This view loads at most the newest 3,000 matching journal rows; its summaries use those rows only. CSV export includes at most 5,000. Either may be incomplete; narrow the date range and verify the results.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -1107,7 +1108,7 @@ export function AccountsPage() {
                   <th>Net</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {journalBuckets.length === 0 ? (
                   <tr>
                     <td colSpan={6}>No summary rows.</td>
@@ -1124,7 +1125,7 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
 
@@ -1145,7 +1146,7 @@ export function AccountsPage() {
                   <th>Reference</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {journalEntries.length === 0 ? (
                   <tr>
                     <td colSpan={9}>No journal entries found.</td>
@@ -1165,7 +1166,7 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>

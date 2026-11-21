@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
@@ -113,14 +114,14 @@ export function MasterDataPage() {
         {loading ? <p role="status">Loading...</p> : null}
         <div className="ops-table-wrap"><table className="ops-table">
           <thead><tr><th>HSN / SAC</th><th>Description</th><th>GST %</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{filtered.length ? filtered.map((item) => <tr key={item.id}>
+          <PaginatedTableBody>{filtered.length ? filtered.map((item) => <tr key={item.id}>
             <td>{item.code}</td><td>{item.description}</td><td>{Number(item.gst_rate).toFixed(2)}</td>
             <td><span className={`ops-status-badge ${item.is_active ? "posted" : "reversed"}`}>{item.is_active ? "Active" : "Inactive"}</span></td>
             <td>
               <button className="ops-link-btn" type="button" disabled={saving} title={`Edit ${item.code}`} aria-label={`Edit ${item.code}`} onClick={() => edit(item)}><Pencil size={16} aria-hidden="true" /></button>
               <button className="ops-link-btn" type="button" disabled={saving} title={`${item.is_active ? "Deactivate" : "Reactivate"} ${item.code}`} aria-label={`${item.is_active ? "Deactivate" : "Reactivate"} ${item.code}`} onClick={() => void toggle(item)}><Power size={16} aria-hidden="true" /></button>
             </td>
-          </tr>) : <tr><td colSpan={5}>{loading ? "Loading..." : "No HSN / SAC codes found."}</td></tr>}</tbody>
+          </tr>) : <tr><td colSpan={5}>{loading ? "Loading..." : "No HSN / SAC codes found."}</td></tr>}</PaginatedTableBody>
         </table></div>
       </article>
     </section>

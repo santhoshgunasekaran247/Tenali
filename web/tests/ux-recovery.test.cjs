@@ -119,6 +119,7 @@ test("bad debt requires a reason and acknowledgement before submitting the selec
   };
   const mocks = {
     react, "../api": { api },
+    "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" },
     "react-router-dom": { useSearchParams: () => [new URLSearchParams()] },
     "../features/drafts": { useDraftState: (_key, initial) => [typeof initial === "function" ? initial() : initial, () => {}] },
     "../components/Notifications": { FloatingAlert: () => null },

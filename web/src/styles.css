@@ -1692,6 +1692,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--site-primary);
   border: 1px solid var(--site-border);
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+}
+.table-pagination select { width: auto; }
+
 .ops-table {
   width: 100%;
   border-collapse: collapse;

@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "./PaginatedTableBody";
 import { FormEvent, useEffect, useState } from "react";
 import { accountRequest } from "../features/shop";
 import { AI_LIMIT_FIELDS, type AIOverrides, type PlatformAIConfig, type PlatformWorkspace, type TenantLimits } from "../features/featureControls";
@@ -190,8 +191,8 @@ export function PlatformAISettings() {
     <section id="platform-ai-usage" hidden={section !== "usage"} className="settings-card">
       <h2>Usage</h2>
       <p className="social-caption">Current UTC month. Includes conservative reservations for calls with unconfirmed usage.</p>
-      {usage.length ? <div className="ops-table-wrap"><table><thead><tr><th>Tenant ID</th><th>Model</th><th>Requests</th><th>Tokens</th><th>Estimated USD</th><th>Unconfirmed</th></tr></thead><tbody>{usage.map(row =>
-        <tr key={`${row.company_id}:${row.model}`}><td>{row.company_id}</td><td>{row.model}</td><td>{row.requests}</td><td>{row.tokens}</td><td>{Number(row.cost).toFixed(4)}</td><td>{row.unconfirmed}</td></tr>)}</tbody></table></div> : <p>No AI usage recorded on this page.</p>}
+      {usage.length ? <div className="ops-table-wrap"><table><thead><tr><th>Tenant ID</th><th>Model</th><th>Requests</th><th>Tokens</th><th>Estimated USD</th><th>Unconfirmed</th></tr></thead><PaginatedTableBody>{usage.map(row =>
+        <tr key={`${row.company_id}:${row.model}`}><td>{row.company_id}</td><td>{row.model}</td><td>{row.requests}</td><td>{row.tokens}</td><td>{Number(row.cost).toFixed(4)}</td><td>{row.unconfirmed}</td></tr>)}</PaginatedTableBody></table></div> : <p>No AI usage recorded on this page.</p>}
       <div className="shop-actions"><button type="button" disabled={!usageOffset} onClick={() => setUsageOffset(Math.max(0, usageOffset - 50))}>Previous usage</button>
         <button type="button" disabled={usage.length < 50} onClick={() => setUsageOffset(usageOffset + 50)}>Next usage</button></div>
       <p className="social-caption">Configuration and entitlement changes are recorded in the existing platform audit. Private user conversations will not be available to platform administrators by default.</p>

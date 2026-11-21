@@ -1,3 +1,4 @@
+import { PaginatedTableBody } from "../components/PaginatedTableBody";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -583,7 +584,7 @@ export function ReceivablesPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {ledgerRows.length === 0 ? (
                   <tr>
                     <td colSpan={8}>No receivables found.</td>
@@ -623,7 +624,7 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -646,7 +647,7 @@ export function ReceivablesPage() {
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {reminders.length === 0 ? (
                   <tr>
                     <td colSpan={7}>No reminders due.</td>
@@ -701,7 +702,7 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>
@@ -769,7 +770,7 @@ export function ReceivablesPage() {
                   <th>Notes</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody>
                 {!historyForReceivableId ? (
                   <tr>
                     <td colSpan={5}>Use a History action to load entries.</td>
@@ -789,7 +790,7 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
         </article>

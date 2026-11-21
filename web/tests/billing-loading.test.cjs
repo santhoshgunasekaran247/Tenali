@@ -42,6 +42,7 @@ function mountBilling() {
   const component = () => null;
   const overrides = {
     react,
+    "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" },
     "react-router-dom": { Link: component },
     "lucide-react": { Download: component },
     "../components/TaxLinesEditor": { TaxLinesEditor: component, newTaxLine: () => ({ quantity: "1", rate: "0", gst_rate: "0" }) },
@@ -152,4 +153,9 @@ test("invoice filters and audit pagination fetch only their own data and ignore 
   assert.equal(requests.invoiceReconcileRuns[1].args[1], 10);
   assert.equal(requests.invoices.length, 2);
   assert.equal(requests.billingCustomers.length, 1);
+  const size = nodes(render()).find(node => node.type === "select" && nodes(node).some(child => child.type === "option" && child.props.value === 25));
+  size.props.onChange({ target: { value: "25" } });
+  render();
+  assert.equal(requests.invoiceReconcileRuns.length, 3);
+  assert.deepEqual(requests.invoiceReconcileRuns[2].args, [25, 0]);
 });

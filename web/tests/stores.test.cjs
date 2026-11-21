@@ -10,7 +10,7 @@ test("editing a store never submits immutable invoice IDs or other server-owned 
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports = {};
-  const mocks = { "../api": {}, "../features/drafts": {}, "../components/Notifications": {} };
+  const mocks = { "../api": {}, "../features/drafts": {}, "../components/Notifications": {}, "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" } };
   vm.runInNewContext(compiled, { exports, require: name => mocks[name] || require(name) });
   const payload = exports.storeInput({
     id: "store", company_id: "company", invoice_code: "01", holds_stock: true, is_default: true,
