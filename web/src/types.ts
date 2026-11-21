@@ -97,7 +97,7 @@ export type OperationsDashboard = {
   purchases: { bills: number; total: number; pending_receipts: number; quantity_to_receive: number } | null;
   sales: { invoices: number; total: number; top_items: { product_id: string; name: string; image_url: string | null; uom: string; quantity: number }[] } | null;
   outflow: { entries: number; total: number } | null;
-  trading_result: number | null;
+  cash_flow: { inflow: number; outflow: number; net: number } | null;
   receivables: { open: number; outstanding?: number; bad_debt: number; reminders_due: number } | null;
   borrowing_outstanding: number | null;
   refunds_pending?: RefundSummary | null;

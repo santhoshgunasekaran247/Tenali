@@ -89,6 +89,8 @@ def approve_cod(db: Session, company_id: str, order_id: str) -> dict:
     from app.services.inventory_service import InventoryService
     inventory = InventoryService(db, company_id)
     warehouse = str(get_store(db, company_id, str(order["store_id"]))["fulfilment_store_id"])
+    for product_id in sorted({str(item["product_id"]) for item in order["items"]}):
+        inventory._product(product_id, lock=True)
     for item in order["items"]:
         available = inventory.available_stock(warehouse, item["product_id"], item["variant_id"], str(order["id"]))
         if available < Decimal(str(item["quantity"])):

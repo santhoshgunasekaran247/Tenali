@@ -59,8 +59,8 @@ Render Environment settings, never in the static UI or the repository.
   original. Existing variant updates that omit the image leave it unchanged.
   Apply Alembic migration `061_variant_images` before deploying this version.
 - Inventory product and variant stock totals reflect only stores accessible to
-  the signed-in member. Storefront stock figures and checkout availability use
-  their own public and fulfilment-store rules.
+  the signed-in member. Storefront browsing does not promise availability:
+  checkout verifies unreserved stock at the selected fulfilment or pickup store.
 - Tenali AI displays verified record lookups as compact result cards: available
   totals and lookup warnings stay visible, while individual records can be
   expanded. Ledger entries show money direction and labelled transaction
@@ -68,12 +68,12 @@ Render Environment settings, never in the static UI or the repository.
   Bounded results may not contain a total; narrow the question when more
   records match.
 - The Operations Dashboard supports a month, a single day, or an inclusive
-  custom date range. Posted sales and purchase bills exclude cancelled records.
-  Estimated profit / loss is sales invoice totals minus purchase bill totals,
-  including tax; it is not accounting profit and does not account for cost of
-  goods sold, other expenses or inventory changes. Account outflow is gross
-  external account payments (excluding transfers); reversals are incoming
-  transactions and do not reduce it. Outflows are workspace-wide and are only
+  custom date range. Sales and purchase bills reflect documents not cancelled
+  by the end of the selected period. Net account cash flow is external money
+  in minus money out, excluding transfers; reversals appear on their transaction
+  dates. It includes loans, tax and other non-profit movements and is not
+  profit. Profit is unavailable without reliable cost of goods sold, inventory
+  valuation and other expenses. Cash flow and gross outflows are workspace-wide and are only
   shown with accounts access and access to all stores, with no store selected.
   Pending orders, inventory and receivables remain current all-date indicators.
 - Online checkout requires both the Add to Cart switch in Payments & Delivery

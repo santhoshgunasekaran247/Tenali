@@ -50,14 +50,12 @@ export function CartPage() {
     const unit = Number(price);
     const quantity = Number(drafts[cartItemKey(item)] ?? item.quantity);
     const minimum = product?.minimum_order_quantity || 1;
-    const stock = variant ? variant.stock_qty : product?.stock_qty;
     const unavailable = !product || (item.variant_id ? !variant : !enquiring && !!product.variants?.length);
     const problem = unavailable ? failures[item.product_id] || "This product or size / colour is no longer available. Remove it and choose again."
       : !Number.isInteger(quantity) || quantity < minimum || quantity > 100 ? `Choose ${minimum} to 100 whole units.`
-      // An enquiry may ask about items priced on request or out of stock; only an online purchase needs price and stock.
+      // Enquiries may include items priced on request.
       : enquiring ? ""
-      : !Number.isFinite(unit) || unit <= 0 ? "Contact the store for a quote; this item cannot be paid online."
-      : Number(stock) < quantity ? "There is not enough stock for this quantity. Reduce it or contact the store." : "";
+      : !Number.isFinite(unit) || unit <= 0 ? "Contact the store for a quote; this item cannot be paid online." : "";
     return { item, product, variant, unit, quantity, minimum, problem };
   });
   const units = rows.reduce((total, row) => total + (Number.isFinite(row.quantity) ? row.quantity : 0), 0);
@@ -73,7 +71,7 @@ export function CartPage() {
   };
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront) return <main className="loading">Open a workspace storefront to view its cart.</main>;
-  return <main className="shop-account-page shopping-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>{words.title}</h1><p>{storefront.company_name} · {cart.items.length} {cart.items.length === 1 ? "item" : "items"}{enquiring ? " · Enquiry, not an order" : ""}</p></header>
+  return <main className="shop-account-page shopping-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>{words.title}</h1><p>{storefront.company_name} · {cart.items.length} {cart.items.length === 1 ? "item" : "items"}{enquiring ? " · Enquiry, not an order" : ""}</p>{!enquiring ? <p>Availability is checked for your chosen fulfilment method at checkout.</p> : null}</header>
     <div className="shop-account-content">
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {!cart.items.length ? <section className="ops-card"><h2>Your {enquiring ? "enquiry list" : "cart"} is empty</h2><p>{enquiring ? "Add products and quantities, then send the whole list to the store in one WhatsApp message." : "Add products, choose quantities and pay for them together."}</p><Link className="btn" to="/">Browse products</Link></section>

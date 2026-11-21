@@ -40,7 +40,7 @@ class DashboardDatabase:
         if "jsonb_array_elements(i.document_data" in sql:
             return Result([])
         if "from account_transactions" in sql:
-            return Result({"entries": 2, "total": Decimal("50.00")})
+            return Result({"entries": 2, "outflow": Decimal("50.00"), "inflow": Decimal("80.00")})
         raise AssertionError(f"Unexpected query: {sql}")
 
 
@@ -48,12 +48,14 @@ class DashboardPeriodTests(unittest.TestCase):
     def test_inclusive_range_and_result(self):
         db = DashboardDatabase(["billing", "purchases", "accounts"])
         summary = DashboardService(db).summary(from_date=date(2026, 1, 31), to_date=date(2026, 2, 1))
-        self.assertEqual(summary["trading_result"], Decimal("-25.00"))
+        self.assertEqual(summary["cash_flow"], {"inflow": Decimal("80.00"), "outflow": Decimal("50.00"), "net": Decimal("30.00")})
         self.assertEqual(summary["outflow"]["total"], Decimal("50.00"))
         for _, params in db.queries:
             self.assertEqual(params["start"], date(2026, 1, 31))
             self.assertEqual(params["end"], date(2026, 2, 1))
         self.assertTrue(all("<=:end" in query for query, _ in db.queries))
+        for query, _ in db.queries[:3]:
+            self.assertIn("cancelled_at>:end", query)
         outflow_sql = db.queries[-1][0]
         self.assertIn("from_account_id is not null and to_account_id is null", outflow_sql)
 
@@ -62,7 +64,7 @@ class DashboardPeriodTests(unittest.TestCase):
         summary = DashboardService(db).summary(date(2024, 2, 1))
         self.assertEqual(summary["to_date"], date(2024, 2, 29))
         self.assertIsNone(summary["outflow"])
-        self.assertIsNone(summary["trading_result"])
+        self.assertIsNone(summary["cash_flow"])
         self.assertEqual(len(db.queries), 2)
 
     def test_invalid_periods_are_rejected(self):
@@ -89,7 +91,7 @@ class DashboardPeriodTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["from_date"], "2026-01-10")
         self.assertEqual(response.json()["to_date"], "2026-01-10")
-        self.assertEqual(response.json()["trading_result"], -25)
+        self.assertEqual(response.json()["cash_flow"], {"inflow": 80, "outflow": 50, "net": 30})
         self.assertEqual(client.get("/dashboard", params={"from_date": "2026-01-10"}).status_code, 422)
         self.assertEqual(client.get("/dashboard", params={"from_date": "not-a-date", "to_date": "2026-01-10"}).status_code, 422)
 

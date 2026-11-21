@@ -35,8 +35,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
   const mode = cartMode(checkoutEnabled, phone);
   const words = cartWords(mode);
   const listEnabled = mode !== "none";
-  // Enquiries can ask about items that are out of stock or priced on request, so only the 100-unit cap applies.
-  const maximum = mode === "enquiry" ? 100 : Math.max(minimum, Math.min(100, Number(product.stock_qty) || 100));
+  const maximum = 100;
   const inCart = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
   const [quantity, setQuantity] = useState(String(minimum));
   const [cartDraft, setCartDraft] = useState<string | null>(null);
@@ -58,8 +57,6 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
       if (!Number.isInteger(count) || count < floor || count > 100) throw new Error(`Choose ${floor} to 100 whole units.`);
       if (mode === "buy") {
         if (!(Number(current.selling_price_display) > 0)) throw new Error("Contact the store for a quote on this item.");
-        const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === null);
-        if (Number(current.stock_qty) < count + (existing?.quantity || 0)) throw new Error("Not enough stock. Review your cart or contact the store.");
       }
       cart.add({ product_id: product.id, variant_id: null, quantity: count });
       setMessage(`${count} ${count === 1 ? "unit" : "units"} ${mode === "enquiry" ? "added to enquiry" : "added"}`);
@@ -84,11 +81,6 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
           {product.sru_special && <span className="badge-special">{text("special_badge","Special")}</span>}
         </div>
         {gallery.length > 1 && <span className="photo-count">{text("photos_count","{count} photos",{count:gallery.length})}</span>}
-        {!!product.stock_qty && (
-          <span className={product.stock_qty > 0 ? "stock-badge stock-in" : "stock-badge stock-out"}>
-            {product.stock_qty > 0 ? text("in_stock","In stock") : text("out_of_stock","Out of stock")}
-          </span>
-        )}
       </div>
       <div className="product-body">
         <div className="product-type">{product.brand_name || product.category_title}</div>
@@ -98,6 +90,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
           {product.mrp_display && product.mrp_display !== product.selling_price_display ? <s className="mrp"><span className="sr-only">{text("mrp_label","MRP")} </span>{moneyLabel(product.mrp_display)}</s> : null}
         </div>
         {product.description ? <p title={product.description}>{product.description}</p> : null}
+        {mode === "buy" ? <small>Availability checked at checkout</small> : null}
         <div className="product-card-actions" onClick={event => event.stopPropagation()}>
         {listEnabled && !hasVariants ? inCart ? <div className="product-card-incart">
             <span>{words.inList}</span>

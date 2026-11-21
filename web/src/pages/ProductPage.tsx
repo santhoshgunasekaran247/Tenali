@@ -75,17 +75,15 @@ export function ProductPage() {
   };
   const dimensionLabel = (key: string) => key === "size" ? text("size_label","Size") : key === "colour" ? text("colour_label","Colour") : key;
   const optionChip = (option: VariantOption | undefined, label: string, pressed: boolean, key: string) => {
-    const unavailable = !!option && option.stock != null && option.stock < product.minimum_order_quantity;
-    return <button key={key} type="button" className={`variant-chip${unavailable ? " is-unavailable" : ""}`} aria-pressed={pressed}
-      disabled={!option} title={unavailable ? text("variant_out_of_stock","Out of stock - enquire with the store") : undefined}
+    return <button key={key} type="button" className="variant-chip" aria-pressed={pressed}
+      disabled={!option}
       onClick={() => { if (option && !pressed) chooseVariant(option.id); }}>{label}</button>;
   };
   const details = {...product,...variant,attributes:{...product.attributes,...variant?.attributes}};
   const mrp = variant ? variant.mrp_display : product.mrp_display;
   const price = variant ? variant.selling_price_display : product.selling_price_display;
   const minimum = product.minimum_order_quantity;
-  const stock = variant ? variant.stock_qty : product.stock_qty;
-  const canPurchase = Number(price) > 0 && Number(stock) >= minimum;
+  const canPurchase = Number(price) > 0;
   const inCart = cart.items.find(item => item.product_id === product.id && item.variant_id === (variantId || null))?.quantity || 0;
   const specs = [[text("item_name_label","Item name"),details.item_name],[text("size_label","Size"),details.size],[text("colour_label","Colour"),details.colour],[text("weight_label","Weight (kg)"),details.weight],[text("height_label","Height (cm)"),details.height],[text("width_label","Width (cm)"),details.width],[text("length_label","Length (cm)"),details.length],...Object.entries(details.attributes||{})].filter(([,value])=>value!=null&&value!=="");
   const enquiryLink = whatsappPhone ? whatsappLink(whatsappPhone, `${product.name}${variant?` - ${variant.variant_name}`:""}`, product.brand_name || company?.nickname || company?.company_name || "", text("whatsapp_message","Hello, I am interested in {product_name} from {brand_name}. Please share pricing, availability and bulk options.")) : "";
@@ -97,11 +95,6 @@ export function ProductPage() {
     try {
       const count = Number(quantity);
       if (!Number.isInteger(count) || count < minimum || count > 100) throw new Error(`Choose ${minimum} to 100 whole units.`);
-      if (!enquiring) {
-        if (count > Number(stock)) throw new Error("Not enough stock for this quantity. Choose fewer units or contact the store.");
-        const existing = cart.items.find(item => item.product_id === product.id && item.variant_id === (variantId || null));
-        if (count + (existing?.quantity || 0) > Number(stock)) throw new Error("Your cart already contains this item. Reduce the quantity or update it in your cart.");
-      }
       cart.add({ product_id: product.id, variant_id: variantId || null, quantity: count });
       setCartMessage(`${count} ${count === 1 ? "unit" : "units"} ${words.added}.`);
     } catch (failure) { setCartError(String(failure)); }
@@ -163,13 +156,13 @@ export function ProductPage() {
                 <s>{moneyLabel(mrp)}</s>
               </div>:null}
               {details.discount_percent!=null&&Number(details.discount_percent)>0?<span className="detail-discount">{Number(details.discount_percent)}{text("discount_suffix","% off MRP")}</span>:null}
-              <span className={`detail-stock ${canPurchase ? "in-stock" : "out-of-stock"}`}>{canPurchase ? text("in_stock","In stock") : Number(price) > 0 ? text("out_of_stock","Out of stock") : text("on_request","On request")}</span>
+              <span className="detail-stock">{canPurchase ? mode === "buy" ? "Availability checked at checkout" : "Contact store for availability" : text("on_request","On request")}</span>
             </div>
             {display.show_bulk_pricing ? <BulkPricingNote heading={text("bulk_heading","Better pricing on bulk orders.")} description={text("bulk_description","WhatsApp us for best price and price matching with comparable offers.")} /> : null}
             <div className="detail-actions">
               {mode === "buy" || mode === "enquiry" ? <div className={`product-cart-controls${enquiring ? " is-enquiry" : ""}`}>
                 <div className="product-cart-row">
-                  <QuantityStepper label="Quantity" value={quantity} min={minimum} max={enquiring ? 100 : Math.max(minimum, Math.min(100, Number(stock) || 0))}
+                  <QuantityStepper label="Quantity" value={quantity} min={minimum} max={100}
                     onChange={value => { setQuantity(value); setCartMessage(""); }} />
                   {needsVariant || !canAdd ? null : enquiring
                     ? <button className="btn enquiry-add" type="button" onClick={addToCart}><ListPlus size={16} aria-hidden="true" />{text("add_to_enquiry", words.add)}</button>
@@ -180,7 +173,7 @@ export function ProductPage() {
                 </div>
                 <p className="product-cart-minimum">
                   {needsVariant ? <strong>{text("checkout_variant_required","Select a size / colour to add to your cart.")} </strong>
-                    : !canAdd ? <strong>{Number(price) > 0 ? "Not enough stock for the minimum order. Contact the store. " : "Contact the store for a quote on this item. "}</strong> : null}
+                    : !canAdd ? <strong>Contact the store for a quote on this item. </strong> : null}
                   {enquiring ? <>{text("enquiry_hint","Collect products and quantities, then send them in one WhatsApp message. No payment is taken.")} </> : null}
                   Min. {minimum} {minimum === 1 ? "unit" : "units"}{product.variants?.length ? " per size / colour" : ""}
                   {inCart ? <> · {words.inList}: <strong>{inCart}</strong></> : null} · <Link to="/cart">{words.view}</Link>

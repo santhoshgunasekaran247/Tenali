@@ -12,6 +12,29 @@ from test_tenancy import TenantDatabaseCase
 
 
 class OperationsDashboardTests(TenantDatabaseCase):
+    def test_documents_cancelled_later_remain_in_historical_period(self):
+        tenant, _, _ = self.register("dashboard-cancellation")
+        company = tenant["user"]["company_id"]
+        with self.factory() as db:
+            store = db.execute(text("select id from stores where company_id=:company and is_default"), {"company": company}).scalar_one()
+            party = db.execute(text("insert into parties(company_id,party_type,legal_name) values(:company,'customer_vendor','Party') returning id"),
+                               {"company": company}).scalar_one()
+            db.execute(text("""insert into invoices(company_id,store_id,customer_party_id,invoice_number,invoice_date,
+                subtotal,gst_total,total,status,cancelled_at) values(:company,:store,:party,'HIST','2031-01-10',100,0,100,'CANCELLED','2031-02-01')"""),
+                {"company": company, "store": store, "party": party})
+            db.execute(text("""insert into purchases(company_id,store_id,vendor_party_id,purchase_date,subtotal,gst_total,total,
+                amount_paid,payment_status,receipt_status,receipt_type,status,cancelled_at,line_items)
+                values(:company,:store,:party,'2031-01-10',60,0,60,0,'UNPAID','PENDING','PRODUCT','CANCELLED','2031-02-01','[]')"""),
+                {"company": company, "store": store, "party": party})
+            db.commit()
+        january = self.client.get("/dashboard", params={"month": "2031-01-01"}).json()
+        self.assertEqual(january["sales"]["total"], 100)
+        self.assertEqual(january["purchases"]["total"], 60)
+        self.assertEqual(january["purchases"]["pending_receipts"], 0)
+        through_cancellation = self.client.get("/dashboard", params={"from_date": "2031-01-01", "to_date": "2031-02-01"}).json()
+        self.assertEqual(through_cancellation["sales"]["total"], 0)
+        self.assertEqual(through_cancellation["purchases"]["total"], 0)
+
     def test_scoped_totals_statuses_months_and_module_permissions(self):
         tenant, cookies, _ = self.register("dashboard")
         company = tenant["user"]["company_id"]
@@ -94,7 +117,7 @@ class OperationsDashboardTests(TenantDatabaseCase):
         summary = response.json()
         self.assertEqual(summary["sales"]["invoices"], 2)
         self.assertEqual(summary["sales"]["total"], 550)
-        self.assertEqual(summary["trading_result"], 510)
+        self.assertEqual(summary["cash_flow"], {"inflow": 40, "outflow": 40, "net": 0})
         self.assertEqual(summary["outflow"], {"entries": 1, "total": 40})
         self.assertEqual((summary["from_date"], summary["to_date"]), ("2026-01-01", "2026-01-31"))
         self.assertEqual(summary["sales"]["top_items"][0]["quantity"], 5.5)
@@ -118,7 +141,7 @@ class OperationsDashboardTests(TenantDatabaseCase):
         daily = self.client.get("/dashboard", params={"from_date": "2026-01-10", "to_date": "2026-01-10"}).json()
         self.assertEqual(daily["sales"]["total"], 0)
         self.assertEqual(daily["purchases"]["total"], 40)
-        self.assertEqual(daily["trading_result"], -40)
+        self.assertEqual(daily["cash_flow"], {"inflow": 0, "outflow": 40, "net": -40})
         self.assertEqual(daily["outflow"]["total"], 40)
         custom = self.client.get("/dashboard", params={"from_date": "2026-01-31", "to_date": "2026-02-01"}).json()
         self.assertEqual(custom["sales"]["total"], 10300)
@@ -144,7 +167,7 @@ class OperationsDashboardTests(TenantDatabaseCase):
             self.assertIsNone(scoped["sales"])
             self.assertIsNone(scoped["orders"])
             self.assertIsNone(scoped["purchases"])
-            self.assertIsNone(scoped["trading_result"])
+            self.assertIsNone(scoped["cash_flow"])
             self.assertIsNone(scoped["outflow"])
             self.assertIsNone(scoped["receivables"])
             with self.assertRaises(HTTPException) as failure:
@@ -161,7 +184,7 @@ class OperationsDashboardTests(TenantDatabaseCase):
             identity["store_ids"] = None
             self.assertEqual(DashboardService(db).summary(date(2026, 1, 1))["outflow"]["total"], 40)
             identity["modules"] = ["billing"]
-            self.assertIsNone(DashboardService(db).summary(date(2026, 1, 1))["trading_result"])
+            self.assertIsNone(DashboardService(db).summary(date(2026, 1, 1))["cash_flow"])
             identity["role"] = "admin"
             self.assertIsNotNone(DashboardService(db).summary()["sales"])
         other, _, _ = self.register("dashboard-other")

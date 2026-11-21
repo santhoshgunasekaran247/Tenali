@@ -42,7 +42,7 @@ class DashboardService:
 
         result = {"month": start.replace(day=1), "from_date": start, "to_date": end, "store_id": store_id,
                   "inventory": None, "orders": None, "purchases": None, "sales": None, "outflow": None,
-                  "trading_result": None, "receivables": None, "borrowing_outstanding": None, "refunds_pending": None}
+                  "cash_flow": None, "receivables": None, "borrowing_outstanding": None, "refunds_pending": None}
         if permitted("inventory"):
             result["inventory"] = one(f"""
                 with quantities as (
@@ -97,18 +97,21 @@ class DashboardService:
             result["orders"] = {**activity, "channels": [dict(row) for row in channels]}
         if permitted("purchases"):
             result["purchases"] = one(f"""
-                select count(*) filter(where purchase_date>=:start and purchase_date<=:end) bills,
-                    coalesce(sum(total) filter(where purchase_date>=:start and purchase_date<=:end),0) total,
-                    count(*) filter(where receipt_status='PENDING' and receipt_type<>'SERVICE') pending_receipts,
+                select count(*) filter(where purchase_date>=:start and purchase_date<=:end
+                        and (status='POSTED' or (status='CANCELLED' and cancelled_at>:end))) bills,
+                    coalesce(sum(total) filter(where purchase_date>=:start and purchase_date<=:end
+                        and (status='POSTED' or (status='CANCELLED' and cancelled_at>:end))),0) total,
+                    count(*) filter(where status='POSTED' and receipt_status='PENDING' and receipt_type<>'SERVICE') pending_receipts,
                     coalesce(sum((select coalesce(sum((line->>'quantity')::numeric),0)
                         from jsonb_array_elements(line_items) line))
-                        filter(where receipt_status='PENDING' and receipt_type<>'SERVICE'),0) quantity_to_receive
-                from purchases where {scope} and status='POSTED'
+                        filter(where status='POSTED' and receipt_status='PENDING' and receipt_type<>'SERVICE'),0) quantity_to_receive
+                from purchases where {scope}
             """)
         if permitted("billing"):
             sales = one(f"""
                 select count(*) invoices,coalesce(sum(total),0) total
-                from invoices where {scope} and status='POSTED' and invoice_date>=:start and invoice_date<=:end
+                from invoices where {scope} and (status='POSTED' or (status='CANCELLED' and cancelled_at>:end))
+                    and invoice_date>=:start and invoice_date<=:end
             """)
             top = self.db.execute(text(f"""
                 select line->>'product_id' product_id,
@@ -118,21 +121,24 @@ class DashboardService:
                 left join products p on p.id::text=line->>'product_id' and p.company_id=i.company_id
                 where i.company_id=:company
                     and (cast(:stores as uuid[]) is null or i.store_id=any(cast(:stores as uuid[])))
-                    and i.status='POSTED' and i.invoice_date>=:start and i.invoice_date<=:end
+                    and (i.status='POSTED' or (i.status='CANCELLED' and i.cancelled_at>:end))
+                    and i.invoice_date>=:start and i.invoice_date<=:end
                     and nullif(line->>'product_id','') is not null
                 group by line->>'product_id',coalesce(p.name,line->>'description'),p.image_url,p.uom
                 order by quantity desc,name,product_id limit 5
             """), params).mappings().all()
             result["sales"] = {**sales, "top_items": [dict(row) for row in top]}
-        if result["sales"] is not None and result["purchases"] is not None:
-            result["trading_result"] = result["sales"]["total"] - result["purchases"]["total"]
         if permitted("accounts") and stores is None:
-            result["outflow"] = one("""
-                select count(*) entries, coalesce(sum(amount),0) total
+            cash_flow = one("""
+                select count(*) filter(where from_account_id is not null and to_account_id is null) entries,
+                    coalesce(sum(amount) filter(where from_account_id is not null and to_account_id is null),0) outflow,
+                    coalesce(sum(amount) filter(where from_account_id is null and to_account_id is not null),0) inflow
                 from account_transactions where company_id=:company
-                    and from_account_id is not null and to_account_id is null
                     and transaction_date>=:start and transaction_date<=:end
             """)
+            result["outflow"] = {"entries": cash_flow["entries"], "total": cash_flow["outflow"]}
+            result["cash_flow"] = {"inflow": cash_flow["inflow"], "outflow": cash_flow["outflow"],
+                                   "net": cash_flow["inflow"] - cash_flow["outflow"]}
         if permitted("receivables"):
             result["receivables"] = one(f"""
                 select count(*) filter(where status in ('UNPAID','PARTIAL')) open,

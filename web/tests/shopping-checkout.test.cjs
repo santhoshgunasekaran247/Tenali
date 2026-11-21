@@ -74,10 +74,9 @@ test("quick add uses the minimum quantity and offers a cart link without navigat
   assert.match(renderToStaticMarkup(h.render()), /2 units added.*View cart/);
 });
 
-test("variant selection is required and existing cart stock is respected", async () => {
+test("variant selection and valid price are required", async () => {
   for (const [current, existing, navigation] of [
     [{ variants: [{ id: "size" }] }, [], true],
-    [{ stock_qty: 1 }, [], false],
     [{ selling_price_display: "" }, [], false],
     [{ minimum_order_quantity: 101, stock_qty: 200 }, [], false],
   ]) {
@@ -92,14 +91,25 @@ test("variant selection is required and existing cart stock is respected", async
 
 const stepper = tree => find(tree, node => node.type?.name === "QuantityStepper" || (typeof node.type === "function" && "onChange" in (node.props || {})));
 
-test("cards add the chosen quantity with plus/minus, bounded by the minimum and stock", async () => {
+test("cards add the chosen quantity without treating aggregate stock as checkout availability", async () => {
   const h = cardHarness({ stock_qty: 6 });
   const chooser = stepper(h.render());
-  assert.deepEqual([chooser.props.value, chooser.props.min, chooser.props.max], ["2", 2, 6]);
+  assert.deepEqual([chooser.props.value, chooser.props.min, chooser.props.max], ["2", 2, 100]);
   chooser.props.onChange("5");
   find(h.render(), node => node.type === "button").props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.added[0].quantity, 5);
+});
+
+test("catalogue cards do not claim aggregate stock is available at checkout", async () => {
+  for (const stock_qty of [0, 10]) {
+    const h = cardHarness({ stock_qty });
+    const html = renderToStaticMarkup(h.render());
+    assert.doesNotMatch(html, />In stock</);
+    find(h.render(), node => node.type === "button").props.onClick();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.added.length, 1);
+  }
 });
 
 test("items already in the cart show an in-cart stepper that updates or removes the cart line", () => {
@@ -112,7 +122,7 @@ test("items already in the cart show an in-cart stepper that updates or removes 
   control.props.onChange("4");
   assert.deepEqual(h.updated, [["product", 4]]);
   control.props.onChange("9");
-  assert.deepEqual(h.updated, [["product", 4]]);
+  assert.deepEqual(h.updated, [["product", 4], ["product", 9]]);
   control.props.onBelowMin();
   assert.deepEqual(h.removed, ["product"]);
 });
@@ -206,7 +216,7 @@ test("product page variant picker groups size/colour and keeps the parent select
 
   const page = readFileSync(path.join(__dirname, "..", "src", "pages", "ProductPage.tsx"), "utf8");
   assert.doesNotMatch(page, /<select value=\{variantId\}/);
-  assert.match(page, /className=\{`variant-chip/);
+  assert.match(page, /className="variant-chip"/);
   assert.match(page, /aria-pressed=\{pressed\}/);
   assert.match(page, /setSearch\(next, \{ replace: true \}\)/);
 });

@@ -12,7 +12,7 @@ function render(period, storeId = "") {
     from_date: "2026-01-01", to_date: "2026-01-31", inventory: null, orders: null,
     sales: { total: 100, invoices: 1, top_items: [] },
     purchases: { total: 125, bills: 1, pending_receipts: 0, quantity_to_receive: 0 },
-    trading_result: -25, outflow: storeId ? null : { total: 50, entries: 2 },
+    cash_flow: storeId ? null : { inflow: 80, outflow: 50, net: 30 }, outflow: storeId ? null : { total: 50, entries: 2 },
     receivables: null, borrowing_outstanding: null, refunds_pending: null,
   };
   const values = [period, "2026-01", "2026-01-10", "2026-01-01", "2026-01-31", storeId, [], data, "", false, 0];
@@ -36,10 +36,11 @@ test("daily, monthly and custom views show the financial overview and limitation
   for (const [period, label] of [["day", "Daily"], ["month", "Monthly"], ["range", "Date range"]]) {
     const html = render(period);
     assert.match(html, new RegExp(`${label} financial overview`));
-    assert.match(html, /Estimated profit \/ loss/);
-    assert.match(html, /Not accounting profit/);
+    assert.match(html, /Net account cash flow/);
+    assert.match(html, /It is not profit/);
+    assert.doesNotMatch(html, /Estimated profit \/ loss/);
     assert.match(html, /Account outflow/);
-    assert.match(html, /excluding transfers/);
+    assert.match(html, /Transfers between accounts are excluded/);
   }
   assert.match(render("range"), /From date/);
   assert.match(render("range"), /To date/);

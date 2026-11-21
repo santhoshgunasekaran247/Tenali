@@ -45,6 +45,7 @@ export function NearbyStores({ productId, variantId, productName, quantity, chec
   const label = { available: "In stock", few_left: "Few left", unavailable: "Not in stock" };
   return <section className="ops-card nearby-stores" aria-labelledby="nearby-heading">
     <h2 id="nearby-heading"><MapPin size={18} aria-hidden="true" /> Pick up at a nearby store</h2>
+    <p>Availability can change; stock is checked again at checkout.</p>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     <div className="nearby-locate"><button type="button" className="btn light nearby-locate-btn" onClick={locate}><LocateFixed size={15} aria-hidden="true" /> Use my location</button>
       <span className="nearby-or">or</span>
@@ -55,7 +56,7 @@ export function NearbyStores({ productId, variantId, productName, quantity, chec
         <span className={`availability-${store.availability}`}>{label[store.availability]}</span>
         {store.address ? <small>{store.address}</small> : null}
         <span className="shop-actions">
-          {checkoutEnabled && store.availability !== "unavailable" ? <Link className="btn light" to={`/cart?pickup=${store.store_id}`}>Reserve for pickup</Link> : null}
+          {checkoutEnabled && store.availability !== "unavailable" ? <Link className="btn light" to={`/cart?pickup=${store.store_id}`}>Continue with pickup</Link> : null}
           {whatsappEnabled && (store.whatsapp_number || defaultNumber) ? <button type="button" className="btn light" onClick={() => { setEnquiry(previous => ({ ...previous, store: store.store_id })); setEnquiryOpen(true); }}><MessageCircle size={16} aria-hidden="true" /> Ask this store</button> : null}
         </span>
       </li>)}</ul>}

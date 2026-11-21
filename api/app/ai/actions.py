@@ -43,6 +43,7 @@ class TransactionDeleteDraft(DeleteDraft):
 
 class CollectionDraft(ReceivablePaymentCreate):
     amount: PositiveMoney
+    idempotency_key: str
 
 
 class PartyCreateDraft(PartyCreate):
