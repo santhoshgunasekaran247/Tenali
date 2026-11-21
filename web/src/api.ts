@@ -121,7 +121,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  dashboard: (month: string, storeId: string) => request<OperationsDashboard>(`/dashboard?${new URLSearchParams({ month: `${month}-01`, ...(storeId ? { store_id: storeId } : {}) })}`),
+  dashboard: (period: { month: string } | { from_date: string; to_date: string }, storeId: string) => request<OperationsDashboard>(`/dashboard?${new URLSearchParams({ ...period, ...(storeId ? { store_id: storeId } : {}) })}`),
   publicCompany:()=>request<import('./features/auth').PublicCompany>('/catalog/company'),
   auditEvents:(from:string,to:string,offset:number)=>request<{items:Array<{id:string;action:string;entity_type:string;entity_id:string;created_at:string;old_value:unknown;new_value:unknown;actor_user_id?:string|null}>}>(`/reports/audit-events?offset=${offset}${from?`&from_date=${from}`:''}${to?`&to_date=${to}`:''}`),
   reconcileGstr2b:(csv_text:string,from_date:string,to_date:string)=>request<{items:Array<Record<string,string>>;counts:Record<string,number>;limitations:string[];working_paper_only:boolean}>("/reports/gstr2b/reconcile",{method:"POST",body:JSON.stringify({csv_text,from_date,to_date})}),

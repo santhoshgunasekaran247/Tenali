@@ -75,3 +75,40 @@ export function readableMessage(content: string): string {
   return [parts.length > 1 ? "" : parts[0], ...rendered].join("\n\n")
     .split(NO_DRAFT).join("").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+export type MessageSection =
+  | { kind: "text"; content: string }
+  | { kind: "records"; title: string; total: string | null; rows: string[]; notes: string[] };
+
+/** Separate verified record blocks without inferring totals or changing their contents. */
+export function messageSections(content: string): MessageSection[] {
+  const sections: MessageSection[] = [];
+  let text: string[] = [];
+  let record: Extract<MessageSection, { kind: "records" }> | null = null;
+  const flushText = () => {
+    const value = text.join("\n").trim();
+    if (value) sections.push({ kind: "text", content: value });
+    text = [];
+  };
+  const flushRecord = () => {
+    if (record) sections.push(record);
+    record = null;
+  };
+  for (const line of content.split("\n")) {
+    if (line.startsWith(`${MARKER} — `)) {
+      flushText();
+      flushRecord();
+      record = { kind: "records", title: line.slice(`${MARKER} — `.length), total: null, rows: [], notes: [] };
+    } else if (record) {
+      if (line === "• No matching records.") record.notes.push("No matching records.");
+      else if (line.startsWith("• ")) record.rows.push(line.slice(2));
+      else if (/^Total(?: [^:]+)?: .+$/.test(line) && !record.total) record.total = line;
+      else if (line.trim()) record.notes.push(line);
+    } else {
+      text.push(line);
+    }
+  }
+  flushText();
+  flushRecord();
+  return sections;
+}

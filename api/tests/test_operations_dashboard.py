@@ -21,6 +21,20 @@ class OperationsDashboardTests(TenantDatabaseCase):
                 values(:company,'SECOND','Second shop','offline',true,'33') returning id"""), {"company": company}).scalar_one()
             party = db.execute(text("""insert into parties(company_id,party_type,legal_name)
                 values(:company,'customer_vendor','Dashboard party') returning id"""), {"company": company}).scalar_one()
+            account = db.execute(text("""insert into accounts(company_id,nickname,account_type,is_company_account)
+                values(:company,'Dashboard cash','cash',true) returning id"""), {"company": company}).scalar_one()
+            other_account = db.execute(text("""insert into accounts(company_id,nickname,account_type,is_company_account)
+                values(:company,'Dashboard bank','bank',true) returning id"""), {"company": company}).scalar_one()
+            original = db.execute(text("""insert into account_transactions(company_id,from_account_id,amount,transaction_date)
+                values(:company,:account,40,'2026-01-10') returning id"""), {"company": company, "account": account}).scalar_one()
+            db.execute(text("""insert into account_transactions(company_id,to_account_id,amount,transaction_date,reversal_of_transaction_id)
+                values(:company,:account,40,'2026-01-11',:original)"""),
+                {"company": company, "account": account, "original": original})
+            db.execute(text("""insert into account_transactions(company_id,from_account_id,to_account_id,amount,transaction_date)
+                values(:company,:account,:other,500,'2026-01-10')"""),
+                {"company": company, "account": account, "other": other_account})
+            db.execute(text("""insert into account_transactions(company_id,from_account_id,amount,transaction_date)
+                values(:company,:account,60,'2026-02-01')"""), {"company": company, "account": account})
             product = db.execute(text("""insert into products(company_id,portal_product_id,name,uom,is_active,reorder_enabled,reorder_level)
                 values(:company,:code,'Dashboard product','pcs',true,true,5) returning id"""),
                 {"company": company, "code": str(uuid4())}).scalar_one()
@@ -80,6 +94,9 @@ class OperationsDashboardTests(TenantDatabaseCase):
         summary = response.json()
         self.assertEqual(summary["sales"]["invoices"], 2)
         self.assertEqual(summary["sales"]["total"], 550)
+        self.assertEqual(summary["trading_result"], 510)
+        self.assertEqual(summary["outflow"], {"entries": 1, "total": 40})
+        self.assertEqual((summary["from_date"], summary["to_date"]), ("2026-01-01", "2026-01-31"))
         self.assertEqual(summary["sales"]["top_items"][0]["quantity"], 5.5)
         self.assertEqual(summary["inventory"]["quantity_in_hand"], 11.5)
         self.assertEqual(summary["inventory"]["low_stock_items"], 0)
@@ -97,6 +114,22 @@ class OperationsDashboardTests(TenantDatabaseCase):
         self.assertEqual(scoped["inventory"]["low_stock_items"], 1)
         self.assertEqual(scoped["purchases"]["quantity_to_receive"], 4.5)
         self.assertIsNone(scoped["borrowing_outstanding"])
+        self.assertIsNone(scoped["outflow"])
+        daily = self.client.get("/dashboard", params={"from_date": "2026-01-10", "to_date": "2026-01-10"}).json()
+        self.assertEqual(daily["sales"]["total"], 0)
+        self.assertEqual(daily["purchases"]["total"], 40)
+        self.assertEqual(daily["trading_result"], -40)
+        self.assertEqual(daily["outflow"]["total"], 40)
+        custom = self.client.get("/dashboard", params={"from_date": "2026-01-31", "to_date": "2026-02-01"}).json()
+        self.assertEqual(custom["sales"]["total"], 10300)
+        self.assertEqual(custom["outflow"]["total"], 60)
+        for invalid in [
+            {"from_date": "2026-01-01"},
+            {"to_date": "2026-01-01"},
+            {"from_date": "2026-02-01", "to_date": "2026-01-01"},
+            {"month": "2026-01-01", "from_date": "2026-01-01", "to_date": "2026-01-31"},
+        ]:
+            self.assertEqual(self.client.get("/dashboard", params=invalid).status_code, 422)
         bulk = self.client.get("/dashboard", params={"month": "2026-03-01"}).json()
         self.assertEqual(bulk["sales"]["invoices"], 501)
         self.assertEqual(bulk["sales"]["total"], 5.01)
@@ -111,6 +144,8 @@ class OperationsDashboardTests(TenantDatabaseCase):
             self.assertIsNone(scoped["sales"])
             self.assertIsNone(scoped["orders"])
             self.assertIsNone(scoped["purchases"])
+            self.assertIsNone(scoped["trading_result"])
+            self.assertIsNone(scoped["outflow"])
             self.assertIsNone(scoped["receivables"])
             with self.assertRaises(HTTPException) as failure:
                 DashboardService(db).summary(store_id=str(second))
@@ -121,6 +156,12 @@ class OperationsDashboardTests(TenantDatabaseCase):
             self.assertEqual(empty["inventory"]["low_stock_items"], 0)
             identity["modules"] = ["orders"]
             self.assertIsNone(DashboardService(db).summary()["orders"])
+            identity["modules"] = ["accounts"]
+            self.assertIsNone(DashboardService(db).summary()["outflow"])
+            identity["store_ids"] = None
+            self.assertEqual(DashboardService(db).summary(date(2026, 1, 1))["outflow"]["total"], 40)
+            identity["modules"] = ["billing"]
+            self.assertIsNone(DashboardService(db).summary(date(2026, 1, 1))["trading_result"])
             identity["role"] = "admin"
             self.assertIsNotNone(DashboardService(db).summary()["sales"])
         other, _, _ = self.register("dashboard-other")

@@ -86,6 +86,8 @@ export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active" | "featur
 export type AttachmentEntity = "purchase" | "business_payment";
 export type OperationsDashboard = {
   month: string;
+  from_date: string;
+  to_date: string;
   store_id: string | null;
   inventory: { total_products: number; active_products: number; categories: number; quantity_in_hand: number; low_stock_items: number } | null;
   orders: {
@@ -94,6 +96,8 @@ export type OperationsDashboard = {
   } | null;
   purchases: { bills: number; total: number; pending_receipts: number; quantity_to_receive: number } | null;
   sales: { invoices: number; total: number; top_items: { product_id: string; name: string; image_url: string | null; uom: string; quantity: number }[] } | null;
+  outflow: { entries: number; total: number } | null;
+  trading_result: number | null;
   receivables: { open: number; outstanding?: number; bad_debt: number; reminders_due: number } | null;
   borrowing_outstanding: number | null;
   refunds_pending?: RefundSummary | null;

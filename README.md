@@ -53,6 +53,19 @@ Render Environment settings, never in the static UI or the repository.
 
 ## Inventory and customers
 
+- Tenali AI displays verified record lookups as compact result cards: available
+  totals and lookup warnings stay visible, while individual records can be
+  expanded. Bounded results may not contain a total; narrow the question when
+  more records match.
+- The Operations Dashboard supports a month, a single day, or an inclusive
+  custom date range. Posted sales and purchase bills exclude cancelled records.
+  Estimated profit / loss is sales invoice totals minus purchase bill totals,
+  including tax; it is not accounting profit and does not account for cost of
+  goods sold, other expenses or inventory changes. Account outflow is gross
+  external account payments (excluding transfers); reversals are incoming
+  transactions and do not reduce it. Outflows are workspace-wide and are only
+  shown with accounts access and access to all stores, with no store selected.
+  Pending orders, inventory and receivables remain current all-date indicators.
 - Online checkout requires both the Add to Cart switch in Payments & Delivery
   Setup and an active Online store linked to an active stock-holding warehouse
   or shop in Stores. The setup status and public availability use the same

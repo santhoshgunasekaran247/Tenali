@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -15,11 +15,17 @@ class DashboardService:
         self.db = db
         self.identity = db.info["tenant_context"]
 
-    def summary(self, month: date | None = None, store_id: str | None = None) -> dict:
-        start = month or date.today().replace(day=1)
-        if start.day != 1 or start.year == 9999:
-            raise HTTPException(422, "Choose the first day of a supported month")
-        end = date(start.year + (start.month == 12), start.month % 12 + 1, 1)
+    def summary(self, month: date | None = None, store_id: str | None = None,
+                from_date: date | None = None, to_date: date | None = None) -> dict:
+        if from_date is not None or to_date is not None:
+            if month is not None or from_date is None or to_date is None or from_date > to_date:
+                raise HTTPException(422, "Choose a valid date range without a reporting month")
+            start, end = from_date, to_date
+        else:
+            start = month or date.today().replace(day=1)
+            if start.day != 1 or start.year == 9999:
+                raise HTTPException(422, "Choose the first day of a supported month")
+            end = date(start.year + (start.month == 12), start.month % 12 + 1, 1) - timedelta(days=1)
         company = str(self.identity["company_id"])
         stores = allowed_stores(self.identity)
         if store_id:
@@ -34,8 +40,9 @@ class DashboardService:
         def one(query):
             return dict(self.db.execute(text(query), params).mappings().one())
 
-        result = {"month": start, "store_id": store_id, "inventory": None, "orders": None, "purchases": None,
-                  "sales": None, "receivables": None, "borrowing_outstanding": None, "refunds_pending": None}
+        result = {"month": start.replace(day=1), "from_date": start, "to_date": end, "store_id": store_id,
+                  "inventory": None, "orders": None, "purchases": None, "sales": None, "outflow": None,
+                  "trading_result": None, "receivables": None, "borrowing_outstanding": None, "refunds_pending": None}
         if permitted("inventory"):
             result["inventory"] = one(f"""
                 with quantities as (
@@ -84,14 +91,14 @@ class DashboardService:
                         or (expires_at<=now() and status in ('awaiting_payment','cod_requested','confirmed'))) closed,
                     count(*) filter(where status='fulfilment_review') needs_review,
                     count(*) filter(where status='ready_for_pickup') ready_for_pickup
-                from shop_orders where {scope} and created_at>=:start and created_at<:end
+                from shop_orders where {scope} and created_at>=:start and created_at<cast(:end as date)+interval '1 day'
                 group by channel order by channel
             """), params).mappings().all()
             result["orders"] = {**activity, "channels": [dict(row) for row in channels]}
         if permitted("purchases"):
             result["purchases"] = one(f"""
-                select count(*) filter(where purchase_date>=:start and purchase_date<:end) bills,
-                    coalesce(sum(total) filter(where purchase_date>=:start and purchase_date<:end),0) total,
+                select count(*) filter(where purchase_date>=:start and purchase_date<=:end) bills,
+                    coalesce(sum(total) filter(where purchase_date>=:start and purchase_date<=:end),0) total,
                     count(*) filter(where receipt_status='PENDING' and receipt_type<>'SERVICE') pending_receipts,
                     coalesce(sum((select coalesce(sum((line->>'quantity')::numeric),0)
                         from jsonb_array_elements(line_items) line))
@@ -101,7 +108,7 @@ class DashboardService:
         if permitted("billing"):
             sales = one(f"""
                 select count(*) invoices,coalesce(sum(total),0) total
-                from invoices where {scope} and status='POSTED' and invoice_date>=:start and invoice_date<:end
+                from invoices where {scope} and status='POSTED' and invoice_date>=:start and invoice_date<=:end
             """)
             top = self.db.execute(text(f"""
                 select line->>'product_id' product_id,
@@ -111,12 +118,21 @@ class DashboardService:
                 left join products p on p.id::text=line->>'product_id' and p.company_id=i.company_id
                 where i.company_id=:company
                     and (cast(:stores as uuid[]) is null or i.store_id=any(cast(:stores as uuid[])))
-                    and i.status='POSTED' and i.invoice_date>=:start and i.invoice_date<:end
+                    and i.status='POSTED' and i.invoice_date>=:start and i.invoice_date<=:end
                     and nullif(line->>'product_id','') is not null
                 group by line->>'product_id',coalesce(p.name,line->>'description'),p.image_url,p.uom
                 order by quantity desc,name,product_id limit 5
             """), params).mappings().all()
             result["sales"] = {**sales, "top_items": [dict(row) for row in top]}
+        if result["sales"] is not None and result["purchases"] is not None:
+            result["trading_result"] = result["sales"]["total"] - result["purchases"]["total"]
+        if permitted("accounts") and stores is None:
+            result["outflow"] = one("""
+                select count(*) entries, coalesce(sum(amount),0) total
+                from account_transactions where company_id=:company
+                    and from_account_id is not null and to_account_id is null
+                    and transaction_date>=:start and transaction_date<=:end
+            """)
         if permitted("receivables"):
             result["receivables"] = one(f"""
                 select count(*) filter(where status in ('UNPAID','PARTIAL')) open,

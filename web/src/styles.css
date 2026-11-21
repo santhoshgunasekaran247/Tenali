@@ -959,6 +959,18 @@ body {
 .ai-message p { white-space: pre-wrap; margin: 8px 0 0; }
 .ai-message-user { background: var(--site-background); margin-left: 12%; }
 .ai-message-assistant { margin-right: 8%; border: none; }
+.ai-answer { display: grid; gap: 12px; }
+.ai-answer > p { margin: 0; line-height: 1.65; }
+.ai-record-result { min-width: 0; padding: 16px; border: 1px solid var(--site-border); border-radius: 12px; background: var(--site-surface); }
+.ai-record-heading { display: grid; gap: 4px; }
+.ai-record-heading span { color: var(--site-muted); font-size: 12px; }
+.ai-record-heading strong { font-size: 15px; }
+.ai-record-total { margin-top: 12px; font-size: 20px; font-weight: 700; }
+.ai-record-result .ai-record-note { margin: 10px 0 0; color: var(--site-muted); font-size: 13px; line-height: 1.5; }
+.ai-record-details { margin-top: 12px; }
+.ai-record-details summary { color: var(--site-primary); font-size: 13px; font-weight: 600; cursor: pointer; }
+.ai-record-details summary:focus-visible { outline: 2px solid var(--site-primary); outline-offset: 3px; }
+.ai-record-details ul { display: grid; gap: 10px; margin: 12px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
 .ai-message-status { font-size: 12px; color: var(--site-muted); }
 .ai-message-form { border: 1px solid var(--site-border); border-radius: 8px; padding: 10px; gap: 4px; background: var(--site-surface); }
 .ai-message-form textarea { width: 100%; resize: vertical; border: 0; background: transparent; padding: 8px; font: inherit; }
@@ -2432,7 +2444,8 @@ footer strong {
 .dashboard-top-item strong { font-size: 23px; }
 .dashboard-top-item small { font-size: 12px; color: #718096; font-weight: 400; }
 .dashboard-totals { display: flex; flex-wrap: wrap; gap: 20px; }
-.dashboard-totals a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 0; text-decoration: none; }
+.dashboard-totals a, .dashboard-total { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 0; text-decoration: none; }
+.dashboard-financial-summary { margin-bottom: 20px; }
 .dashboard-totals span { font-size: 13px; }
 .dashboard-totals strong { font-size: 25px; color: #087cbd; }
 .dashboard-totals small { color: #718096; }

@@ -276,7 +276,7 @@ export function TenaliAIPage() {
           <div className="ai-message-list" aria-live="polite">
             {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe an operation, or ask how to use Tenali. For example: How do I create a quotation? Where do I add a product?</p> : messages.map(message =>
               <article key={message.id} aria-label={message.role === "user" ? "Your message" : "Assistant reply"} className={`ai-message ai-message-${message.role}`}>
-                <p>{message.role === "assistant" ? <AssistantMessage content={readableMessage(message.content)} /> : message.content}</p>{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
+                {message.role === "assistant" ? <AssistantMessage content={readableMessage(message.content)} /> : <p>{message.content}</p>}{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
             {busy && submission ? <p role="status">Waiting for a reply. Your message reference is preserved for recovery.</p> : null}
             <div ref={messageEnd} />
           </div>
