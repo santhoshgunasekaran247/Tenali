@@ -56,3 +56,30 @@ test("ordinary replies, links and old stored results remain readable", () => {
   assert.match(legacy, /Accounts \(1\)/);
   assert.match(legacy, /Main: current balance ₹1,000.00/);
 });
+
+test("ledger entries explain money direction and display readable labelled details", () => {
+  const html = render("From your Tenali records — Transactions (3)\n" +
+    "• amount ₹17,920.00 · from account name Main Account · direction outflow · payment mode bank · category purchase_payment · transaction date 14 Nov 2026 · source type purchase_payment\n" +
+    "• amount ₹10,000.00 · to account name Main Account · direction inflow · category borrow_settlement · transaction date 14 Nov 2026 · source type borrowing · reversed\n" +
+    "• amount ₹500.00 · from account name Main Account · to account name Savings · direction transfer · source type reversal\n" +
+    "Total amount: ₹28,420.00");
+  assert.match(html, /₹17,920.00<\/strong><span>Money out/);
+  assert.match(html, /₹10,000.00<\/strong><span>Money in/);
+  assert.match(html, /₹500.00<\/strong><span>Transfer/);
+  assert.match(html, /<dt>From account<\/dt><dd>Main Account<\/dd>/);
+  assert.match(html, /<dt>Category<\/dt><dd>purchase payment<\/dd>/);
+  assert.match(html, /<dt>Source<\/dt><dd>borrowing<\/dd>/);
+  assert.match(html, /<dt>Status<\/dt><dd>Reversed<\/dd>/);
+  assert.match(html, /<dt>Source<\/dt><dd>reversal<\/dd>/);
+  assert.doesNotMatch(html, /Total amount: ₹28,420.00|purchase_payment|borrow_settlement/);
+  assert.match(html, /not a sales or cash-flow total/);
+});
+
+test("legacy ledger rows are formatted and ambiguous rows are never discarded", () => {
+  const legacy = render('Verified Tenali lookup (read only):\n{"capability":"transactions","items":[{"amount":"17920.00","from_account_name":"Main Account","direction":"OUTFLOW","category":"purchase_payment","transaction_date":"2026-11-14"}],"more_matches":false}');
+  assert.match(legacy, /₹17,920.00<\/strong><span>Money out/);
+  assert.match(legacy, /<dt>Date<\/dt><dd>14 Nov 2026<\/dd>/);
+  const ambiguous = "amount ₹100.00 · direction outflow · unexpected field value";
+  assert.match(render(`From your Tenali records — Transactions (1)\n• ${ambiguous}`), /unexpected field value/);
+  assert.doesNotMatch(render(`From your Tenali records — Transactions (1)\n• ${ambiguous}`), /ai-ledger-item/);
+});

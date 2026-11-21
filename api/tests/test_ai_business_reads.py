@@ -206,6 +206,16 @@ class TolerantReadUnitTests(unittest.TestCase):
         self.assertLessEqual(len(bounded), 640)
         self.assertIn("Showing the first few only", bounded)
 
+    def test_ledger_rows_do_not_sum_inflows_outflows_or_transfers(self):
+        from app.ai.capabilities import readable_lookup
+        rows = [{"amount": Decimal("100"), "direction": "INFLOW"},
+                {"amount": Decimal("40"), "direction": "OUTFLOW"},
+                {"amount": Decimal("20"), "direction": "TRANSFER"}]
+        for capability in ("transactions", "account_journal", "business_payments"):
+            result = readable_lookup({**found(capability, *rows), "query": "", "fallback_note": ""}, 2000)
+            self.assertNotIn("Total amount:", result)
+            self.assertIn("amount ₹100.00", result)
+
     def test_descriptive_words_become_filters_only_after_the_literal_search_finds_nothing(self):
         from app.ai.capabilities import execute_read, interpret_lookup
         today = date(2026, 11, 14)  # Saturday

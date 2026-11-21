@@ -80,6 +80,40 @@ export type MessageSection =
   | { kind: "text"; content: string }
   | { kind: "records"; title: string; total: string | null; rows: string[]; notes: string[] };
 
+export type LedgerRow = { amount: string; direction: string; fields: { label: string; value: string }[] };
+
+const ledgerHeadings = /^(Transactions|Business payments|Account entries)(?: matching “.*”)? \(\d+\+?\)$/;
+const ledgerFields: Record<string, string> = {
+  "from account name": "From account", "to account name": "To account",
+  "payment mode": "Payment method", "category": "Category",
+  "transaction date": "Date", "source type": "Source",
+};
+
+/** Older replies contain plain-text rows. Leave ambiguous rows untouched rather than guess. */
+export function ledgerRow(title: string, value: string): LedgerRow | null {
+  if (!ledgerHeadings.test(title)) return null;
+  const parts = value.split(" · ");
+  const parsed: Record<string, string> = {};
+  const names = ["amount", "direction", ...Object.keys(ledgerFields)];
+  for (const part of parts) {
+    if (part === "reversed") {
+      if (parsed.reversed) return null;
+      parsed.reversed = "Yes";
+      continue;
+    }
+    const name = names.find(key => part.startsWith(`${key} `));
+    if (!name || parsed[name]) return null;
+    parsed[name] = part.slice(name.length + 1);
+  }
+  const directions: Record<string, string> = { inflow: "Money in", outflow: "Money out", transfer: "Transfer" };
+  if (!parsed.amount || !directions[parsed.direction]) return null;
+  const fields = Object.entries(ledgerFields).flatMap(([key, displayLabel]) =>
+    parsed[key] ? [{ label: displayLabel, value: key === "category" || key === "source type" || key === "payment mode"
+      ? parsed[key].replace(/_/g, " ") : parsed[key] }] : []);
+  if (parsed.reversed) fields.push({ label: "Status", value: "Reversed" });
+  return { amount: parsed.amount, direction: directions[parsed.direction], fields };
+}
+
 /** Separate verified record blocks without inferring totals or changing their contents. */
 export function messageSections(content: string): MessageSection[] {
   const sections: MessageSection[] = [];
@@ -102,7 +136,11 @@ export function messageSections(content: string): MessageSection[] {
     } else if (record) {
       if (line === "• No matching records.") record.notes.push("No matching records.");
       else if (line.startsWith("• ")) record.rows.push(line.slice(2));
-      else if (/^Total(?: [^:]+)?: .+$/.test(line) && !record.total) record.total = line;
+      else if (/^Total(?: [^:]+)?: .+$/.test(line) && !record.total) {
+        if (ledgerHeadings.test(record.title) && line.startsWith("Total amount:")) {
+          record.notes.push("A combined transaction amount is not a sales or cash-flow total.");
+        } else record.total = line;
+      }
       else if (line.trim()) record.notes.push(line);
     } else {
       text.push(line);

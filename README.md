@@ -55,8 +55,10 @@ Render Environment settings, never in the static UI or the repository.
 
 - Tenali AI displays verified record lookups as compact result cards: available
   totals and lookup warnings stay visible, while individual records can be
-  expanded. Bounded results may not contain a total; narrow the question when
-  more records match.
+  expanded. Ledger entries show money direction and labelled transaction
+  details; they do not combine inflows, outflows and transfers into a total.
+  Bounded results may not contain a total; narrow the question when more
+  records match.
 - The Operations Dashboard supports a month, a single day, or an inclusive
   custom date range. Posted sales and purchase bills exclude cancelled records.
   Estimated profit / loss is sales invoice totals minus purchase bill totals,

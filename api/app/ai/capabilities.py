@@ -511,7 +511,9 @@ def readable_lookup(result, budget: int) -> str:
     heading += f" ({count}{'+' if result.get('more_matches') else ''})"
     lines = [readable_row(row) for row in result["items"]] or ["• No matching records."]
     footer = [result["fallback_note"]] if result.get("fallback_note") else []
-    if count > 1 and not result.get("more_matches"):
+    if count > 1 and not result.get("more_matches") and result["capability"] not in {
+        "transactions", "business_payments", "account_journal"
+    }:
         # Complete (non-truncated) result sets can be summed exactly.
         for key in ("current_balance", "total", "balance_amount", "amount", "stock_qty", "balance_quantity"):
             values = [row.get(key) for row in result["items"]]
