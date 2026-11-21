@@ -425,6 +425,9 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
   const [workflows, setWorkflows] = useState<OperationWorkflow[]>([]);
   const startRequest = useRef<{ signature: string; key: string } | null>(null);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [offset, setOffset] = useState(0);
+  const [loadingHistory, setLoadingHistory] = useState(true), [historyError, setHistoryError] = useState("");
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const loadedView = useRef("");
   const history = async () => {
     const [draftHistory, workflowHistory] = await Promise.all([ai.drafts(conversationId, offset), ai.workflows(conversationId, offset)]);
     const ids = [...new Set(workflowHistory.items.filter(workflow => workflow.status === "active")
@@ -434,12 +437,15 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
   };
   useEffect(() => {
     let active = true;
-    setDrafts([]); setWorkflows([]);
+    const view = `${conversationId}:${offset}`;
+    if (loadedView.current !== view) { setDrafts([]); setWorkflows([]); loadedView.current = view; }
+    setLoadingHistory(true); setHistoryError("");
     void Promise.all([history(), aiEnabled ? ai.actions() : Promise.resolve({ items: [] })])
-      .then(([loaded, policies]) => { if (active) { setDrafts(loaded.drafts); setWorkflows(loaded.workflows); setActions(policies.items); setError(""); } })
-      .catch(failure => { if (active) setError(String(failure)); });
+      .then(([loaded, policies]) => { if (active) { setDrafts(loaded.drafts); setWorkflows(loaded.workflows); setActions(policies.items); } })
+      .catch(failure => { if (active) setHistoryError(String(failure)); })
+      .finally(() => { if (active) setLoadingHistory(false); });
     return () => { active = false; };
-  }, [conversationId, refreshKey, aiEnabled, offset]);
+  }, [conversationId, refreshKey, aiEnabled, offset, historyRetry]);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); setError("");
     try {
@@ -465,7 +471,10 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
     startRequest.current = null;
   });
   const owned = new Set(workflows.flatMap(workflow => workflow.plan.steps.flatMap(step => step.draft_id ? [step.draft_id] : [])));
+  const historyBlocked = busy || loadingHistory || !!historyError;
   return <section className="ai-drafts" aria-label="Private operational drafts">
+    {loadingHistory ? <p role="status">Loading saved workflows and drafts...</p> : null}
+    {historyError ? <div role="alert"><p>Could not load saved workflows and drafts: {historyError}. Previously loaded results may be out of date.</p><button type="button" onClick={() => setHistoryRetry(value => value + 1)}>Retry drafts</button></div> : null}
     {workflows.map(workflow => <details className="settings-card" key={workflow.id} open>
       <summary><strong>{actionLabel(workflow.action_key, workflow.plan.steps[0]?.payload)} workflow</strong> · {workflow.status === "completed" ? "Completed" : "In progress"}</summary>
       <p className="ai-draft-note">Complete the details, review, then confirm &amp; save. Each saved prerequisite advances the next step automatically.</p>
@@ -479,23 +488,23 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
         if (workflow.status === "active" && pending && step.id !== pending.id) return null;
         const action = actions.find(item => item.key === step.action), draft = drafts.find(item => item.id === step.draft_id);
         if (draft) return <DraftCard key={step.id} draft={draft} action={action} writable={writable && !!action}
-          busy={busy} duplicate={hasDuplicateDraft(draft, drafts)} workflowStep referenceLabels={step.labels}
+          busy={historyBlocked} duplicate={hasDuplicateDraft(draft, drafts)} workflowStep referenceLabels={step.labels}
           requiredFields={step.required_fields}
           onEdit={payload => ai.editWorkflow(workflow, step, step.target, payload, undefined, draft.version)} onRun={run} />;
         if (step.draft_status === "executed") return <p key={step.id}>{actionLabel(step.action)}: submitted</p>;
         return action ? <WorkflowFields key={step.id} workflow={workflow} step={step} action={action}
-          disabled={busy || !writable || workflow.status !== "active"} onRun={run} /> :
+          disabled={historyBlocked || !writable || workflow.status !== "active"} onRun={run} /> :
           <p key={step.id}>{actionLabel(step.action)}: action unavailable. Check permissions and platform settings.</p>;
       })}
       <div className="shop-actions ai-workflow-actions">
-      {workflow.status === "active" ? <button disabled={busy || !writable || !aiEnabled} onClick={() => void run(() => ai.continueWorkflow(workflow))}>
+      {workflow.status === "active" ? <button disabled={historyBlocked || !writable || !aiEnabled} onClick={() => void run(() => ai.continueWorkflow(workflow))}>
         Refresh workflow</button> : <div role="status"><p>Completed. Would you like to make the next entry?</p>
         <WorkflowDocumentDownload workflow={workflow} />
         {workflow.plan.next.map((next, index) => next.path ? <p key={index}><Link to={next.path}>{next.label}</Link></p> :
-          <button key={index} disabled={busy || !writable || !actions.some(action => action.key === next.action)}
+          <button key={index} disabled={historyBlocked || !writable || !actions.some(action => action.key === next.action)}
             onClick={() => void start(next.action, next.target, next.payload)}>{next.label}</button>)}
       </div>}
-      <button className="ai-danger-button" disabled={busy || !writable} onClick={() => {
+      <button className="ai-danger-button" disabled={historyBlocked || !writable} onClick={() => {
         if (window.confirm("Discard this workflow and its unposted drafts? Already submitted records are not undone.")) {
           void run(() => ai.discardWorkflow(workflow));
         }
@@ -505,12 +514,12 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
     {drafts.length ? <p className="ai-draft-note">Nothing is posted until you confirm &amp; save the reviewed step.</p> : null}
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {drafts.filter(draft => !owned.has(draft.id)).map(draft => <DraftCard key={draft.id} draft={draft} duplicate={hasDuplicateDraft(draft, drafts)}
-      action={actions.find(action => action.key === draft.action_key)} busy={busy}
+      action={actions.find(action => action.key === draft.action_key)} busy={historyBlocked}
       writable={writable && actions.some(action => action.key === draft.action_key)} onRun={run} />)}
-    {!drafts.length && !workflows.length ? <p>No workflows or drafts to review.</p> : null}
+    {!loadingHistory && !historyError && !drafts.length && !workflows.length ? <p>No workflows or drafts to review.</p> : null}
     {offset || drafts.length >= 30 || workflows.length >= 30 ? <div className="shop-actions">
-      <button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Newer drafts</button>
-      <button disabled={busy || drafts.length < 30} onClick={() => setOffset(offset + 30)}>Older drafts</button>
+      <button disabled={historyBlocked || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Newer drafts</button>
+      <button disabled={historyBlocked || drafts.length < 30} onClick={() => setOffset(offset + 30)}>Older drafts</button>
     </div> : null}
   </section>;
 }

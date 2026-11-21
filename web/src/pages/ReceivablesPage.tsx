@@ -92,6 +92,12 @@ export function ReceivablesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [badDebtTarget, setBadDebtTarget] = useState<Receivable | null>(null);
+  const [badDebtReason, setBadDebtReason] = useState("");
+  const [badDebtConfirmed, setBadDebtConfirmed] = useState(false);
+  const [badDebtSaving, setBadDebtSaving] = useState(false);
+  const [badDebtError, setBadDebtError] = useState("");
+  const badDebtDialog = useRef<HTMLDialogElement>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [nextReminderById, setNextReminderById] = useDraftState<Record<string, string>>("ReceivablesPage.nextReminderById", {});
   const [historyForReceivableId, setHistoryForReceivableId] = useState<string | null>(null);
@@ -104,6 +110,10 @@ export function ReceivablesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const remindersRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (badDebtTarget) badDebtDialog.current?.showModal();
+  }, [badDebtTarget]);
 
   const ledgerRows = useMemo(() => {
     if (!showOpenOnly) return receivables;
@@ -235,18 +245,21 @@ export function ReceivablesPage() {
     }
   };
 
-  const markBadDebt = async (receivableId: string) => {
-    setError(null);
+  const markBadDebt = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!badDebtTarget || !badDebtReason.trim() || !badDebtConfirmed || badDebtSaving || badDebtError) return;
+    setBadDebtSaving(true);
     try {
-      await api.updateReceivable(receivableId, {
+      await api.updateReceivable(badDebtTarget.id, {
         status: "BAD_DEBT",
-        bad_debt_reason: "Marked from operations page",
+        bad_debt_reason: badDebtReason.trim(),
       });
       setSuccess("Receivable marked as bad debt.");
+      setBadDebtTarget(null);
       await load();
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Unable to mark bad debt.");
-    }
+      setBadDebtError(`${updateError instanceof Error ? updateError.message : "Unable to confirm the result."} Close and refresh the ledger to check the status before trying again.`);
+    } finally { setBadDebtSaving(false); }
   };
 
   const markReminder = async (receivableId: string, nextReminderDate?: string) => {
@@ -591,7 +604,7 @@ export function ReceivablesPage() {
                             <button
                               className="ops-link-btn"
                               type="button"
-                              onClick={() => void markBadDebt(item.id)}
+                              onClick={() => { setBadDebtReason(""); setBadDebtConfirmed(false); setBadDebtError(""); setBadDebtTarget(item); }}
                             >
                               Mark bad debt
                             </button>
@@ -781,6 +794,18 @@ export function ReceivablesPage() {
           </div>
         </article>
       </section>
+      {badDebtTarget ? <dialog ref={badDebtDialog} className="inventory-dialog" aria-labelledby="bad-debt-title" onCancel={event => { event.preventDefault(); if (!badDebtSaving) setBadDebtTarget(null); }}>
+        <form className="ops-form" onSubmit={event => void markBadDebt(event)}>
+          <h2 id="bad-debt-title">Mark receivable as bad debt</h2>
+          <p>{badDebtTarget.party_name} · {badDebtTarget.reference || "No reference"} · balance {badDebtTarget.balance_amount.toFixed(2)}</p>
+          <p>Collections are blocked while this receivable is marked bad debt. This changes its status; it does not record a payment.</p>
+          {badDebtError ? <p role="alert" className="ops-error">{badDebtError}</p> : null}
+          <label>Reason<textarea required maxLength={1000} value={badDebtReason} disabled={badDebtSaving} onChange={event => setBadDebtReason(event.target.value)} /></label>
+          <label className="ops-toggle"><input type="checkbox" checked={badDebtConfirmed} disabled={badDebtSaving} onChange={event => setBadDebtConfirmed(event.target.checked)} />I understand collections will be blocked.</label>
+          <div className="shop-actions"><button type="button" disabled={badDebtSaving} onClick={() => { setBadDebtTarget(null); if (badDebtError) void load(); }}>Cancel / check ledger</button>
+            <button type="submit" className="btn" disabled={badDebtSaving || !badDebtReason.trim() || !badDebtConfirmed || !!badDebtError}>{badDebtSaving ? "Saving..." : "Mark bad debt"}</button></div>
+        </form>
+      </dialog> : null}
     </div>
   );
 }

@@ -488,6 +488,7 @@ export function PurchasesPage() {
               />
               Goods received now (add product lines to stock on posting)
             </label> : null}
+            {form.receipt_type !== "SERVICE" && form.received_now ? <p className="ops-copy-note">Posting adds the full quantities of all product lines to stock. Partial receipt quantities are not supported.</p> : null}
 
             <AttachmentPicker value={attachments} onChange={setAttachments} disabled={saving} onBusyChange={setAttachmentReading} />
             <button className="btn" type="submit" disabled={saving || loading || !!loadErrors.length || !!storeContext.error || attachmentReading || !hsnMasters.length}>
@@ -766,6 +767,7 @@ export function PurchasesPage() {
                   </select>
                 </label>
 
+                <p className="ops-copy-note">{receiptForm.receipt_type === "SERVICE" ? "Confirming a service receipt does not add stock." : "Confirming adds the full quantities of all product lines to stock. Partial receipt quantities are not supported."}</p>
                 <label>
                   Received At
                   <input

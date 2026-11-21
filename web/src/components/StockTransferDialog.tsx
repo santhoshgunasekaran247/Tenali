@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, Plus, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { postingKey } from "../features/postingKey";
+import { indiaDateKey } from "../features/workflowDates";
 import type { InventoryProduct, Store } from "../types";
 
 type Line = { product_id: string; variant_id: string; quantity: string };
@@ -17,7 +18,7 @@ export function StockTransferDialog({ products, stores, productId, onClose, onDo
     .sort((a, b) => Number(b.quantity) - Number(a.quantity))[0]?.store_id : undefined;
   const [from, setFrom] = useState(holding || stores.find(store => store.is_default)?.id || stores[0]?.id || "");
   const [to, setTo] = useState(stores.find(store => store.id !== from)?.id || "");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(indiaDateKey);
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ product_id: focus?.id || "", variant_id: "", quantity: "" }]);
@@ -46,6 +47,7 @@ export function StockTransferDialog({ products, stores, productId, onClose, onDo
     <form className="ops-form" onSubmit={submit}>
       <div className="ops-card-head"><h2><ArrowRightLeft size={18} /> Transfer stock</h2><button type="button" className="ops-link-btn" onClick={onClose}>Close</button></div>
       <p className="ops-copy-note">Moves stock immediately between two stores of this workspace. Correct a mistake with a reverse transfer, never by editing balances.</p>
+      <p className="ops-copy-note">Source on-hand includes stock reserved for orders. Transferable quantity is checked when you submit.</p>
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       <fieldset disabled={busy} className="inventory-fields">
         <label>From store<select required value={from} onChange={event => setFrom(event.target.value)}>{stores.map(store => <option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>
@@ -54,7 +56,7 @@ export function StockTransferDialog({ products, stores, productId, onClose, onDo
         <label>Reference<input maxLength={200} value={reference} onChange={event => setReference(event.target.value)} placeholder="Challan / vehicle" /></label>
         <label>Notes<input required maxLength={1000} value={notes} onChange={event => setNotes(event.target.value)} placeholder="Why the stock is moving" /></label>
       </fieldset>
-      <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Product</th><th>Variant</th><th>Available at source</th><th>Quantity</th><th></th></tr></thead>
+      <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Product</th><th>Variant</th><th>On-hand at source</th><th>Quantity</th><th></th></tr></thead>
         <tbody>{lines.map((line, index) => {
           const product = products.find(item => item.id === line.product_id);
           const variants = product?.variants.filter(variant => variant.is_active) || [];

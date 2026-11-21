@@ -27,7 +27,8 @@ export function TeamPage(){
         <fieldset><legend>Stores</legend><label className="ops-toggle"><input type="checkbox" checked={access.all_stores} onChange={event=>setAccess({...access,all_stores:event.target.checked})}/>All stores</label>
           {!access.all_stores?stores.map(store=><label key={store.id} className="ops-toggle"><input type="checkbox" checked={access.store_ids.includes(store.id)} onChange={event=>setAccess({...access,store_ids:event.target.checked?[...access.store_ids,store.id]:access.store_ids.filter(id=>id!==store.id)})}/>{store.code} · {store.name}</label>):null}</fieldset>
         <fieldset><legend>Modules</legend><label className="ops-toggle"><input type="checkbox" checked={access.all_modules} onChange={event=>setAccess({...access,all_modules:event.target.checked})}/>All modules</label>
-          {!access.all_modules?MODULES.map(([key,label])=><label key={key} className="ops-toggle"><input type="checkbox" checked={access.modules.includes(key)} onChange={event=>setAccess({...access,modules:event.target.checked?[...access.modules,key]:access.modules.filter(item=>item!==key)})}/>{label}</label>):null}</fieldset>
+          <p className="ops-copy-note">Online order management is available only to owners and administrators, even when all modules are selected. Existing order grants are preserved.</p>
+          {!access.all_modules?MODULES.map(([key,label])=><label key={key} className="ops-toggle"><input type="checkbox" disabled={key==='orders'} checked={access.modules.includes(key)} onChange={event=>setAccess({...access,modules:event.target.checked?[...access.modules,key]:access.modules.filter(item=>item!==key)})}/>{label}{key==='orders'?' (admin only)':''}</label>):null}</fieldset>
         <button className="btn" disabled={busy||(!access.all_stores&&!access.store_ids.length)||(!access.all_modules&&!access.modules.length)}>Save access</button>
       </form></article>:null}
   </section></main>;

@@ -541,15 +541,19 @@ deploying the API, because line resolution and the inventory list read it.
 - **Goods received now** (`received_now`, unticked by default) books product lines
   into the posting store's stock and marks the bill RECEIVED in the same
   transaction. It is ignored for SERVICE bills. Otherwise stock is added when the
-  receipt is confirmed later.
+  receipt is confirmed later. Both paths book the full product-line quantities;
+  partial receipt quantities are not supported.
 - **Transfers from a product:** the product's Owned Stock tab has **Transfer
   between stores** when the tenant has two or more stock stores and the product
   has stock. It opens the stock transfer dialog with the product on the first
-  line and the store holding the most of it as the source.
+  line and the store holding the most of it as the source. The displayed source
+  quantity is on-hand stock, including reservations; the server checks available
+  stock when the transfer is submitted.
 - **Reorder alerts** only appear when alerts are enabled on the product or
   variant and stock is at or below the reorder level. Entering a level in the
   editor turns alerts on and raises the target to at least the level; a level
-  with alerts off is flagged in the editor.
+  with alerts off is flagged in the editor. The inventory alerts view pools stock
+  across accessible stores, so it can miss shortages at an individual location.
 
 ### Public policies and integration review
 

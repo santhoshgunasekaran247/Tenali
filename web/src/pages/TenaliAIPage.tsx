@@ -37,6 +37,9 @@ export function TenaliAIPage() {
   const [submission, setSubmission] = useState<{ id: string; content: string; key: string; attachments: string[] } | null>(null);
   const [attachments, setAttachments] = useState<AIAttachment[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [historyRetry, setHistoryRetry] = useState(0);
   const [titleSaving, setTitleSaving] = useState(false);
   const [titleError, setTitleError] = useState("");
   const currentConversation = useRef(selected), currentTitle = useRef(title), titleRequest = useRef(false);
@@ -71,10 +74,12 @@ export function TenaliAIPage() {
   }, []);
   useEffect(() => {
     let active = true;
+    setHistoryLoading(true); setHistoryError("");
     void ai.conversations(search, archived, offset).then(result => { if (active) setConversations(result.items); })
-      .catch(failure => { if (active) setError(String(failure)); });
+      .catch(failure => { if (active) setHistoryError(String(failure)); })
+      .finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
-  }, [search, archived, offset]);
+  }, [search, archived, offset, historyRetry]);
   useEffect(() => {
     if (!selected) return;
     const token = ++generation.current;
@@ -242,14 +247,16 @@ export function TenaliAIPage() {
         <button className="ai-icon-button" type="button" aria-label="Close conversations" disabled={busy || titleSaving} onClick={() => setHistoryOpen(false)}><X size={17} /></button></div>
         <label className="ai-history-search"><span className="ai-sr-only">Search conversations</span><Search size={16} aria-hidden="true" /><input placeholder="Search conversations" maxLength={120} disabled={busy} value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} /></label>
         <label className="ops-toggle"><input type="checkbox" disabled={busy} checked={archived} onChange={event => { setArchived(event.target.checked); setOffset(0); }} />Archived history</label>
+        {historyLoading ? <p role="status">Loading conversations. Previously loaded results may not match this view.</p> : null}
+        {historyError ? <div role="alert"><p>Could not load conversations: {historyError}. Previously loaded results may not match this view.</p><button type="button" onClick={() => setHistoryRetry(value => value + 1)}>Retry history</button></div> : null}
         <nav aria-label="Private conversation history">{conversations.map(conversation =>
           <button type="button" key={conversation.id} disabled={busy || titleSaving} title={conversationLabel(conversation)} aria-current={selected?.id === conversation.id ? "page" : undefined} onClick={() => void choose(conversation)}>
             <MessageSquare size={16} aria-hidden="true" /><span><strong>{conversation.title === "New conversation" ? "New chat" : conversation.title}</strong>
               <time dateTime={conversation.created_at}>{new Date(conversation.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time></span>
           </button>)}</nav>
-        {!conversations.length ? <p>No conversations in this view.</p> : null}
-        <div className="shop-actions ai-history-pagination"><button disabled={busy || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</button>
-          <button disabled={busy || conversations.length < 30} onClick={() => setOffset(offset + 30)}>Next</button></div>
+        {!historyLoading && !historyError && !conversations.length ? <p>No conversations in this view.</p> : null}
+        <div className="shop-actions ai-history-pagination"><button disabled={busy || historyLoading || !!historyError || !offset} onClick={() => setOffset(Math.max(0, offset - 30))}>Previous</button>
+          <button disabled={busy || historyLoading || !!historyError || conversations.length < 30} onClick={() => setOffset(offset + 30)}>Next</button></div>
       </aside>
       <section className="ops-card ai-chat" aria-label="Conversation">
         {!selected ? <div className="ai-welcome"><span className="ai-welcome-icon"><Bot size={34} aria-hidden="true" /></span>

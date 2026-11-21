@@ -931,6 +931,7 @@ export function AccountsPage() {
             </button>
           </div>
 
+          <p className="ops-copy-note">CSV export includes at most the newest 2,000 matching transactions and may be incomplete. Narrow the date range and verify the results.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -1093,6 +1094,7 @@ export function AccountsPage() {
             </button>
           </div>
 
+          <p className="ops-copy-note">CSV export includes at most the newest 5,000 matching journal rows and may be incomplete. Narrow the date range and verify the results.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
