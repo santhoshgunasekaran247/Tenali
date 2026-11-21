@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { FederatedShopperLogin } from "../components/FederatedShopperLogin";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../features/auth";
-import { accountRequest, orderStatus, paymentLabel, payOrder, loadRazorpay, rupees, shopperSession, type Shopper, type ShopOrder } from "../features/shop";
+import { accountRequest, canVerifyPayment, orderStatus, paymentLabel, payOrder, loadRazorpay, rupees, shopperSession, type Shopper, type ShopOrder } from "../features/shop";
 import { useCart } from "../features/cart";
 import { clearSocialLogin } from "../features/shopperFederation";
 import { OrderItems } from "../components/OrderItems";
@@ -99,7 +99,8 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
             {order.status === "awaiting_payment" ? (!order.expires_at || Date.now() < Date.parse(order.expires_at)) ? <button className="btn" disabled={busy} onClick={() => void pay(order)}>Pay with Razorpay</button> : <p>Checkout expired. If already charged, wait for payment verification or contact the store before placing another order.</p> : null}
             {order.status === "cod_requested" && order.expires_at ? <p>Awaiting store approval until {new Date(order.expires_at).toLocaleString()}.</p> : null}
             {order.status === "confirmed" && order.payment_method === "pay_at_pickup" && order.expires_at ? <p>Held for pickup until {new Date(order.expires_at).toLocaleString()}.</p> : null}
-            {order.status === "awaiting_payment" ? <button className="btn light" disabled={busy} onClick={() => {
+            {(order.status === "expired" || order.status === "cancelled") && canVerifyPayment(order) ? <p>Stock has been released. If you were charged, verify payment before placing another order; the store may need to review availability.</p> : null}
+            {canVerifyPayment(order) ? <button className="btn light" disabled={busy} onClick={() => {
               setBusy(true); setError("");
               void accountRequest<ShopOrder>(`/orders/${order.id}/reconcile-payment`, { method: "POST" }).then(result => {
                 if (result.status === "paid" || result.status === "fulfilment_review") cart.removePurchased(order.items);

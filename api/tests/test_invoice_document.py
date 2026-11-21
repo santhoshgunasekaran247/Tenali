@@ -141,8 +141,12 @@ class InvoiceDocumentTests(unittest.TestCase):
             CompanyUpdate(company_name=" ")
 
     def test_existing_company_gst_can_be_read_but_must_be_corrected_on_save(self):
+        feature = {"platform_allowed": True, "tenant_enabled": True, "effective_enabled": True,
+                   "reason": None, "version": 1}
         company = CompanySetupOut(id="00000000-0000-0000-0000-000000000001", is_active=True,
-                                  company_name="Legacy Company", gst_number="LEGACY-GST")
+                                  company_name="Legacy Company", gst_number="LEGACY-GST",
+                                  features={"ai": feature, "storefront": feature,
+                                            "ai_settings_version": 1, "support_url": ""})
         self.assertEqual(company.gst_number, "LEGACY-GST")
         with self.assertRaises(ValidationError):
             CompanyUpdate(company_name=company.company_name, gst_number=company.gst_number)

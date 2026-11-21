@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from app.services.tenant_security import Registration
 
@@ -85,6 +85,11 @@ class DispatchInput(BaseModel):
     awb: str | None = Field(default=None, min_length=1, max_length=120)
 
 
+class FulfilmentResolutionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ship_from_store_id: UUID
+
+
 class CollectInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     account_id: UUID | None = None
@@ -95,6 +100,14 @@ class OrderCancel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     reason: str = Field(min_length=1, max_length=500)
     refund_account_id: UUID | None = None
+    refund_confirmed: bool = False
+    refund_reference: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^rfnd_[A-Za-z0-9]+$")
+
+    @model_validator(mode="after")
+    def validate_refund_attestation(self):
+        if self.refund_confirmed != bool(self.refund_reference):
+            raise ValueError("Refund confirmation and refund ID must be provided together")
+        return self
 
 
 class CodSettlementItem(BaseModel):

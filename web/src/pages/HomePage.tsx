@@ -93,7 +93,7 @@ export function HomePage() {
             {data.categories.slice(0, 4).map((category) => (
               <Link
                 className="category-card"
-                to={`/brand.html?category=${encodeURIComponent(category.category_slug)}`}
+                to={`/brand?category=${encodeURIComponent(category.category_slug)}`}
                 key={category.category_slug}
               >
                 <div className="category-image">
@@ -109,7 +109,7 @@ export function HomePage() {
             ))}
           </div>
           <div className="category-more">
-            <Link className="link" to="/brand.html?category=all">
+            <Link className="link" to="/brand?category=all">
               {text("categories_more_action")}
             </Link>
           </div>
@@ -164,7 +164,7 @@ export function HomePage() {
           </div>
           <ProductRail label={text("brands_eyebrow") || "Brands"} className="brand-rail">
             {data.brands.map((brand) => (
-              <Link className="brand-card" to={`/brand.html?brand=${encodeURIComponent(brand.code)}`} key={brand.code}>
+              <Link className="brand-card" to={`/brand?brand=${encodeURIComponent(brand.code)}`} key={brand.code}>
                 <div className="logo-box">
                   <img src={toAssetUrl(`brand-logos/${brand.code}.png`)} alt={brand.name} loading="lazy" />
                 </div>

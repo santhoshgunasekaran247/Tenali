@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { accountRequest, paymentLabel, type ShopOrder } from "../features/shop";
+import { accountRequest, paymentLabel, rupees, type ShopOrder } from "../features/shop";
 import { api } from "../api";
 import type { Account, Store } from "../types";
 import { Link } from "react-router-dom";
@@ -64,7 +64,7 @@ export function ShiprocketPanel({ order, pkg, reconcileId, locked, onPackage, on
 export function OrderActions({ order, stores, accounts, locked, onDone, onError }: Props) {
   const [shipFrom, setShipFrom] = useState(order.ship_from_store_id || "");
   const [collect, setCollect] = useState({ account_id: "", payment_mode: "cash" });
-  const [cancel, setCancel] = useState({ reason: "", refund_account_id: "" });
+  const [cancel, setCancel] = useState({ reason: "", refund_account_id: "", refund_confirmed: false, refund_reference: "" });
   const [decline, setDecline] = useState("");
   const [tracking, setTracking] = useState({ courier: order.courier || "", awb: order.awb || "" });
   const [busy, setBusy] = useState(false);
@@ -84,6 +84,9 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
   const disabled = locked || busy;
   const storeName = (id: string | null) => stores.find(store => store.id === id)?.code || "";
   const prepaidReady = order.payment_method !== "prepaid" || !!order.advance_transaction_id;
+  const capturedPayment = order.payment_method === "prepaid" && !!order.razorpay_payment_id;
+  const refundReady = !capturedPayment || (!!order.advance_transaction_id && !!cancel.refund_account_id &&
+    cancel.refund_confirmed && /^rfnd_[A-Za-z0-9]+$/.test(cancel.refund_reference.trim()));
   const awaitingShiprocket = order.fulfilment_method === "delivery" && order.shipping_provider === "shiprocket" && !order.shiprocket_order_id;
   const dispatchReady = prepaidReady && !awaitingShiprocket;
   return <div className="order-actions">
@@ -97,6 +100,7 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
     {order.payment_method === "prepaid" && order.razorpay_payment_id && !order.advance_transaction_id && !["cancelled", "refunded"].includes(order.status) ? <section className="order-action-panel"><h4>Record payment advance</h4><p>The payment is verified. Record it in the ledger before dispatching. This does not charge the shopper again.</p><div className="shop-actions"><Link className="ops-inline-link" to="/portal/stores">Set settlement account in Stores</Link><button className="btn light" disabled={disabled} onClick={() => void run("post-advance", {}, "Online payment advance posted.")}>Retry posting payment advance</button></div></section> : null}
     {["paid", "confirmed", "shipment_booked", "shipping_pending", "fulfilment_review"].includes(order.status) && order.payment_method !== "pay_at_pickup" && !order.invoice_id ? <section className="order-action-panel"><h4>Dispatch &amp; invoice</h4><div className="shop-actions">
       <label>Ship from<select disabled={disabled} value={shipFrom} onChange={event => setShipFrom(event.target.value)}><option value="">Choose a warehouse / shop</option>{stockStores.map(store => <option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>
+      {order.status === "fulfilment_review" && awaitingShiprocket ? <button className="btn light" disabled={disabled || !shipFrom || !prepaidReady} onClick={() => void run("resolve-fulfilment", { ship_from_store_id: shipFrom }, "Stock review resolved. The order can now be submitted for shipping.")}>Resolve stock review</button> : null}
       {order.fulfilment_method === "delivery" && order.shipping_provider === "self" ? <>
         <label>Courier / delivery service (optional)<input maxLength={80} placeholder="Own delivery or courier name" value={tracking.courier} onChange={event => setTracking({ ...tracking, courier: event.target.value })} /></label>
         <label>Tracking / AWB number (optional)<input maxLength={120} value={tracking.awb} onChange={event => setTracking({ ...tracking, awb: event.target.value })} /></label>
@@ -105,7 +109,7 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
         ship_from_store_id: shipFrom,
         ...(order.fulfilment_method === "delivery" && order.shipping_provider === "self" ? { courier: tracking.courier.trim() || null, awb: tracking.awb.trim() || null } : {}),
       }, "Dispatched: stock booked and invoice created.")}>Dispatch &amp; invoice</button>
-    </div>{!prepaidReady ? <p className="order-action-help">Post the verified payment advance above to enable dispatch.</p> : awaitingShiprocket ? <p className="order-action-help">Submit the packed order to Shiprocket above first. Dispatch &amp; invoice unlocks once Shiprocket confirms the order.</p> : null}</section> : null}
+    </div>{!prepaidReady ? <p className="order-action-help">Post the verified payment advance above to enable dispatch.</p> : awaitingShiprocket && order.status === "fulfilment_review" ? <p className="order-action-help">Choose the ship-from store and resolve the stock review before submitting to Shiprocket.</p> : awaitingShiprocket ? <p className="order-action-help">Submit the packed order to Shiprocket above first. Dispatch &amp; invoice unlocks once Shiprocket confirms the order.</p> : null}</section> : null}
     {order.fulfilment_method === "pickup" && ((order.payment_method === "prepaid" && order.status === "dispatched") || (order.payment_method === "pay_at_pickup" && order.status === "confirmed")) ? <button className="btn light" disabled={disabled} onClick={() => void run("ready", {}, "Marked ready for pickup.")}>Ready for pickup</button> : null}
     {order.fulfilment_method === "pickup" && ["confirmed", "ready_for_pickup", "dispatched"].includes(order.status) ? <section className="order-action-panel"><h4>Shopper collection</h4><div className="shop-actions">
       {order.payment_method === "pay_at_pickup" ? <>
@@ -118,11 +122,19 @@ export function OrderActions({ order, stores, accounts, locked, onDone, onError 
       if (typeof window !== "undefined" && !window.confirm("Mark this order as delivered to the shopper?")) return;
       void run("delivered", {}, "Marked delivered.");
     }}>Mark delivered</button> : null}
-    {!order.invoice_id && !["cancelled", "refunded", "expired"].includes(order.status) ? <details className="order-cancel-panel"><summary>Cancel order</summary><div className="shop-actions">
+    {!order.invoice_id && !order.shiprocket_order_id && !["cancelled", "refunded", "expired", "shipping_pending", "shipment_booked", "dispatched", "delivered"].includes(order.status) ? <details className="order-cancel-panel"><summary>Cancel order</summary><div className="shop-actions">
+      {order.payment_method === "prepaid" && !order.razorpay_payment_id ? <p>Cancellation releases stock but cannot stop an in-flight payment. Verify any later payment before placing another order.</p> : null}
       <label className="order-cancel-reason">Cancellation reason<input maxLength={500} placeholder="Why is this order being cancelled?" value={cancel.reason} onChange={event => setCancel({ ...cancel, reason: event.target.value })} /></label>
-      {order.payment_method === "prepaid" && order.razorpay_payment_id ? <label>Refund from<select value={cancel.refund_account_id} onChange={event => setCancel({ ...cancel, refund_account_id: event.target.value })}><option value="">Clearing account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.nickname}</option>)}</select></label> : null}
-      <button className="btn light" disabled={disabled || !cancel.reason.trim()} onClick={() => void run("cancel", { reason: cancel.reason, refund_account_id: cancel.refund_account_id || null }, "Order cancelled.")}>Confirm cancellation</button>
+      {capturedPayment && order.advance_transaction_id ? <>
+        <p>This records a completed external refund; it does not initiate a refund. Complete and verify a full refund of {rupees(order.total_paise)} in Razorpay first. Partial refunds cannot be recorded here.</p>
+        <label>Refund from<select value={cancel.refund_account_id} onChange={event => setCancel({ ...cancel, refund_account_id: event.target.value })}><option value="">Choose account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.nickname}</option>)}</select></label>
+        <label>Razorpay refund ID<input maxLength={120} placeholder="rfnd_..." value={cancel.refund_reference} onChange={event => setCancel({ ...cancel, refund_reference: event.target.value })} /></label>
+        <label><input type="checkbox" checked={cancel.refund_confirmed} onChange={event => setCancel({ ...cancel, refund_confirmed: event.target.checked })} /> I completed and verified the full refund with Razorpay</label>
+      </> : capturedPayment ? <p>Post the verified payment advance above before recording a refund and cancelling this order.</p> : null}
+      <button className="btn light" disabled={disabled || !cancel.reason.trim() || !refundReady} onClick={() => void run("cancel", { reason: cancel.reason, refund_account_id: cancel.refund_account_id || null,
+        refund_confirmed: capturedPayment && cancel.refund_confirmed, refund_reference: capturedPayment ? cancel.refund_reference.trim() : null }, capturedPayment ? "Completed refund recorded and order cancelled." : "Order cancelled.")}>Confirm cancellation</button>
     </div></details> : null}
+    {!order.invoice_id && (order.shiprocket_order_id || ["shipping_pending", "shipment_booked", "dispatched", "delivered"].includes(order.status)) ? <p className="checkout-fine-print">This order has a shipment or dispatch in progress. Resolve it with the shipping provider and support before cancelling or recording a refund.</p> : null}
     {order.invoice_id ? <p className="checkout-fine-print">To reverse an invoiced order, reverse its receipt and cancel the invoice from Billing; stock returns to the store that shipped it.</p> : null}
     {order.shipping_provider === "self" && (order.courier || order.awb) ? <p className="checkout-fine-print">Delivery: {order.courier || "Own courier"}{order.awb ? ` · Tracking: ${order.awb}` : ""}</p> : null}
   </div>;

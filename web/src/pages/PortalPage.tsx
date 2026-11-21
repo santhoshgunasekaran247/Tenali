@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../features/auth";
+import { indiaDateKey, workflowScope } from "../features/workflowDates";
 
 type PortalLink = {
   label: string;
@@ -121,27 +122,8 @@ const workflowSections: WorkflowSection[] = [
   },
 ];
 
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function monthKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function yearKey(): string {
-  return String(new Date().getFullYear());
-}
-
-function sectionScope(section: WorkflowSection["key"]): string {
-  if (section === "eom") return monthKey();
-  if (section === "eoy") return yearKey();
-  return todayKey();
-}
-
-function checkpointStorageKey(company: string, user: string, section: WorkflowSection["key"]): string {
-  return `ops-workflow:${company}:${user}:${section}:${sectionScope(section)}`;
+function checkpointStorageKey(company: string, user: string, section: WorkflowSection["key"], day: string): string {
+  return `ops-workflow:${company}:${user}:${section}:${workflowScope(section, day)}`;
 }
 
 function LinkTile({ item }: { item: PortalLink }) {
@@ -174,8 +156,16 @@ export function PortalPage() {
     const module = operation?.module;
     return !module || showAdminMaintenance || !auth.user?.modules || auth.user.modules.includes(module);
   };
-  const storageKey = (section: WorkflowSection["key"]) => checkpointStorageKey(auth.user!.company_id, auth.user!.user_id, section);
+  const [day, setDay] = useState(indiaDateKey);
+  const storageKey = (section: WorkflowSection["key"]) => checkpointStorageKey(auth.user!.company_id, auth.user!.user_id, section, day);
   const [completedBySection, setCompletedBySection] = useState<Record<string, Record<string, boolean>>>({});
+
+  useEffect(() => {
+    const refresh = () => setDay(indiaDateKey());
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
 
   useEffect(() => {
     const initial: Record<string, Record<string, boolean>> = {};
@@ -184,7 +174,7 @@ export function PortalPage() {
       initial[section.key] = stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
     }
     setCompletedBySection(initial);
-  }, [auth.user?.company_id, auth.user?.user_id]);
+  }, [auth.user?.company_id, auth.user?.user_id, day]);
 
   const setCompleted = (sectionKey: WorkflowSection["key"], stepId: string, checked: boolean) => {
     setCompletedBySection((prev) => {
@@ -271,7 +261,7 @@ export function PortalPage() {
               );
             })}
             </div>
-            <p className="ops-copy-note">Locked periods block new, cancelled or deleted entries dated inside them; reopen, correct and lock again. After each save a &quot;Next step&quot; message suggests what to do next{showAdminMaintenance ? <> (turn it on or off in <Link to="/portal/company#portal-settings">Company Setup → Operations Portal</Link>)</> : null}.</p>
+            <p className="ops-copy-note">Checklist progress is personal to this browser and is not a shared or audited close record. Dates use India time; yearly progress follows April to March. Locked periods block new, cancelled or deleted entries dated inside them; reopen, correct and lock again. After each save a &quot;Next step&quot; message suggests what to do next{showAdminMaintenance ? <> (turn it on or off in <Link to="/portal/company#portal-settings">Company Setup → Operations Portal</Link>)</> : null}.</p>
           </details>
         </article>
       </section>

@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.routes.auth import PasswordChange, administrator, identity_db
 from app.core.database import SessionLocal, get_db
 from app.schemas.checkout import (CheckoutInput, CheckoutSettingsInput, CodDecision, CodSettlementInput, CollectInput, DispatchInput,
-                                  EnquiryInput, EnquiryUpdate, OrderCancel, PackageInput, PaymentConfirmation, ShipmentReconcile, ShopperRegistration)
+                                  EnquiryInput, EnquiryUpdate, FulfilmentResolutionInput, OrderCancel, PackageInput, PaymentConfirmation, ShipmentReconcile, ShopperRegistration)
 from app.services import checkout_providers as providers
 from app.services import shop_orders_service as orders_service
 from app.services import shopper_federation as federation
@@ -399,6 +399,11 @@ def collect(order_id: UUID, payload: CollectInput, identity=Depends(administrato
 @admin_router.post("/orders/{order_id}/delivered")
 def delivered(order_id: UUID, identity=Depends(administrator), db=Depends(get_db)):
     return orders_service.mark_delivered(db, str(identity["company_id"]), str(order_id))
+
+
+@admin_router.post("/orders/{order_id}/resolve-fulfilment")
+def resolve_fulfilment(order_id: UUID, payload: FulfilmentResolutionInput, identity=Depends(administrator), db=Depends(get_db)):
+    return orders_service.resolve_fulfilment_review(db, str(identity["company_id"]), str(order_id), payload)
 
 
 @admin_router.post("/orders/{order_id}/cancel")

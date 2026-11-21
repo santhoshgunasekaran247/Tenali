@@ -86,7 +86,7 @@ export function BrandPage() {
               {data.categories.map((item) => (
                 <Link
                   className="category-card"
-                  to={`/brand.html?category=${encodeURIComponent(item.category_slug)}`}
+                  to={`/brand?category=${encodeURIComponent(item.category_slug)}`}
                   key={item.category_slug}
                 >
                   <div className="category-image">
@@ -113,7 +113,7 @@ export function BrandPage() {
       <>
         <main className="empty">
           <h1>{catalogText("category_not_found")}</h1>
-          <Link className="btn" to="/brand.html?category=all">
+          <Link className="btn" to="/brand?category=all">
             {catalogText("back_to_categories")}
           </Link>
         </main>
@@ -156,7 +156,7 @@ export function BrandPage() {
     ? data.selected_category!.category_description
     : data.selected_brand!.description || catalogText("brand_description_fallback", { brand_name: data.selected_brand!.name });
   const eyebrow = catalogText(isCategoryView ? "category_page_eyebrow" : "products_page_eyebrow");
-  const backHref = tenantBase()+(isCategoryView ? "/brand.html?category=all" : "/#brands");
+  const backHref = tenantBase()+(isCategoryView ? "/brand?category=all" : "/#brands");
   const backLabel = catalogText(isCategoryView ? "all_categories_link" : "all_brands_link");
   const bestPricingMessage = encodeURIComponent(storefrontText(catalogCopy.whatsapp_prefilled_message,data.company,{brand_name:heading}));
   const firstProductImage = isCategoryView ? data.products.map((item) => item.image_urls?.split("|").map((image) => image.trim()).find(Boolean) || item.image_url).find(Boolean) : undefined;

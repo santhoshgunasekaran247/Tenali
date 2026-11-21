@@ -10,6 +10,10 @@ these rules as **Rewrite**, not Redirect, in this order:
 1. `/api/*` -> `https://tenali-api.onrender.com/api/*`
 2. `/*` -> `/index.html`
 
+The storefront generates extensionless `/brand` links. Keep the catch-all rewrite
+for direct navigation and refreshes, including older shared `/brand.html` links;
+the application retains the older route, but it cannot repair a hosting 404.
+
 For the paid Python API service, configure these environment variables for the
 current temporary UI hostname:
 
@@ -76,6 +80,10 @@ Render Environment settings, never in the static UI or the repository.
   valuation and other expenses. Cash flow and gross outflows are workspace-wide and are only
   shown with accounts access and access to all stores, with no store selected.
   Pending orders, inventory and receivables remain current all-date indicators.
+- The personal operations checklists use India time and the April–March financial
+  year. They are stored in the current user's browser and are not an audited or
+  shared close. Existing calendar-year checklist marks are not migrated to the
+  new financial-year keys because their period cannot be determined reliably.
 - Online checkout requires both the Add to Cart switch in Payments & Delivery
   Setup and an active Online store linked to an active stock-holding warehouse
   or shop in Stores. The setup status and public availability use the same
@@ -101,7 +109,16 @@ Render Environment settings, never in the static UI or the repository.
   requests time out after 30 seconds instead of leaving checkout spinning.
   Cart items are removed and My Orders opens only after server-verified payment.
   If verification remains uncertain, use My Orders / Verify Payment before
-  paying again. Leaving checkout cancels its browser-side polling.
+  paying again. Verification is also available for expired prepaid orders;
+  their stock hold has ended, so the store may need to review availability.
+  Leaving checkout cancels its browser-side polling.
+- Cancelling an unpaid order releases its stock hold but cannot stop a payment
+  already in flight. A later verified capture, including after expiry or
+  cancellation, is recorded and sent to fulfilment review; verify stock before
+  dispatch or record a completed refund. For unbooked Shiprocket orders, choose
+  the fulfilment store and resolve stock review before submitting a shipment.
+  Payment verification remains available for cancelled prepaid orders without
+  a recorded capture.
 - For prepaid orders, configure a settlement (Razorpay clearing) account on the
   Online store in Stores. A captured payment remains paid if advance posting is
   blocked; Online Orders shows the reason and allows staff to retry after fixing
@@ -109,6 +126,13 @@ Render Environment settings, never in the static UI or the repository.
   exists and does not charge the shopper again. Dispatch requires that advance.
   Staff ledger attribution uses the tenant audit trail, not the legacy
   user-profile field on account transactions.
+- Cancelling a captured, uninvoiced prepaid order does not initiate a provider
+  refund. First complete and verify the full order amount in Razorpay, then
+  record its refund ID, account and confirmation in Online Orders. Partial
+  refunds are not supported here. The payment advance must already be posted.
+  This is a staff attestation, not provider verification. Orders with a shipment
+  or dispatch in progress cannot be cancelled here: resolve the shipment with
+  the provider and support before recording a refund.
 - Shiprocket delivery orders must be submitted to Shiprocket (package weight and
   dimensions are entered on each order card) before Dispatch & invoice unlocks.
   Orders dispatched (or marked delivered) before this rule can still be submitted,

@@ -227,11 +227,20 @@ def confirm_payment(db, company_id: str, order_id: str, payment_id: str, signatu
         if row["razorpay_payment_id"] != payment_id:
             raise HTTPException(409, "Order already has a different payment; contact the store")
         return public_order(row)
-    if row["status"] not in {"awaiting_payment", "expired"}:
+    if row["status"] not in {"awaiting_payment", "expired", "cancelled"}:
         raise HTTPException(409, "This order can no longer accept a payment")
+    for product_id in sorted({str(item["product_id"]) for item in row["items"]}):
+        db.execute(text("select id from products where company_id=:company and id=:id for update"),
+                   {"company": company_id, "id": product_id})
     # Money has been captured: record it as a customer advance in the online store's clearing account.
     # Stock is booked and the invoice is created at dispatch, when the ship-from store is known.
-    result = db.execute(text("""update shop_orders set status='paid',razorpay_payment_id=:payment,paid_at=now(),expires_at=null
+    result = db.execute(text("""update shop_orders set
+        review_reason=case when status in ('expired','cancelled') or (expires_at is not null and expires_at<=now())
+            then 'Payment arrived after the stock hold ended or the order was cancelled. Review stock and fulfilment before dispatch or refund.'
+            else review_reason end,
+        status=case when status in ('expired','cancelled') or (expires_at is not null and expires_at<=now())
+            then 'fulfilment_review' else 'paid' end,
+        razorpay_payment_id=:payment,paid_at=now(),expires_at=null
         where company_id=:company and id=:id returning *"""),
         {"company": company_id, "id": order_id, "payment": payment_id}).mappings().one()
     post_prepaid_advance(db, company_id, dict(result))

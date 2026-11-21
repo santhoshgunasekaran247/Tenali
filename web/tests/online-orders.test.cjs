@@ -23,13 +23,13 @@ function harness(overrides = {}, request = async () => ({}), refresh = async () 
     } },
     "react-router-dom": { Link: ({ to, children, ...rest }) => React.createElement("a", { href: to, ...rest }, children) },
     "../api": {},
-    "../features/shop": { paymentLabel: () => "Paid online", accountRequest: async (...args) => {
+    "../features/shop": { paymentLabel: () => "Paid online", rupees: value => `INR ${value / 100}`, accountRequest: async (...args) => {
       requests.push(args); return request(...args);
     } },
   };
   vm.runInNewContext(compiled, { exports, window: testWindow, require: name => mocks[name] || require(name) });
   const order = { id: "order", store_id: "online", payment_method: "prepaid", status: "paid",
-    fulfilment_method: "delivery", shipping_provider: "self", razorpay_payment_id: "pay_captured",
+    fulfilment_method: "delivery", shipping_provider: "self", razorpay_payment_id: "pay_captured", total_paise: 12500,
     advance_transaction_id: null, ship_from_store_id: "warehouse", invoice_id: null,
     review_reason: "Advance not posted: set a settlement account", ...overrides };
   return {
@@ -64,7 +64,8 @@ test("pending advances have a separate setup panel and explain blocked dispatch"
   assert.equal(button(tree, "Dispatch & invoice").props.disabled, true);
   assert.equal(button(tree, "Retry posting payment advance").props.disabled, false);
   assert.match(html, /<label[^>]*>Cancellation reason<input/);
-  assert.match(html, /<label>Refund from<select/);
+  assert.doesNotMatch(html, /<label>Refund from<select/);
+  assert.match(html, /before recording a refund and cancelling/);
 });
 
 test("posted advances enable dispatch and remove the retry panel", () => {
@@ -72,6 +73,29 @@ test("posted advances enable dispatch and remove the retry panel", () => {
   assert.equal(button(tree, "Dispatch & invoice").props.disabled, false);
   assert.equal(button(tree, "Retry posting payment advance"), undefined);
   assert.doesNotMatch(renderToStaticMarkup(tree), /Post the verified payment/);
+});
+
+test("captured refund requires account, provider reference and explicit confirmation", async () => {
+  const h = harness({ advance_transaction_id: "advance", review_reason: null });
+  let tree = h.render();
+  assert.match(renderToStaticMarkup(tree), /does not initiate a refund/);
+  const labelled = (node, text) => find(node, item => item.type === "label" && React.Children.toArray(item.props.children)[0] === text);
+  const control = (label, type) => find(label, item => item.type === type);
+  control(labelled(tree, "Cancellation reason"), "input").props.onChange({ target: { value: "Out of stock" } });
+  tree = h.render();
+  assert.equal(button(tree, "Confirm cancellation").props.disabled, true);
+  control(labelled(tree, "Refund from"), "select").props.onChange({ target: { value: "clearing" } });
+  tree = h.render();
+  control(labelled(tree, "Razorpay refund ID"), "input").props.onChange({ target: { value: "rfnd_123" } });
+  tree = h.render();
+  assert.equal(button(tree, "Confirm cancellation").props.disabled, true);
+  find(tree, node => node.type === "input" && node.props.type === "checkbox").props.onChange({ target: { checked: true } });
+  tree = h.render();
+  assert.equal(button(tree, "Confirm cancellation").props.disabled, false);
+  button(tree, "Confirm cancellation").props.onClick();
+  await flush();
+  assert.deepEqual(JSON.parse(h.requests[0][1].body), { reason: "Out of stock", refund_account_id: "clearing",
+    refund_confirmed: true, refund_reference: "rfnd_123" });
 });
 
 test("advance retry failures show the server reason without a success notification", async () => {
@@ -118,6 +142,26 @@ test("Shiprocket delivery orders cannot be dispatched before Shiprocket confirms
   assert.equal(button(harness({ ...shiprocket, status: "shipment_booked", shiprocket_order_id: 77 }).render(), "Dispatch & invoice").props.disabled, false);
 });
 
+test("review orders cannot book a shipment until a warehouse passes stock review", async () => {
+  const h = harness({ ...shiprocket, status: "fulfilment_review" });
+  const tree = h.render();
+  assert.match(renderToStaticMarkup(tree), /resolve the stock review before submitting to Shiprocket/);
+  assert.equal(button(tree, "Resolve stock review").props.disabled, false);
+  button(tree, "Resolve stock review").props.onClick();
+  await flush();
+  assert.equal(h.requests[0][0], "/orders/order/resolve-fulfilment");
+  assert.deepEqual(JSON.parse(h.requests[0][1].body), { ship_from_store_id: "warehouse" });
+  assert.equal(button(panel({ status: "fulfilment_review" }, filled).tree, "Submit packed order to Shiprocket"), undefined);
+});
+
+test("an order with a shipment in progress cannot be cancelled locally", () => {
+  for (const order of [{ status: "shipping_pending" }, { status: "shipment_booked" },
+    { status: "fulfilment_review", shiprocket_order_id: 123 }]) {
+    const tree = harness({ ...shiprocket, ...order }).render();
+    assert.doesNotMatch(renderToStaticMarkup(tree), /<summary>Cancel order<\/summary>/);
+    assert.match(renderToStaticMarkup(tree), /shipping provider and support/);
+  }
+});
 test("paid Shiprocket orders show an inline submit panel that needs package dimensions", () => {
   const empty = panel({ status: "paid" });
   assert.equal(button(empty.tree, "Submit packed order to Shiprocket").props.disabled, true);

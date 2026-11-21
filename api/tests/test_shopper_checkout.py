@@ -544,7 +544,7 @@ class ShopperCheckoutTests(TenantDatabaseCase):
             db.commit()
         captured = self.client.post(f"/shop/orders/{late['id']}/confirm", json=self.confirmation(late, "late"), headers=self.shop_headers())
         self.assertEqual(captured.status_code, 200, captured.text)
-        self.assertEqual(captured.json()["status"], "paid")
+        self.assertEqual(captured.json()["status"], "fulfilment_review")
         with self.factory() as db:
             # Simulate a recovered Shiprocket order so dispatch reaches the stock check.
             db.execute(text("update shop_orders set shiprocket_order_id=424242 where id=:id"), {"id": late["id"]})
@@ -559,6 +559,75 @@ class ShopperCheckoutTests(TenantDatabaseCase):
                                 {"id": late["id"]}).scalars().all()
             self.assertTrue(events)
             self.assertTrue(all("credentials" not in event and "address" not in event for event in events))
+
+    def test_cancelled_order_late_capture_is_reviewed_and_recorded_once(self):
+        from app.services.shop_stock import reserved_stock
+
+        self.configure()
+        product_id = self.product()
+        self.create_shopper()
+        order, _ = self.checkout(product_id)
+        cancelled = self.client.post(f"/checkout-admin/orders/{order['id']}/cancel",
+                                     json={"reason": "Customer request"}, headers=self.staff_headers())
+        self.assertEqual(cancelled.status_code, 200, cancelled.text)
+        self.assertEqual(cancelled.json()["status"], "cancelled")
+        for _ in range(2):
+            captured = self.client.post(f"/shop/orders/{order['id']}/confirm",
+                                        json=self.confirmation(order), headers=self.shop_headers())
+            self.assertEqual(captured.status_code, 200, captured.text)
+            self.assertEqual(captured.json()["status"], "fulfilment_review")
+        with self.factory() as db:
+            row = db.execute(text("select expires_at,advance_transaction_id from shop_orders where id=:id"),
+                             {"id": order["id"]}).mappings().one()
+            self.assertIsNone(row["expires_at"])
+            self.assertIsNotNone(row["advance_transaction_id"])
+            self.assertEqual(reserved_stock(db, self.company_id, product_id, None, self.main_store()), Decimal("1"))
+            self.assertEqual(db.execute(text("""select count(*) from account_transactions where company_id=:company
+                and source_type='shop_order' and source_id=:order"""),
+                {"company": self.company_id, "order": order["id"]}).scalar_one(), 1)
+        denied = self.client.post(f"/checkout-admin/orders/{order['id']}/cancel",
+                                  json={"reason": "Out of stock", "refund_account_id": self.clearing_account},
+                                  headers=self.staff_headers())
+        self.assertEqual(denied.status_code, 422, denied.text)
+        refunded = self.client.post(f"/checkout-admin/orders/{order['id']}/cancel",
+                                    json={"reason": "Out of stock", "refund_account_id": self.clearing_account,
+                                          "refund_confirmed": True, "refund_reference": "rfnd_fixture"},
+                                    headers=self.staff_headers())
+        self.assertEqual(refunded.status_code, 200, refunded.text)
+        self.assertEqual(refunded.json()["status"], "refunded")
+
+    def test_review_requires_available_stock_before_booking_shipment(self):
+        self.configure()
+        product_id = self.product()
+        self.create_shopper()
+        order, _ = self.checkout(product_id)
+        cancelled = self.client.post(f"/checkout-admin/orders/{order['id']}/cancel",
+                                     json={"reason": "Customer request"}, headers=self.staff_headers())
+        self.assertEqual(cancelled.status_code, 200, cancelled.text)
+        captured = self.client.post(f"/shop/orders/{order['id']}/confirm",
+                                    json=self.confirmation(order), headers=self.shop_headers())
+        self.assertEqual(captured.status_code, 200, captured.text)
+        self.assertEqual(captured.json()["status"], "fulfilment_review")
+        shipment = {"weight": 1, "length": 10, "width": 10, "height": 10}
+        blocked = self.client.post(f"/checkout-admin/orders/{order['id']}/ship", json=shipment, headers=self.staff_headers())
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        with self.factory() as db:
+            db.execute(text("update stock_balances set quantity=0 where company_id=:company and product_id=:product"),
+                       {"company": self.company_id, "product": product_id})
+            db.commit()
+        endpoint = f"/checkout-admin/orders/{order['id']}/resolve-fulfilment"
+        resolved = self.client.post(endpoint, json={"ship_from_store_id": self.main_store()}, headers=self.staff_headers())
+        self.assertEqual(resolved.status_code, 409, resolved.text)
+        with self.factory() as db:
+            db.execute(text("update stock_balances set quantity=2 where company_id=:company and product_id=:product"),
+                       {"company": self.company_id, "product": product_id})
+            db.commit()
+        resolved = self.client.post(endpoint, json={"ship_from_store_id": self.main_store()}, headers=self.staff_headers())
+        self.assertEqual(resolved.status_code, 200, resolved.text)
+        self.assertEqual(resolved.json()["status"], "paid")
+        booked = self.client.post(f"/checkout-admin/orders/{order['id']}/ship", json=shipment, headers=self.staff_headers())
+        self.assertEqual(booked.status_code, 200, booked.text)
+        self.assertEqual(booked.json()["status"], "shipment_booked")
 
     def test_platform_admin_cannot_reuse_staff_sessions_and_suspension_revokes_sessions(self):
         self.assertEqual(self.client.get("/platform/workspaces").status_code, 401)

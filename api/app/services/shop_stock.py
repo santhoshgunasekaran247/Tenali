@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 # Orders that hold stock: unpaid prepaid checkouts inside their payment window, captured prepaid
 # orders awaiting dispatch, approved COD orders, and pickup orders awaiting collection.
-HOLDING_STATUSES = ("awaiting_payment", "paid", "confirmed", "ready_for_pickup", "shipping_pending", "shipment_booked")
+HOLDING_STATUSES = ("awaiting_payment", "paid", "confirmed", "fulfilment_review", "ready_for_pickup", "shipping_pending", "shipment_booked")
 
 
 def reserved_stock(db, company_id: str, product_id: str, variant_id: str | None, store_id: str,

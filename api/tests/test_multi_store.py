@@ -261,9 +261,21 @@ class MultiStoreTests(unittest.TestCase):
                                                                              {"id": simulated["id"]}).mappings().one()))
         with self.assertRaises(HTTPException):
             service.cancel_order(self.db, self.company, str(simulated["id"]), OrderCancel(reason="No refund account"))
+        with self.assertRaises(HTTPException):
+            service.cancel_order(self.db, self.company, str(simulated["id"]),
+                                 OrderCancel(reason="Missing confirmation", refund_account_id=self.clearing["id"]))
         refunded = service.cancel_order(self.db, self.company, str(simulated["id"]),
-                                        OrderCancel(reason="Out of stock", refund_account_id=self.clearing["id"]))
+                                        OrderCancel(reason="Out of stock", refund_account_id=self.clearing["id"],
+                                                    refund_confirmed=True, refund_reference="rfnd_test"))
         self.assertEqual(refunded["status"], "refunded")
+        repeated = service.cancel_order(self.db, self.company, str(simulated["id"]), OrderCancel(reason="Retry"))
+        self.assertEqual(repeated["status"], "refunded")
+        refund_rows = self.db.execute(self.text("""select reference, description from account_transactions
+            where company_id=:company and source_type='shop_order_refund' and source_id=:order"""),
+            {"company": self.company, "order": simulated["id"]}).mappings().all()
+        self.assertEqual(len(refund_rows), 1)
+        self.assertEqual(refund_rows[0]["reference"], "rfnd_test")
+        self.assertIn("pay_test", refund_rows[0]["description"])
         balance = self.db.execute(self.text("""select coalesce(sum(case when to_account_id=:account then amount else -amount end),0)
             from account_transactions where company_id=:company and (to_account_id=:account or from_account_id=:account)"""),
             {"company": self.company, "account": self.clearing["id"]}).scalar_one()

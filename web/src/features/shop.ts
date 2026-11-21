@@ -50,6 +50,10 @@ export type ShopOrder = {
   shipping_error: string | null;
   created_at: string;
 };
+export function canVerifyPayment(order: Pick<ShopOrder, "status" | "payment_method" | "razorpay_order_id" | "razorpay_payment_id">): boolean {
+  return (order.status === "awaiting_payment" || order.status === "expired" || order.status === "cancelled") &&
+    order.payment_method === "prepaid" && Boolean(order.razorpay_order_id) && !order.razorpay_payment_id;
+}
 export type Quote = Pick<ShopOrder, "items" | "subtotal_paise" | "shipping_paise" | "total_paise"> & { pickup_store?: string | null };
 export type PaymentResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
 type RazorpayOptions = {

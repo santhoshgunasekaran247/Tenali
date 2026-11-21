@@ -136,6 +136,7 @@ test("desktop and mobile navigation share direct links and respect module/role a
 test("AI app help links only known internal destinations; HTML and external links remain text", () => {
   const { AssistantMessage } = load("components/AssistantMessage.tsx", {
     "../features/portalNavigation": navigation,
+    "../features/aiMessages": load("features/aiMessages.ts"),
     "react-router-dom": { Link },
   });
   const html = renderToStaticMarkup(React.createElement(AssistantMessage, {

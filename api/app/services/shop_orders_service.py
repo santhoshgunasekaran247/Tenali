@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.billing import InvoiceCreate, InvoiceLineCreate
-from app.schemas.checkout import CodSettlementInput, CollectInput, DispatchInput, EnquiryInput, EnquiryUpdate, OrderCancel
+from app.schemas.checkout import CodSettlementInput, CollectInput, DispatchInput, EnquiryInput, EnquiryUpdate, FulfilmentResolutionInput, OrderCancel
 from app.schemas.masters import HsnMasterCreate
 from app.services.collection_ledger import lock_invoice_receivables, sync_receivable
 from app.services.gst_states import place_of_supply, place_of_supply_for_code
@@ -66,7 +66,9 @@ def post_prepaid_advance(db: Session, company_id: str, order: dict) -> None:
         {"company": company_id, "store": str(store["id"]), "account": str(store["settlement_account_id"]),
          "amount": Decimal(order["total_paise"]) / 100, "reference": order["razorpay_payment_id"],
          "description": f"Online order advance {str(order['id'])[:8]}", "order": str(order["id"])}).scalar_one()
-    db.execute(text("update shop_orders set advance_transaction_id=:tx, review_reason=null where id=:id"),
+    db.execute(text("""update shop_orders set advance_transaction_id=:tx,
+        review_reason=case when status='fulfilment_review'
+            then 'Review stock and fulfilment before dispatch or refund.' else null end where id=:id"""),
                {"tx": str(transaction), "id": order["id"]})
 
 
@@ -173,7 +175,7 @@ def dispatch_order(db: Session, company_id: str, order_id: str, payload: Dispatc
     order = _order(db, company_id, order_id)
     if order["invoice_id"]:
         return _order_out(db, company_id, order_id)
-    allowed = {"paid", "shipment_booked", "shipping_pending"} if order["payment_method"] == "prepaid" else {"confirmed", "shipment_booked", "shipping_pending"}
+    allowed = {"paid", "shipment_booked", "shipping_pending", "fulfilment_review"} if order["payment_method"] == "prepaid" else {"confirmed", "shipment_booked", "shipping_pending", "fulfilment_review"}
     allowed.add("dispatched")  # retry after a partial dispatch whose invoice link did not complete
     if order["status"] not in allowed or order["payment_method"] == "pay_at_pickup":
         raise HTTPException(409, f"An order in status {order['status']} cannot be dispatched")
@@ -284,25 +286,77 @@ def mark_delivered(db: Session, company_id: str, order_id: str) -> dict:
     return _order_out(db, company_id, order_id)
 
 
+def resolve_fulfilment_review(db: Session, company_id: str, order_id: str, payload: FulfilmentResolutionInput) -> dict:
+    order = _order(db, company_id, order_id)
+    if order["status"] != "fulfilment_review" or order["invoice_id"] or order["shiprocket_order_id"]:
+        raise HTTPException(409, "Only an unbooked, uninvoiced order in fulfilment review can be resolved")
+    if order["payment_method"] not in {"prepaid", "cod"}:
+        raise HTTPException(409, "This order cannot be resolved for delivery")
+    if order["payment_method"] == "prepaid" and (not order["razorpay_payment_id"] or not order["advance_transaction_id"]):
+        raise HTTPException(409, "Post the verified payment advance before resolving fulfilment")
+    store = stock_store(db, company_id, str(payload.ship_from_store_id))
+    from app.services.inventory_service import InventoryService
+    inventory = InventoryService(db, company_id)
+    for product_id in sorted({str(item["product_id"]) for item in order["items"]}):
+        inventory._product(product_id, lock=True)
+    for item in order["items"]:
+        available = inventory.available_stock(str(store["id"]), item["product_id"], item["variant_id"], str(order["id"]))
+        if available < Decimal(str(item["quantity"])):
+            raise HTTPException(409, f"Only {available} of {item['name']} available at this store; transfer stock or arrange a refund")
+    db.execute(text("""update shop_orders set status=:status,ship_from_store_id=:store,review_reason=null
+        where company_id=:company and id=:id"""),
+        {"company": company_id, "id": order_id, "store": str(store["id"]),
+         "status": "paid" if order["payment_method"] == "prepaid" else "confirmed"})
+    db.commit()
+    return _order_out(db, company_id, order_id)
+
+
 def cancel_order(db: Session, company_id: str, order_id: str, payload: OrderCancel) -> dict:
     order = _order(db, company_id, order_id)
     if order["invoice_id"]:
         raise HTTPException(409, "This order is invoiced; reverse its receipt and cancel the invoice from Billing instead")
     if order["status"] in {"cancelled", "refunded"}:
         return _order_out(db, company_id, order_id)
+    if order["status"] in {"shipping_pending", "shipment_booked", "dispatched", "delivered"} or order["shiprocket_order_id"]:
+        raise HTTPException(409, "This order has a shipment or dispatch in progress. Resolve it with the shipping provider and support before cancelling or recording a refund")
     status = "cancelled"
-    if order["advance_transaction_id"]:
+    if order["razorpay_payment_id"]:
+        if not order["advance_transaction_id"]:
+            raise HTTPException(409, "Post the captured payment advance before recording a refund and cancelling this order")
+        if not payload.refund_confirmed or not payload.refund_reference:
+            raise HTTPException(422, "Confirm the full order amount was refunded in Razorpay and provide its refund ID")
         if not payload.refund_account_id:
             raise HTTPException(422, "Choose the account the refund is paid from (normally the Razorpay clearing account)")
+        advance = db.execute(text("""select amount, source_type, source_id, from_account_id, to_account_id
+            from account_transactions where id=:id and company_id=:company for update"""),
+            {"id": str(order["advance_transaction_id"]), "company": company_id}).mappings().first()
+        if (not advance or advance["source_type"] != "shop_order" or str(advance["source_id"]) != order_id
+                or advance["amount"] != Decimal(order["total_paise"]) / 100
+                or advance["from_account_id"] is not None or not advance["to_account_id"]):
+            raise HTTPException(409, "The recorded payment advance does not match this order; review the ledger before refunding")
+        account = db.execute(text("select id from accounts where id=:id and company_id=:company and is_active"),
+                             {"id": str(payload.refund_account_id), "company": company_id}).scalar_one_or_none()
+        if not account:
+            raise HTTPException(422, "Choose an active refund account in this workspace")
+        db.execute(text("select pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                   {"key": f"shop_order_refund:{company_id}:{payload.refund_reference}"})
+        duplicate = db.execute(text("""select 1 from account_transactions where company_id=:company
+            and source_type='shop_order_refund' and reference=:reference limit 1"""),
+            {"company": company_id, "reference": payload.refund_reference}).first()
+        if duplicate:
+            raise HTTPException(409, "This Razorpay refund ID is already recorded for an online order")
         assert_period_open(db, company_id, date.today(), "Refunding online order")
         db.execute(text("""insert into account_transactions(company_id,store_id,from_account_id,to_account_id,amount,payment_mode,
                 reference,category,description,transaction_date,source_type,source_id)
             values(:company,:store,:account,null,:amount,'online',:reference,'online_refund',:description,current_date,
                 'shop_order_refund',:order)"""),
             {"company": company_id, "store": str(order["store_id"]), "account": str(payload.refund_account_id),
-             "amount": Decimal(order["total_paise"]) / 100, "reference": order["razorpay_payment_id"],
-             "description": f"Refund of online order {str(order['id'])[:8]}: {payload.reason}", "order": order_id})
+             "amount": Decimal(order["total_paise"]) / 100, "reference": payload.refund_reference,
+             "description": f"Refund of online order {str(order['id'])[:8]}, payment {order['razorpay_payment_id']}: {payload.reason}",
+             "order": order_id})
         status = "refunded"
+    elif order["advance_transaction_id"]:
+        raise HTTPException(409, "The payment advance has no captured payment ID; review the order before cancellation")
     db.execute(text("""update shop_orders set status=:status,cancelled_at=now(),cancellation_reason=:reason,expires_at=null where id=:id"""),
                {"status": status, "reason": payload.reason, "id": order_id})
     db.commit()
