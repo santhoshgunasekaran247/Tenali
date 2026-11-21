@@ -80,10 +80,11 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.text = text
         self.connection = engine.connect()
         self.outer = self.connection.begin()
-        from schema_support import apply_customer_migration, apply_product_minimum_migration, apply_inventory_deletion_migration
+        from schema_support import apply_customer_migration, apply_product_minimum_migration, apply_inventory_deletion_migration, apply_variant_images_migration
         apply_customer_migration(self.connection)
         apply_product_minimum_migration(self.connection)
         apply_inventory_deletion_migration(self.connection)
+        apply_variant_images_migration(self.connection)
         self.db = Session(bind=self.connection, join_transaction_mode="create_savepoint")
         self.company, self.other, self.vendor_a, self.vendor_b = [str(uuid4()) for _ in range(4)]
         for company in [self.company, self.other]:
@@ -134,6 +135,39 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.assertEqual(len(self.service.movements(self.product_id)["items"]), 2)
         self.assertEqual(len(self.service.remind(self.product_id, ReorderReminder(reminder_date=date.today()))["items"]), 1)
         self.assertEqual(self.service.remind(self.product_id, ReorderReminder(reminder_date=date.today()+timedelta(days=2)))["items"], [])
+
+    def test_variant_image_catalog_and_parent_fallback(self):
+        from app.schemas.catalog import CatalogProductResponse
+        from app.services.catalog_service import CatalogService
+        from app.schemas.inventory import VariantImageInput
+        variant = self.service.save_variant(self.product_id, VariantImageInput(variant_name="Blue",
+            image_url="https://example.test/blue.png"))["variants"][0]
+        variant_id = str(variant["id"])
+        public = CatalogProductResponse.model_validate(CatalogService(self.db).product_detail(self.product_id, self.company))
+        self.assertEqual(public.product.variants[0].image_url, "https://example.test/blue.png")
+        self.service.save_variant(self.product_id, VariantInput(variant_name="Blue renamed"), variant_id)
+        self.assertEqual(self.service.detail(self.product_id)["variants"][0]["image_url"], "https://example.test/blue.png")
+        self.service.save_variant(self.product_id, VariantImageInput(variant_name="Blue", image_url=None), variant_id)
+        public = CatalogProductResponse.model_validate(CatalogService(self.db).product_detail(self.product_id, self.company))
+        self.assertIsNone(public.product.variants[0].image_url)
+
+    def test_product_and_variant_stock_totals_respect_store_scope(self):
+        from app.schemas.inventory import StockAdjustment
+        second = str(self.db.execute(self.text("""insert into stores(company_id,code,name,kind,holds_stock,state_code)
+            values(:company,'SECOND','Other stock room','warehouse',true,'33') returning id"""),
+            {"company": self.company}).scalar_one())
+        variant_id = str(self.service.save_variant(self.product_id, VariantInput(variant_name="Blue"))["variants"][0]["id"])
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=3, notes="Main"))
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=5, notes="Second"), store_id=second)
+        self.service.adjust_stock(self.product_id, StockAdjustment(variant_id=variant_id, direction="IN", quantity=2, notes="Second"), store_id=second)
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": [second]}
+        product = self.service.detail(self.product_id)
+        self.assertEqual(product["stock_qty"], 7)
+        self.assertEqual(product["base_stock_qty"], 5)
+        self.assertEqual(product["variants"][0]["stock_qty"], 2)
+        self.db.info["tenant_context"]["store_ids"] = []
+        product = self.service.detail(self.product_id)
+        self.assertEqual((product["stock_qty"], product["base_stock_qty"], product["variants"][0]["stock_qty"]), (0, 0, 0))
 
     def test_shared_customer_catalog_visibility_and_privacy(self):
         from app.schemas.catalog import CatalogProductResponse

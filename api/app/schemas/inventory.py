@@ -68,6 +68,16 @@ class VariantInput(ItemDetails):
     pricing_mode: Literal["price", "discount", "inherit"] = "inherit"
 
 
+class VariantImageInput(VariantInput):
+    image_url: str | None = Field(default=None, max_length=1400000)
+
+    @model_validator(mode="after")
+    def validate_image(self):
+        if not (self.image_url and PHOTO_REFERENCE.match(self.image_url)):
+            validate_image_source(self.image_url)
+        return self
+
+
 class ProductImageEnhance(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     image_url: str = Field(min_length=1, max_length=2000)

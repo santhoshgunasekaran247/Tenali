@@ -161,6 +161,8 @@ create table if not exists product_variants (
     id uuid primary key default gen_random_uuid(),
     product_id uuid not null references products(id) on delete cascade,
     variant_name text,
+    image_url text,
+    image_original_url text,
     sku text,
     size text,
     colour text,

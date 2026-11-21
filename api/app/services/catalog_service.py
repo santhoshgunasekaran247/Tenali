@@ -258,7 +258,7 @@ class CatalogService:
             product["gallery"] = [product["image_url"]]
 
         variants = self.db.execute(text("""
-            select variant.id,variant.variant_name,variant.sku,variant.size,variant.colour,variant.item_name,variant.description,
+            select variant.id,variant.variant_name,variant.image_url,variant.sku,variant.size,variant.colour,variant.item_name,variant.description,
                 variant.weight,variant.height,variant.width,variant.length,variant.attributes,
                 case when variant.pricing_mode='inherit' then p.pricing_mode else variant.pricing_mode end as pricing_mode,
                 case when variant.pricing_mode='inherit' then p.selling_price else variant.selling_price end as selling_price,

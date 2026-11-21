@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductImageEnhance, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantInput, VendorOfferInput
+from app.schemas.inventory import BulkVendorMapping, ExternalMovementSource, InventoryLookupCreate, ProductImageEnhance, ProductInput, ProductMerge, ReorderReminder, StockAdjustment, StockTransferCreate, StockTransferReverse, VariantImageInput, VendorOfferInput
 from app.services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -75,12 +75,12 @@ def delete_product(product_id: UUID, service: InventoryService = Depends(invento
 
 
 @router.post("/products/{product_id}/variants", status_code=201)
-def create_variant(product_id: UUID, payload: VariantInput, service: InventoryService = Depends(inventory_service)):
+def create_variant(product_id: UUID, payload: VariantImageInput, service: InventoryService = Depends(inventory_service)):
     return service.save_variant(str(product_id), payload)
 
 
 @router.put("/products/{product_id}/variants/{variant_id}")
-def update_variant(product_id: UUID, variant_id: UUID, payload: VariantInput, service: InventoryService = Depends(inventory_service)):
+def update_variant(product_id: UUID, variant_id: UUID, payload: VariantImageInput, service: InventoryService = Depends(inventory_service)):
     return service.save_variant(str(product_id), payload, str(variant_id))
 
 

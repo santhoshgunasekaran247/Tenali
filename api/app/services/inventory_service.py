@@ -167,11 +167,13 @@ class InventoryService:
             from vendor_contributions offer join products p on p.id=offer.product_id
             join parties vendor on vendor.id=offer.vendor_id and vendor.company_id=p.company_id
             where p.company_id=:company order by offer.created_at,offer.id"""), {"company": self.company_id}).mappings()]
-        stocks = {(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None): row["quantity"] for row in self.db.execute(text("""
-            select product_id,variant_id,sum(quantity) as quantity from stock_balances where company_id=:company group by product_id,variant_id
-        """), {"company": self.company_id}).mappings()}
-        store_stocks = defaultdict(list)
         permitted = allowed_stores(self.db.info.get("tenant_context"))
+        stocks = {(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None): row["quantity"] for row in self.db.execute(text("""
+            select product_id,variant_id,sum(quantity) as quantity from stock_balances where company_id=:company
+            and (cast(:permitted as uuid[]) is null or store_id=any(cast(:permitted as uuid[])))
+            group by product_id,variant_id
+        """), {"company": self.company_id, "permitted": permitted}).mappings()}
+        store_stocks = defaultdict(list)
         for row in self.db.execute(text("""select b.product_id,b.variant_id,b.store_id,s.code as store_code,s.name as store_name,sum(b.quantity) as quantity
             from stock_balances b join stores s on s.id=b.store_id where b.company_id=:company
             and (cast(:permitted as uuid[]) is null or b.store_id=any(cast(:permitted as uuid[])))
@@ -436,8 +438,7 @@ class InventoryService:
 
     def save_variant(self, product_id: str, payload: VariantInput, variant_id: str | None = None, *, commit: bool = True) -> dict:
         self._product(product_id, lock=True)
-        if variant_id:
-            self._variant(product_id, variant_id)
+        current = self._variant(product_id, variant_id) if variant_id else None
         values = payload.model_dump()
         self._validate_item(values, product_id, variant_id)
         duplicate = self.db.execute(text("""select id from product_variants where product_id=:product and is_active=true
@@ -446,6 +447,14 @@ class InventoryService:
             {"product": product_id, "id": variant_id, "size": values.get("size") or "", "colour": values.get("colour") or ""}).scalar_one_or_none()
         if duplicate:
             raise HTTPException(409, "An active variant with this size and colour already exists")
+        if "image_url" not in payload.model_fields_set:
+            values.pop("image_url", None)
+        else:
+            source = values["image_url"]
+            if current and source == current.get("image_url"):
+                values["image_original_url"] = current.get("image_original_url")
+            else:
+                values["image_url"], values["image_original_url"] = FileStore(self.db).product_image(self.company_id, source)
         if not variant_id:
             values["product_id"] = product_id
         variant_id = self._write("product_variants", values, variant_id)

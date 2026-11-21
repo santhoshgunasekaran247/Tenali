@@ -13,8 +13,9 @@ export function productPagePath(item: ProductReference): string {
   return `/products/${encodeURIComponent(item.product_id)}${item.variant_id ? `?variant=${encodeURIComponent(item.variant_id)}` : ""}`;
 }
 
-export function productImage(product?: CatalogProduct): string {
-  return product?.gallery?.[0] || product?.image_urls?.split("|").map(image => image.trim()).find(Boolean) || product?.image_url || "";
+export function productImage(product?: CatalogProduct, variantId?: string | null): string {
+  return product?.variants?.find(variant => variant.id === variantId)?.image_url || product?.gallery?.[0] ||
+    product?.image_urls?.split("|").map(image => image.trim()).find(Boolean) || product?.image_url || "";
 }
 
 export function ProductImageLink({ item, name, imageUrl, className = "order-item-image" }: {
@@ -23,17 +24,17 @@ export function ProductImageLink({ item, name, imageUrl, className = "order-item
   const { storefront, user } = useAuth();
   const companyId = storefront?.id || user?.company_id;
   const [photo, setPhoto] = useState({ url: "", error: "", key: "" });
-  const key = `${companyId}:${item.product_id}`;
+  const key = `${companyId}:${item.product_id}:${item.variant_id || ""}`;
   useEffect(() => {
     if (imageUrl !== undefined || !companyId) return;
     let active = true;
     void api.product(item.product_id).then(result => {
-      if (active) setPhoto({ url: productImage(result.product), error: "", key });
+      if (active) setPhoto({ url: productImage(result.product, item.variant_id), error: "", key });
     }).catch(failure => {
       if (active) setPhoto({ url: "", error: failure instanceof Error ? failure.message : String(failure), key });
     });
     return () => { active = false; };
-  }, [key, imageUrl, companyId, item.product_id]);
+  }, [key, imageUrl, companyId, item.product_id, item.variant_id]);
   const url = imageUrl ?? (photo.key === key ? photo.url : "");
   const src = toAssetUrl(url);
   const [failedSrc, setFailedSrc] = useState("");

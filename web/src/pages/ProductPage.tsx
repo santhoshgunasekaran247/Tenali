@@ -16,7 +16,7 @@ import { cartMode, cartWords } from "../features/cartMode";
 import { useCart } from "../features/cart";
 import { QuantityStepper } from "../components/QuantityStepper";
 import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
-import { pickVariant, shortVariantLabel, variantLayout, variantOptions, type VariantOption } from "../features/catalog/variants";
+import { pickVariant, shortVariantLabel, variantGallery, variantLayout, variantOptions, type VariantOption } from "../features/catalog/variants";
 
 export function ProductPage() {
   const {storefront}=useAuth();
@@ -35,7 +35,7 @@ export function ProductPage() {
   useEffect(() => {
     if (!productId) return;
     let active = true;
-    setProduct(undefined); setError(undefined); setVariantId(search.get("variant") || "");
+    setProduct(undefined); setError(undefined); setVariantId(search.get("variant") || ""); setPhotoIndex(0);
     api
       .product(productId)
       .then((r) => {if (active) {setProduct(r.product);setCompany(r.company);setQuantity(String(r.product.minimum_order_quantity));setCartMessage("");setCartError("");}})
@@ -48,10 +48,9 @@ export function ProductPage() {
   const gallery = useMemo(() => {
     if (!product) return [];
     const photos = product.gallery || [];
-    if (photos.length) return photos;
-    if (product.image_url) return [product.image_url];
-    return [];
-  }, [product]);
+    const parentGallery = photos.length ? photos : product.image_url ? [product.image_url] : [];
+    return variantGallery(parentGallery, product.variants?.find(item => item.id === variantId)?.image_url);
+  }, [product, variantId]);
 
   const displayCompany=company||storefront;
   const display=storefrontDisplay(displayCompany);
@@ -69,7 +68,7 @@ export function ProductPage() {
   const layout = variantLayout(options);
   const selectedOption = options.find(option => option.id === (variant?.id || ""));
   const chooseVariant = (id: string) => {
-    setVariantId(id); setCartMessage(""); setCartError("");
+    setVariantId(id); setPhotoIndex(0); setCartMessage(""); setCartError("");
     const next = new URLSearchParams(search);
     if (id) next.set("variant", id); else next.delete("variant");
     setSearch(next, { replace: true });

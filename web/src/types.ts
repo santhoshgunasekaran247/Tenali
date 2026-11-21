@@ -170,7 +170,7 @@ export type InventoryItem = InventoryItemInput & {
   store_stocks: Array<{ store_id: string; store_code: string; store_name: string; quantity: number }>;
   vendor_available_quantity: number | null; vendor_availability: string; vendor_lead_time_days: number | null;
 };
-export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string };
+export type InventoryVariant = InventoryItem & { product_id: string; variant_name: string; image_url: string | null; image_original_url: string | null };
 export type InventoryProduct = InventoryItem & Omit<InventoryProductInput, "image_urls"> & {
   image_urls: string; image_originals?: Record<string, string>; portal_product_id: string; brand_name?: string; category_name?: string;
   base_stock_qty: number; variants: InventoryVariant[]; is_draft?: boolean;
@@ -269,7 +269,7 @@ export type CatalogProduct = {
   item_name?: string; size?: string; colour?: string;
   weight?: number; height?: number; width?: number; length?: number;
   attributes?: Record<string, string>; discount_percent?: number | null;
-  variants?: Array<{ id: string; variant_name: string; sku?: string; size?: string; colour?: string;
+  variants?: Array<{ id: string; variant_name: string; image_url?: string | null; sku?: string; size?: string; colour?: string;
     item_name?: string; description?: string; weight?: number; height?: number; width?: number; length?: number;
     attributes?: Record<string, string>; mrp_display?: string; selling_price_display?: string; discount_percent?: number | null; stock_qty: number }>;
 };

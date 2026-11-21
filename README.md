@@ -53,6 +53,14 @@ Render Environment settings, never in the static UI or the repository.
 
 ## Inventory and customers
 
+- Variants can have their own uploaded photo. If no variant photo is set, the
+  storefront uses the main product photo; selecting a variant updates the
+  gallery. Variant uploads use the product photo pipeline and retain the
+  original. Existing variant updates that omit the image leave it unchanged.
+  Apply Alembic migration `061_variant_images` before deploying this version.
+- Inventory product and variant stock totals reflect only stores accessible to
+  the signed-in member. Storefront stock figures and checkout availability use
+  their own public and fulfilment-store rules.
 - Tenali AI displays verified record lookups as compact result cards: available
   totals and lookup warnings stay visible, while individual records can be
   expanded. Ledger entries show money direction and labelled transaction

@@ -52,6 +52,8 @@ test("gallery-only products have a thumbnail and IDs are safely encoded", () => 
   const h = harness();
   assert.equal(h.productImage({ gallery: ["gallery.jpg"], image_url: "" }), "gallery.jpg");
   assert.equal(h.productImage({ image_urls: " | photo.jpg | other.jpg", image_url: "" }), "photo.jpg");
+  assert.equal(h.productImage({ image_url: "main.jpg", variants: [{ id: "blue", image_url: "blue.jpg" }] }, "blue"), "blue.jpg");
+  assert.equal(h.productImage({ image_url: "main.jpg", variants: [{ id: "blue", image_url: null }] }, "blue"), "main.jpg");
   assert.equal(h.productPagePath({ product_id: "id/part", variant_id: "blue & gold" }), "/products/id%2Fpart?variant=blue%20%26%20gold");
 });
 

@@ -24,6 +24,14 @@ def apply_product_minimum_migration(connection):
         migration["upgrade"]()
 
 
+def apply_variant_images_migration(connection):
+    if "image_url" in {column["name"] for column in inspect(connection).get_columns("product_variants")}:
+        return
+    migration = runpy.run_path(str(Path(__file__).parents[1] / "alembic" / "versions" / "061_variant_images.py"))
+    with Operations.context(MigrationContext.configure(connection)):
+        migration["upgrade"]()
+
+
 def apply_self_shipping_migration(connection):
     if "shipping_provider" in {column["name"] for column in inspect(connection).get_columns("checkout_settings")}:
         return

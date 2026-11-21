@@ -12,6 +12,10 @@ export type VariantDimension = { key: string; values: string[] };
 /** Either value groups (Size, Colour, ...) that identify every option, or one row of named options. */
 export type VariantLayout = { kind: "dimensions"; dimensions: VariantDimension[] } | { kind: "names" };
 
+export function variantGallery(parentGallery: string[], variantImage?: string | null): string[] {
+  return variantImage ? [variantImage, ...parentGallery.filter(image => image !== variantImage)] : parentGallery;
+}
+
 const clean = (value: unknown) => value == null ? "" : String(value).trim();
 
 function valuesOf(source: VariantSource): Record<string, string> {

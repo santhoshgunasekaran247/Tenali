@@ -38,7 +38,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
     ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, hsn_code: null, image_url: null, image_urls: [],
     catalog_visible: false, best_seller: false, sru_special: false, home_order: 999, minimum_order_quantity: 1,
     ...(product && !variantMode ? productPayload(product) : {}),
-    ...(variantMode ? { pricing_mode: "inherit" as const, ...(variant ? itemPayload(variant) : {}) } : {}),
+    ...(variantMode ? { pricing_mode: "inherit" as const, image_url: variant?.image_url || null, ...(variant ? itemPayload(variant) : {}) } : {}),
     variant_name: variant?.variant_name || "",
   }));
   const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
@@ -64,6 +64,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
     originals: product?.image_originals || {},
   }));
   const offers = (variantMode ? variant?.offers : product?.offers) || [];
+  const parentImage = product?.image_urls?.split("|").map(image => image.trim()).find(Boolean) || product?.image_url;
   const current = variantMode ? variant : product;
   const selectedOffer = offers.find((offer) => offer.vendor_id === draft.preferred_vendor_id && offer.is_active && offer.vendor_active);
   const mrp = selectedOffer?.mrp ?? (draft.preferred_vendor_id === current?.preferred_vendor_id ? current?.effective_mrp : null);
@@ -96,7 +97,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
         }
       }
       const result = variantMode && product
-        ? await api.inventorySaveVariant(product.id,{...item,variant_name:draft.variant_name.trim() || [draft.size,draft.colour].filter(Boolean).join(" / ")},variant?.id)
+        ? await api.inventorySaveVariant(product.id,{...item,image_url:draft.image_url,variant_name:draft.variant_name.trim() || [draft.size,draft.colour].filter(Boolean).join(" / ")},variant?.id)
         : await api.inventorySaveProduct({...draft,...item,...lookupIds,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
       clearDrafts(draftKey);
       onSaved(result);
@@ -164,6 +165,13 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       <label>Discount %<input type="number" min="0" max="100" step="0.01" disabled={draft.pricing_mode==="inherit"} value={discount??""} onChange={event=>patch({pricing_mode:"discount",discount_percent:Number(event.target.value)})}/></label>
       <div className="inventory-price-reference"><span>Preferred vendor MRP</span><strong>{inventoryMoney(mrp)}</strong><span>Buying price</span><strong>{inventoryMoney(buyingPrice)}</strong></div>
       <label className="inventory-check"><input type="checkbox" checked={draft.is_active} onChange={event=>patch({is_active:event.target.checked})}/>Active</label>
+      {variantMode ? <div className="inventory-wide">
+        <label>Variant image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}} /></label>
+        <p className="social-caption">{draft.image_url ? "This variant uses its own image." : "Using the main product image. Upload a photo to replace it for this variant."} PNG, JPEG or WebP up to 1 MB.</p>
+        {(draft.image_url || parentImage) ? <img className="inventory-image-preview" src={toAssetUrl(draft.image_url || parentImage || "")} alt={draft.image_url ? "Variant image preview" : "Main product image preview"} /> : null}
+        {draft.image_url ? <button className="ops-link-btn" type="button" onClick={()=>patch({image_url:null})}>Use main product image</button> : null}
+        {variant?.image_original_url && draft.image_url === variant.image_url ? <a className="social-caption" href={variant.image_original_url} target="_blank" rel="noreferrer">View original upload</a> : null}
+      </div> : null}
       {!variantMode?<><label>Primary Image URL / Asset Path<input value={draft.image_url?.startsWith('data:')?"":draft.image_url||""} placeholder={draft.image_url?.startsWith('data:')?"Uploaded image":""} onChange={event=>patch({image_url:event.target.value||null})}/></label>
         <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>        {draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}{draft.image_url&&savedImages.originals[draft.image_url]?<a className="social-caption" href={savedImages.originals[draft.image_url]} target="_blank" rel="noreferrer">View original upload</a>:null}<span className="social-caption">On save, uploads are enhanced into a 1000×1000 WebP for the website; the original is kept too. Up to 1 MB.</span></label>
         <label className="inventory-wide">Gallery Image URLs<textarea rows={2} value={gallery} onChange={event=>setGallery(event.target.value)}/></label>

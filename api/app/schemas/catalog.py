@@ -39,6 +39,7 @@ class CategoryOut(BaseModel):
 class CatalogVariantOut(BaseModel):
     id: UUID
     variant_name: str | None = None
+    image_url: str | None = None
     sku: str | None = None
     size: str | None = None
     colour: str | None = None
