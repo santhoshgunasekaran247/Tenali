@@ -30,6 +30,9 @@ const operationsLinks: (PortalLink & { module: string })[] = [
   { label: "Sales & Quotations", path: "/portal/billing", status: "live", module: "billing" },
   { label: "Purchases", path: "/portal/purchases", status: "live", module: "purchases" },
   { label: "Product Inventory", path: "/portal/inventory", status: "live", module: "inventory" },
+  { label: "Brands", path: "/portal/masters/brands", status: "live", module: "inventory" },
+  { label: "Categories", path: "/portal/masters/categories", status: "live", module: "inventory" },
+  { label: "HSN / GST", path: "/portal/masters/hsn", status: "live", module: "masters" },
 ];
 
 const adminMaintenanceLinks: PortalLink[] = [
@@ -40,7 +43,6 @@ const adminMaintenanceLinks: PortalLink[] = [
   { label: "Users & Roles",path:"/portal/team",status:"live" },
   { label: "Storefront Domains",path:"/portal/domains",status:"live" },
   { label: "Audit Events", path:"/portal/audit",status:"live" },
-  { label: "Master Data", path: "/portal/masters", status: "live" },
   { label: "Payments & Delivery Setup", path: "/portal/checkout-setup", status: "live" },
 ];
 

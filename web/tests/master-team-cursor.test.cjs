@@ -103,6 +103,7 @@ test("both screens refresh the server page after mutations and retain search con
     const api = {stores: async () => ({items: []}), inventoryUpdateMaster: async () => { calls.push("updated"); }, inventoryCreateLookup: async () => { calls.push("created"); }};
     const authRequest = async url => { calls.push("updated", url); return {items: []}; };
     const overrides = {react: h.react, "../components/CursorPagination": {CursorPagination}, "../api": {api},
+      "../components/MastersNavigation": {MastersNavigation: () => null},
       "../features/drafts": {useDraftState: (_key, initial) => h.react.useState(initial)},
       "../features/auth": {useAuth: () => ({user: {role: "admin", company_id: "a"}}), authRequest},
       "../features/masterTeamPagination": {useMasterTeamPage: () => list, masterPage() {}, teamPage() {}},

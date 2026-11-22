@@ -23,6 +23,17 @@ test("online operations come first and provider setup has a separate admin menu"
   const owner = navigation.visiblePortalEntries({ role: "owner", modules: [] });
   assert.equal(owner.filter(entry => entry.group === "Operations")[0].path, "/portal/checkout");
   assert.equal(owner.find(entry => entry.path === "/portal/checkout-setup").group, "Admin");
+  for (const route of ["/portal/masters/hsn", "/portal/masters/brands", "/portal/masters/categories"]) {
+    assert.equal(owner.find(entry => entry.path === route).group, "Operations");
+  }
+  assert.ok(!owner.some(entry => entry.path === "/portal/masters"));
+  const portal = source("pages/PortalPage.tsx");
+  const operations = portal.slice(portal.indexOf("const operationsLinks"), portal.indexOf("const adminMaintenanceLinks"));
+  const admin = portal.slice(portal.indexOf("const adminMaintenanceLinks"), portal.indexOf("const workflowSections"));
+  for (const [label, module] of [["Brands", "inventory"], ["Categories", "inventory"], ["HSN / GST", "masters"]]) {
+    assert.match(operations, new RegExp(`label: "${label}".*module: "${module}"`));
+  }
+  assert.doesNotMatch(admin, /label: "Master Data"/);
   const staff = navigation.visiblePortalEntries({ role: "staff", modules: ["orders"] });
   assert.ok(!staff.some(entry => ["/portal/checkout", "/portal/checkout-setup"].includes(entry.path)));
   assert.match(source("App.tsx"), /path="\/portal\/checkout-setup" element={<CheckoutAdminPage key="setup" setupOnly/);
@@ -142,10 +153,11 @@ test("AI app help links only known internal destinations; HTML and external link
     "react-router-dom": { Link },
   });
   const html = renderToStaticMarkup(React.createElement(AssistantMessage, {
-    content: 'Open [Contacts](/portal/parties). [Bad](javascript:alert(1)) <script>x</script> [Unknown](/portal/unknown)',
+    content: 'Open [Contacts](/portal/parties). [Master Data](/portal/masters). [Bad](javascript:alert(1)) <script>x</script> [Unknown](/portal/unknown)',
   }));
   assert.match(html, /href="\/portal\/parties"/);
-  assert.equal((html.match(/<a /g) || []).length, 1);
+  assert.match(html, /href="\/portal\/masters"/);
+  assert.equal((html.match(/<a /g) || []).length, 2);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
 });
@@ -173,8 +185,30 @@ test("groups without permitted entries are omitted and the active nested module 
   assert.doesNotMatch(restricted, /<summary>Admin/);
   assert.match(restricted, /<details class="portal-nav-group" open=""><summary>Operations/);
   const nested = render({ role: "owner" }, "/portal/masters/categories/");
-  assert.match(nested, /<details class="portal-nav-group" open=""><summary>Admin/);
-  assert.doesNotMatch(nested, /open=""><summary>Operations/);
+  assert.match(nested, /<details class="portal-nav-group" open=""><summary>Operations/);
+  assert.doesNotMatch(nested, /open=""><summary>Admin/);
+});
+
+test("master links show only accessible product and tax data", () => {
+  const render = user => {
+    const { MastersNavigation } = load("components/MastersNavigation.tsx", {
+      "../features/auth": { useAuth: () => ({ user }) },
+      "../features/portalNavigation": navigation,
+      "react-router-dom": { Link },
+    });
+    return renderToStaticMarkup(React.createElement(MastersNavigation, { current: "brands" }));
+  };
+  const owner = render({ role: "owner", modules: [] });
+  assert.match(owner, /href="\/portal\/masters\/hsn"/);
+  assert.match(owner, /aria-current="page" href="\/portal\/masters\/brands"/);
+  assert.match(owner, /href="\/portal\/masters\/categories"/);
+  assert.doesNotMatch(owner, /\/portal\/parties|\/portal\/company/);
+  const inventory = render({ role: "staff", modules: ["inventory"] });
+  assert.match(inventory, /\/portal\/masters\/brands/);
+  assert.doesNotMatch(inventory, /\/portal\/masters\/hsn/);
+  const masters = render({ role: "staff", modules: ["masters"] });
+  assert.match(masters, /\/portal\/masters\/hsn/);
+  assert.doesNotMatch(masters, /\/portal\/masters\/brands/);
 });
 
 test("launcher label is hidden until hover or keyboard focus", () => {

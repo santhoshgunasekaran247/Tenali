@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ledgerRow, messageSections } from "../features/aiMessages";
 import { portalEntries } from "../features/portalNavigation";
 
-const paths = new Set(portalEntries.map(entry => entry.path));
+const paths = new Set([...portalEntries.map(entry => entry.path), "/portal/masters"]);
 
 function LinkedText({ content }: { content: string }) {
   const matches = [...content.matchAll(/\[([^\]\n]+)\]\((\/portal(?:\/[a-z-]+)*)\)/g)];

@@ -3,9 +3,9 @@ import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Power, Save, X } from "lucide-react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
+import { MastersNavigation } from "../components/MastersNavigation";
 import type { HsnMaster } from "../types";
 
 const EMPTY = { code: "", description: "", gst_rate: "", is_active: true };
@@ -73,14 +73,8 @@ export function MasterDataPage() {
   return <main className="ops-page masters-page">
     <header className="masters-heading">
       <PortalHomeLink />
-      <h1>Master Data</h1>
-      <nav className="masters-nav" aria-label="Master modules">
-        <Link to="/portal/masters/hsn" aria-current="page">HSN / GST</Link>
-        <Link to="/portal/masters/brands">Brands</Link>
-        <Link to="/portal/masters/categories">Categories</Link>
-        <Link to="/portal/parties">Contacts</Link>
-        <Link to="/portal/company">Company Setup</Link>
-      </nav>
+      <h1>HSN / GST</h1>
+      <MastersNavigation current="hsn" />
     </header>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}

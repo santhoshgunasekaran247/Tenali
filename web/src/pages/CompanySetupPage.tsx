@@ -189,7 +189,7 @@ export function CompanySetupPage() {
       const { downloadInvoicePdf } = await import("../features/invoicePdf");
       const { items: masters } = await api.hsnMasters();
       const master = masters[0];
-      if (!master) throw new Error("Add an active HSN / SAC code in Master Data before generating a sample invoice.");
+      if (!master) throw new Error("Add an active HSN / SAC code in Operations → HSN / GST before generating a sample invoice.");
       const gstRate = Number(master.gst_rate);
       const gstCents = Math.round(1000 * gstRate);
       const cgstCents = Math.round(gstCents / 2);

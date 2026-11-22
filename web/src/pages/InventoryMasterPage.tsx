@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { Pencil,Power,Save,X } from "lucide-react";
 import { api } from "../api";
 import { masterPage,useMasterTeamPage } from "../features/masterTeamPagination";
+import { MastersNavigation } from "../components/MastersNavigation";
 
 type Entry={id:string;name:string;code:string;description:string|null;is_active:boolean};
 export function InventoryMasterPage({kind}:{kind:'brands'|'categories'}){
@@ -13,7 +14,7 @@ export function InventoryMasterPage({kind}:{kind:'brands'|'categories'}){
   const [form,setForm]=useDraftState(`masters.${kind}.form`,{name:'',description:'',is_active:true});
   const[busy,setBusy]=useState(false);const[error,setError]=useState('');const[message,setMessage]=useState('');
   const save=async(event:FormEvent)=>{event.preventDefault();setBusy(true);setError('');try{if(editing)await api.inventoryUpdateMaster(kind,editing.id,form);else await api.inventoryCreateLookup(kind,form.name,{description:form.description,is_active:form.is_active});setEditing(null);setForm({name:'',description:'',is_active:true});list.refresh();setMessage('Master entry saved.');}catch(failure){setError(String(failure));}finally{setBusy(false);}};
-  return <main className="ops-page masters-page"><header className="masters-heading"><Link className="ops-inline-link" to="/portal">Operations Portal</Link><h1>{kind==='brands'?'Brand Master':'Category Master'}</h1><nav className="masters-nav"><Link to="/portal/masters/hsn">HSN / GST</Link><Link to="/portal/masters/brands" aria-current={kind==='brands'?'page':undefined}>Brands</Link><Link to="/portal/masters/categories" aria-current={kind==='categories'?'page':undefined}>Categories</Link><Link to="/portal/parties">Contacts</Link></nav></header>
+  return <main className="ops-page masters-page"><header className="masters-heading"><Link className="ops-inline-link" to="/portal">Operations Portal</Link><h1>{kind==='brands'?'Brand Master':'Category Master'}</h1><MastersNavigation current={kind}/></header>
     {error||list.error?<FloatingAlert>{error||list.error}</FloatingAlert>:null}{message?<FloatingAlert tone="success">{message}</FloatingAlert>:null}
     <section className="ops-grid"><article className="ops-card"><div className="ops-card-head"><h2>{editing?'Edit Entry':'Add Entry'}</h2>{editing?<button type="button" className="ops-link-btn" title="Cancel editing" aria-label="Cancel editing" onClick={()=>{setEditing(null);setForm({name:'',description:'',is_active:true});}}><X size={16}/></button>:null}</div>
       <form className="ops-form" onSubmit={save}><label>Name<input required maxLength={150} value={form.name} onChange={event=>setForm(previous=>({...previous,name:event.target.value}))}/></label><label>Description<textarea maxLength={2000} value={form.description} onChange={event=>setForm(previous=>({...previous,description:event.target.value}))}/></label><label className="ops-toggle"><input type="checkbox" checked={form.is_active} onChange={event=>setForm(previous=>({...previous,is_active:event.target.checked}))}/>Active</label><button className="btn" disabled={busy}><Save size={16}/>Save</button></form></article>

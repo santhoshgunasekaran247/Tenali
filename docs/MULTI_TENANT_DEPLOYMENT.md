@@ -579,6 +579,11 @@ deploying the API, because line resolution and the inventory list read it.
   products across all pages; vendor mapping accepts at most 200 per operation.
   Stock transfer and draft merge product selectors still load the complete list
   when opened, and alerts and reconciliation are computed separately.
+- **Product and tax data:** Operations includes direct links to Brands, Categories
+  and HSN / GST. Brands and Categories retain the inventory module permission;
+  HSN / GST retains the master data permission. Company Setup remains under Admin,
+  and Contacts remains under Operations. Existing `/portal/masters` links still
+  open HSN / GST.
 - **Reorder alerts** only appear when alerts are enabled on the product or
   variant and stock is at or below the reorder level. Entering a level in the
   editor turns alerts on and raises the target to at least the level; a level
