@@ -10,7 +10,7 @@ function load(file, overrides) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, Error, require: name => name === "../components/PaginatedTableBody" ? { PaginatedTableBody: "tbody" } : overrides[name] || require(name) });
+  vm.runInNewContext(compiled, { exports, Error, require: name => name === "../components/PaginatedTableBody" ? { PaginatedTableBody: "tbody" } : name === "../components/CursorPagination" ? { CursorPagination: () => null } : overrides[name] || require(name) });
   return exports;
 }
 function nodes(tree) {
@@ -45,6 +45,7 @@ test("purchase inventory displays before other requests finish and survives a hi
     "../features/stores": { StoreSelect: component, useStores: () => ({ stores: [], stockStores: [], selectedId: "", error: "" }) },
     "../components/TaxLinesEditor": { TaxLinesEditor: component, newTaxLine: () => ({ description: "", quantity: 1, rate: 0, gst_rate: 0 }) },
     "../components/Notifications": { FloatingAlert: component },
+    "../components/HistoryDateFilter": { HistoryDateFilter: component, ALL_DATES: {from: "", to: ""} },
     "../components/PortalHomeLink": { PortalHomeLink: component },
     "../components/PartySelect": { PartySelect: component },
     "../components/Attachments": { AttachmentPicker: component, AttachmentManager: component },

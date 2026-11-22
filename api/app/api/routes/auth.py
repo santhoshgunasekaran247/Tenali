@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -298,13 +298,21 @@ def switch(payload: WorkspaceSwitch, request: Request, response: Response, ident
 
 
 @router.get("/team")
-def team(identity=Depends(administrator), db=Depends(identity_db)):
-    return {"items": TenantAuth(db).team(str(identity["company_id"]))}
+def team(page_size: int | None = Query(None, ge=1, le=100),
+         cursor: str | None = Query(None, max_length=1000),
+         search: str = Query("", max_length=300),
+         identity=Depends(administrator), db=Depends(identity_db)):
+    service = TenantAuth(db)
+    if page_size is None:
+        if cursor or search:
+            raise HTTPException(422, "page_size is required with search or cursor")
+        return {"items": service.team(str(identity["company_id"]))}
+    return service.team_page(str(identity["company_id"]), page_size, cursor, search)
 
 
 @router.post("/team", status_code=201)
-def create_member(payload: MemberCreate, identity=Depends(administrator), db=Depends(identity_db)):
-    return {"items": TenantAuth(db).add_member(str(identity["company_id"]), payload,str(identity['user_id']))}
+def create_member(payload: MemberCreate, return_team: bool = True, identity=Depends(administrator), db=Depends(identity_db)):
+    return {"items": TenantAuth(db).add_member(str(identity["company_id"]), payload, str(identity["user_id"]), return_team=return_team)}
 
 
 class MemberUpdate(BaseModel):
@@ -315,8 +323,8 @@ class MemberUpdate(BaseModel):
 
 
 @router.put("/team/{user_id}")
-def update_member(user_id: UUID, payload: MemberUpdate, identity=Depends(administrator), db=Depends(identity_db)):
-    return {"items": TenantAuth(db).update_member(str(identity["company_id"]), str(user_id), payload.role, payload.is_active, str(identity["user_id"]), payload.store_ids, payload.modules)}
+def update_member(user_id: UUID, payload: MemberUpdate, return_team: bool = True, identity=Depends(administrator), db=Depends(identity_db)):
+    return {"items": TenantAuth(db).update_member(str(identity["company_id"]), str(user_id), payload.role, payload.is_active, str(identity["user_id"]), payload.store_ids, payload.modules, return_team=return_team)}
 
 
 class DomainInput(BaseModel):

@@ -1,7 +1,7 @@
 import json
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
@@ -203,12 +203,11 @@ def checkout(payload: CheckoutInput, company=Depends(open_store), identity=Depen
 
 
 @router.get("/orders")
-def orders(offset: int = Query(0, ge=0), company=Depends(store), identity=Depends(customer), db=Depends(shop_db)):
-    orders_service.expire_orders(db, str(company["id"]))
-    db.commit()
-    return {"items": [dict(row) for row in db.execute(text(f"""select {ORDER_COLUMNS} from shop_orders
-        where company_id=:company and shopper_id=:shopper order by created_at desc,id limit 50 offset :offset"""),
-        {"company": company["id"], "shopper": identity["id"], "offset": offset}).mappings()]}
+def orders(offset: int = Query(0, ge=0), page_size: int | None = Query(None, ge=1, le=100),
+           cursor: str | None = Query(None, max_length=1000), company=Depends(store), identity=Depends(customer), db=Depends(shop_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    return orders_service.staff_orders(db, str(company["id"]), offset, page_size=page_size, cursor=cursor, shopper_id=str(identity["id"]))
 
 
 @router.get("/orders/{order_id}")
@@ -367,8 +366,16 @@ def tracking_sync(identity=Depends(administrator), db=Depends(get_db), privilege
 
 
 @admin_router.get("/orders")
-def staff_orders(offset: int = Query(0, ge=0), status: str | None = None, identity=Depends(administrator), db=Depends(get_db)):
-    return orders_service.staff_orders(db, str(identity["company_id"]), offset, status)
+def staff_orders(offset: int = Query(0, ge=0), status: str | None = None,
+                 page_size: int | None = Query(None, ge=1, le=100), cursor: str | None = Query(None, max_length=1000),
+                 from_date: date | None = None, to_date: date | None = None,
+                 identity=Depends(administrator), db=Depends(get_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
+    return orders_service.staff_orders(db, str(identity["company_id"]), offset, status, page_size=page_size,
+                                       cursor=cursor, from_date=from_date, to_date=to_date)
 
 
 @admin_router.post("/orders/{order_id}/approve-cod")
@@ -417,8 +424,11 @@ def post_advance(order_id: UUID, identity=Depends(administrator), db=Depends(get
 
 
 @admin_router.get("/cod")
-def cod_outstanding(identity=Depends(administrator), db=Depends(get_db)):
-    return orders_service.cod_outstanding(db, str(identity["company_id"]))
+def cod_outstanding(page_size: int | None = Query(None, ge=1, le=100),
+                    cursor: str | None = Query(None, max_length=1000), identity=Depends(administrator), db=Depends(get_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    return orders_service.cod_outstanding(db, str(identity["company_id"]), page_size=page_size, cursor=cursor)
 
 
 @admin_router.post("/cod/settlements", status_code=201)
@@ -427,8 +437,11 @@ def cod_settlement(payload: CodSettlementInput, identity=Depends(administrator),
 
 
 @admin_router.get("/enquiries")
-def enquiries(status: str | None = None, identity=Depends(administrator), db=Depends(get_db)):
-    return orders_service.list_enquiries(db, str(identity["company_id"]), status)
+def enquiries(status: str | None = None, page_size: int | None = Query(None, ge=1, le=100),
+              cursor: str | None = Query(None, max_length=1000), identity=Depends(administrator), db=Depends(get_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    return orders_service.list_enquiries(db, str(identity["company_id"]), status, page_size=page_size, cursor=cursor)
 
 
 @admin_router.put("/enquiries/{enquiry_id}")

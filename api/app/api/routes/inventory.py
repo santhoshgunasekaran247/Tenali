@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
@@ -25,8 +25,15 @@ def create_lookup(kind: str, payload: InventoryLookupCreate, service: InventoryS
 
 
 @router.get("/lookups/{kind}")
-def master_entries(kind:str,service:InventoryService=Depends(inventory_service)):
-    return service.master_entries(kind)
+def master_entries(kind: str, page_size: int | None = Query(None, ge=1, le=100),
+                   cursor: str | None = Query(None, max_length=1000),
+                   search: str = Query("", max_length=300),
+                   service: InventoryService = Depends(inventory_service)):
+    if page_size is None:
+        if cursor or search:
+            raise HTTPException(422, "page_size is required with search or cursor")
+        return service.master_entries(kind)
+    return service.master_entries_page(kind, page_size, cursor, search)
 
 
 @router.put("/lookups/{kind}/{record_id}")
@@ -35,8 +42,16 @@ def update_lookup(kind:str,record_id:UUID,payload:InventoryLookupCreate,service:
 
 
 @router.get("/products")
-def products(service: InventoryService = Depends(inventory_service)):
-    return service.list_products()
+def products(page_size: int | None = Query(None, ge=1, le=100),
+             cursor: str | None = Query(None, max_length=1000),
+             search: str = Query("", max_length=300), vendor_id: UUID | None = None,
+             include_inactive: bool = False, ids_only: bool = False,
+             service: InventoryService = Depends(inventory_service)):
+    if page_size is None:
+        if cursor or search or vendor_id or include_inactive or ids_only:
+            raise HTTPException(422, "page_size is required with product filters or cursor")
+        return service.list_products()
+    return service.product_page(page_size, cursor, search, str(vendor_id) if vendor_id else None, include_inactive, ids_only)
 
 
 @router.post("/products", status_code=201)
@@ -105,8 +120,12 @@ def adjust_stock(product_id: UUID, payload: StockAdjustment, service: InventoryS
 
 
 @router.get("/products/{product_id}/movements")
-def movements(product_id: UUID, service: InventoryService = Depends(inventory_service)):
-    return service.movements(str(product_id))
+def movements(product_id: UUID, page_size: int | None = Query(None, ge=1, le=100),
+              cursor: str | None = Query(None, max_length=1000), service: InventoryService = Depends(inventory_service)):
+    if cursor and page_size is None:
+        from fastapi import HTTPException
+        raise HTTPException(422, "page_size is required with cursor")
+    return service.movements(str(product_id), page_size, cursor)
 
 
 @router.get("/alerts")

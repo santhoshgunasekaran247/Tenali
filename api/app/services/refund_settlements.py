@@ -120,10 +120,12 @@ class RefundSettlementsService:
     def list(self, status: str | None = None, *, search: str = "", limit: int = 300,
              store_id: str | None = None, permitted_stores: list[str] | None = None,
              from_date: date | None = None, to_date: date | None = None,
-             include_summary: bool = True) -> dict:
+             include_summary: bool = True, page_size: int | None = None, cursor: str | None = None) -> dict:
         if status and status not in {"PENDING", "SETTLED"}:
             raise HTTPException(422, "Status must be PENDING or SETTLED")
-        rows = self.db.execute(text("""
+        if from_date and to_date and from_date > to_date:
+            raise HTTPException(422, "from_date cannot be after to_date")
+        query = """
             select s.id, s.direction, s.document_type, s.document_id, s.document_number, s.amount, s.status, s.reason,
                    s.settled_on, s.payment_mode, s.reference, s.notes, s.settled_at, s.created_at,
                    s.party_id, coalesce(p.nickname, p.legal_name) as party_name,
@@ -144,12 +146,29 @@ class RefundSettlementsService:
                     or strpos(lower(coalesce(p.legal_name,'')),lower(:search))>0)
                 and (cast(:store as uuid) is null or coalesce(i.store_id,purchase.store_id)=cast(:store as uuid))
                 and (cast(:permitted as uuid[]) is null or coalesce(i.store_id,purchase.store_id)=any(cast(:permitted as uuid[])))
-                and (cast(:from_date as date) is null or s.created_at::date>=cast(:from_date as date))
-                and (cast(:to_date as date) is null or s.created_at::date<=cast(:to_date as date))
-            order by s.status,s.created_at desc,s.id limit :limit"""),
-            {"company": self.company_id, "status": status, "search": search, "limit": limit,
-             "store": store_id, "permitted": permitted_stores, "from_date": from_date, "to_date": to_date}).mappings().all()
-        result = {"items": jsonable_encoder([dict(row) for row in rows])}
+                and (cast(:from_date as date) is null or s.created_at >= (cast(:from_date as timestamp) at time zone 'Asia/Kolkata'))
+                and (cast(:to_date as date) is null or s.created_at < (cast((cast(:to_date as date) + 1) as timestamp) at time zone 'Asia/Kolkata'))"""
+        params = {"company": self.company_id, "status": status, "search": search, "limit": limit,
+                  "store": store_id, "permitted": permitted_stores, "from_date": from_date, "to_date": to_date}
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("status", "created_at", "id"))
+            if boundary:
+                if boundary["status"] not in {"PENDING", "SETTLED"}:
+                    raise HTTPException(422, "Invalid page cursor")
+                query += """ and (s.status > :cursor_status or
+                    (s.status = :cursor_status and (s.created_at,s.id) <
+                    (cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))))"""
+                params.update(cursor_status=boundary["status"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            query += " order by s.status,s.created_at desc,s.id desc limit :limit"
+        else:
+            query += " order by s.status,s.created_at desc,s.id limit :limit"
+        rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            result = jsonable_encoder(cursor_page(rows, page_size, ("status", "created_at", "id")))
+        else:
+            result = {"items": jsonable_encoder([dict(row) for row in rows])}
         if include_summary:
             result["summary"] = self.summary()
         return result

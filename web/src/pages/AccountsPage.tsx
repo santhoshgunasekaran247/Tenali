@@ -1,7 +1,8 @@
 import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
@@ -125,11 +126,24 @@ export function AccountsPage() {
   const [form, setForm] = useDraftState<FormState>("AccountsPage.form", EMPTY_FORM);
   const [txForm, setTxForm] = useDraftState<TransactionFormState>("AccountsPage.txForm", EMPTY_TX_FORM);
   const [txFilters, setTxFilters] = useState<TransactionFilterState>(DEFAULT_TX_FILTERS);
+  const [appliedTxFilters, setAppliedTxFilters] = useState<TransactionFilterState>(DEFAULT_TX_FILTERS);
+  const [txPageSize, setTxPageSize] = useState(25);
+  const [txCursors, setTxCursors] = useState<Array<string | null>>([null]);
+  const [txPage, setTxPage] = useState(0);
+  const [txNext, setTxNext] = useState<string | null>(null);
+  const loadVersion = useRef(0);
   const [periodLockForm, setPeriodLockForm] = useDraftState<PeriodLockFormState>("AccountsPage.periodLockForm", DEFAULT_PERIOD_LOCK_FORM);
   const [periodLocks, setPeriodLocks] = useState<PeriodLock[]>([]);
   const [journalFilters, setJournalFilters] = useState<JournalFilterState>(
     DEFAULT_JOURNAL_FILTERS
   );
+  const [appliedJournalFilters, setAppliedJournalFilters] = useState<JournalFilterState>(DEFAULT_JOURNAL_FILTERS);
+  const [journalPageSize, setJournalPageSize] = useState(25);
+  const [journalCursors, setJournalCursors] = useState<Array<string | null>>([null]);
+  const [journalPage, setJournalPage] = useState(0);
+  const [journalNext, setJournalNext] = useState<string | null>(null);
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const journalLoadVersion = useRef(0);
   const [tally, setTally] = useState<AccountTallyResponse | null>(null);
   const [tallyLoading, setTallyLoading] = useState(false);
   const [journalEntries, setJournalEntries] = useState<AuditJournalEntry[]>([]);
@@ -148,23 +162,30 @@ export function AccountsPage() {
   const [lockSaving, setLockSaving] = useState(false);
 
   const loadJournal = async () => {
+    const version = ++journalLoadVersion.current;
     setJournalLoading(true);
-    setError(null);
+    setJournalError(null);
+    setJournalEntries([]);
+    setJournalBuckets([]);
+    setJournalNext(null);
     try {
       const response = await api.accountAuditJournal({
-        period: journalFilters.period,
-        from_date: journalFilters.from_date || undefined,
-        to_date: journalFilters.to_date || undefined,
-        category: journalFilters.category || undefined,
-        source_type: journalFilters.source_type || undefined,
-        limit: 3000,
+        period: appliedJournalFilters.period,
+        from_date: appliedJournalFilters.from_date || undefined,
+        to_date: appliedJournalFilters.to_date || undefined,
+        category: appliedJournalFilters.category || undefined,
+        source_type: appliedJournalFilters.source_type || undefined,
+        page_size: journalPageSize,
+        cursor: journalCursors[journalPage],
       });
+      if (version !== journalLoadVersion.current) return;
       setJournalEntries(response.items);
       setJournalBuckets(response.buckets);
+      setJournalNext(response.next_cursor || null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load audit journal.");
+      if (version === journalLoadVersion.current) setJournalError(loadError instanceof Error ? loadError.message : "Unable to load audit journal.");
     } finally {
-      setJournalLoading(false);
+      if (version === journalLoadVersion.current) setJournalLoading(false);
     }
   };
 
@@ -174,42 +195,45 @@ export function AccountsPage() {
   );
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
+    setTransactions([]); setTxNext(null);
     setTallyLoading(true);
     setError(null);
     try {
       const [accountsResponse, txResponse, tallyResponse, locksResponse] = await Promise.all([
         api.accounts({ active_only: activeOnly }),
         api.accountTransactions({
-          limit: 200,
-          account_id: txFilters.account_id || undefined,
-          from_date: txFilters.from_date || undefined,
-          to_date: txFilters.to_date || undefined,
-          category: txFilters.category || undefined,
-          source_type: txFilters.source_type || undefined,
+          page_size: txPageSize, cursor: txCursors[txPage],
+          account_id: appliedTxFilters.account_id || undefined,
+          from_date: appliedTxFilters.from_date || undefined,
+          to_date: appliedTxFilters.to_date || undefined,
+          category: appliedTxFilters.category || undefined,
+          source_type: appliedTxFilters.source_type || undefined,
         }),
-        api.accountTally({ as_of: txFilters.to_date || undefined }),
+        api.accountTally({ as_of: appliedTxFilters.to_date || undefined }),
         api.periodLocks(false),
       ]);
+      if (version !== loadVersion.current) return;
       setAccounts(accountsResponse.items);
       setTransactions(txResponse.items);
+      setTxNext(txResponse.next_cursor || null);
       setTally(tallyResponse);
       setPeriodLocks(locksResponse.items);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load accounts.");
+      if (version === loadVersion.current) { setTransactions([]); setTxNext(null); setError(loadError instanceof Error ? loadError.message : "Unable to load accounts."); }
     } finally {
-      setLoading(false);
-      setTallyLoading(false);
+      if (version === loadVersion.current) { setLoading(false); setTallyLoading(false); }
     }
   };
 
   useEffect(() => {
     void load();
-  }, [activeOnly]);
+  }, [activeOnly, appliedTxFilters, txPageSize, txPage, txCursors]);
 
   useEffect(() => {
     void loadJournal();
-  }, [journalFilters.period]);
+  }, [appliedJournalFilters, journalPageSize, journalCursors, journalPage]);
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -318,17 +342,17 @@ export function AccountsPage() {
     void (async () => {
       try {
         const blob = await api.exportAccountJournalCsv({
-          period: journalFilters.period,
-          from_date: journalFilters.from_date || undefined,
-          to_date: journalFilters.to_date || undefined,
-          category: journalFilters.category || undefined,
-          source_type: journalFilters.source_type || undefined,
-          limit: 5000,
+          period: appliedJournalFilters.period,
+          from_date: appliedJournalFilters.from_date || undefined,
+          to_date: appliedJournalFilters.to_date || undefined,
+          category: appliedJournalFilters.category || undefined,
+          source_type: appliedJournalFilters.source_type || undefined,
+          full: true,
         });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `audit_journal_${journalFilters.period}_${new Date()
+        link.download = `audit_journal_${appliedJournalFilters.period}_${new Date()
           .toISOString()
           .slice(0, 10)}.csv`;
         document.body.appendChild(link);
@@ -345,12 +369,12 @@ export function AccountsPage() {
     void (async () => {
       try {
         const blob = await api.exportAccountTransactionsCsv({
-          limit: 2000,
-          account_id: txFilters.account_id || undefined,
-          from_date: txFilters.from_date || undefined,
-          to_date: txFilters.to_date || undefined,
-          category: txFilters.category || undefined,
-          source_type: txFilters.source_type || undefined,
+          full: true,
+          account_id: appliedTxFilters.account_id || undefined,
+          from_date: appliedTxFilters.from_date || undefined,
+          to_date: appliedTxFilters.to_date || undefined,
+          category: appliedTxFilters.category || undefined,
+          source_type: appliedTxFilters.source_type || undefined,
         });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -896,34 +920,13 @@ export function AccountsPage() {
               }
               placeholder="Source"
             />
-            <button className="btn" type="button" onClick={() => void load()}>
+            <button className="btn" type="button" onClick={() => { setTxCursors([null]); setTxPage(0); setAppliedTxFilters({ ...txFilters }); }}>
               Apply
             </button>
             <button
               className="btn"
               type="button"
-              onClick={async () => {
-                const resetFilters = DEFAULT_TX_FILTERS;
-                setTxFilters(resetFilters);
-                setLoading(true);
-                setTallyLoading(true);
-                setError(null);
-                try {
-                  const [accountsResponse, txResponse, tallyResponse] = await Promise.all([
-                    api.accounts({ active_only: activeOnly }),
-                    api.accountTransactions({ limit: 200 }),
-                    api.accountTally(),
-                  ]);
-                  setAccounts(accountsResponse.items);
-                  setTransactions(txResponse.items);
-                  setTally(tallyResponse);
-                } catch (loadError) {
-                  setError(loadError instanceof Error ? loadError.message : "Unable to load accounts.");
-                } finally {
-                  setLoading(false);
-                  setTallyLoading(false);
-                }
-              }}
+              onClick={() => { setTxFilters(DEFAULT_TX_FILTERS); setAppliedTxFilters({ ...DEFAULT_TX_FILTERS }); setTxCursors([null]); setTxPage(0); }}
             >
               Reset
             </button>
@@ -932,7 +935,7 @@ export function AccountsPage() {
             </button>
           </div>
 
-          <p className="ops-copy-note">This view loads at most the newest 200 matching transactions. CSV export includes at most 2,000. Either may be incomplete; narrow the date range and verify the results.</p>
+          <p className="ops-copy-note">CSV export includes all transactions matching the applied filters.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -950,10 +953,10 @@ export function AccountsPage() {
                   <th>Action</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={11}>No transactions yet.</td>
+                    <td colSpan={11}>{loading ? "Loading transactions..." : error ? "Unable to load transactions." : "No transactions on this page."}</td>
                   </tr>
                 ) : (
                   transactions.map((item) => {
@@ -992,9 +995,10 @@ export function AccountsPage() {
                     );
                   })
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={txPageSize} page={txPage} hasNext={!!txNext} busy={loading} onSize={size => { setTxPageSize(size); setTxCursors([null]); setTxPage(0); }} onPrevious={() => setTxPage(page => page - 1)} onNext={() => { if (txNext) { setTxCursors(previous => [...previous.slice(0, txPage + 1), txNext]); setTxPage(page => page + 1); } }} />
           {deleteTarget ? <DeleteTransactionDialog kind="account_transaction" id={deleteTarget.id}
             title={`transaction of ${deleteTarget.amount.toFixed(2)} on ${deleteTarget.transaction_date}`}
             onClose={() => setDeleteTarget(null)} onDone={async result => {
@@ -1008,7 +1012,7 @@ export function AccountsPage() {
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
             <h2>Audit Journal</h2>
-            <span className="catalog-count">{journalEntries.length} rows</span>
+            <span className="catalog-count">{journalEntries.length} rows on this page</span>
           </div>
 
           <div className="ops-list-tools">
@@ -1061,32 +1065,13 @@ export function AccountsPage() {
               placeholder="Source type"
             />
 
-            <button className="btn" type="button" onClick={() => void loadJournal()}>
+            <button className="btn" type="button" onClick={() => { setJournalCursors([null]); setJournalPage(0); setAppliedJournalFilters({ ...journalFilters }); }}>
               Apply
             </button>
             <button
               className="btn"
               type="button"
-              onClick={async () => {
-                const resetFilters = DEFAULT_JOURNAL_FILTERS;
-                setJournalFilters(resetFilters);
-                setJournalLoading(true);
-                setError(null);
-                try {
-                  const response = await api.accountAuditJournal({
-                    period: resetFilters.period,
-                    limit: 3000,
-                  });
-                  setJournalEntries(response.items);
-                  setJournalBuckets(response.buckets);
-                } catch (loadError) {
-                  setError(
-                    loadError instanceof Error ? loadError.message : "Unable to load audit journal."
-                  );
-                } finally {
-                  setJournalLoading(false);
-                }
-              }}
+              onClick={() => { setJournalFilters(DEFAULT_JOURNAL_FILTERS); setAppliedJournalFilters({ ...DEFAULT_JOURNAL_FILTERS }); setJournalCursors([null]); setJournalPage(0); }}
             >
               Reset
             </button>
@@ -1095,7 +1080,8 @@ export function AccountsPage() {
             </button>
           </div>
 
-          <p className="ops-copy-note">This view loads at most the newest 3,000 matching journal rows; its summaries use those rows only. CSV export includes at most 5,000. Either may be incomplete; narrow the date range and verify the results.</p>
+          <p className="ops-copy-note">Summary totals and CSV export cover the full matching period, not just this page.</p>
+          {journalError ? <FloatingAlert>{journalError}</FloatingAlert> : null}
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -1111,7 +1097,7 @@ export function AccountsPage() {
               <PaginatedTableBody>
                 {journalBuckets.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No summary rows.</td>
+                    <td colSpan={6}>{journalLoading ? "Loading summary..." : journalError ? "Unable to load summary." : "No summary rows."}</td>
                   </tr>
                 ) : (
                   journalBuckets.map((bucket) => (
@@ -1146,10 +1132,10 @@ export function AccountsPage() {
                   <th>Reference</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {journalEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>No journal entries found.</td>
+                    <td colSpan={9}>{journalLoading ? "Loading journal..." : journalError ? "Unable to load journal." : "No journal entries on this page."}</td>
                   </tr>
                 ) : (
                   journalEntries.map((row) => (
@@ -1166,9 +1152,10 @@ export function AccountsPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={journalPageSize} page={journalPage} hasNext={!!journalNext} busy={journalLoading} onSize={size => { setJournalPageSize(size); setJournalCursors([null]); setJournalPage(0); }} onPrevious={() => setJournalPage(page => page - 1)} onNext={() => { if (journalNext) { setJournalCursors(previous => [...previous.slice(0, journalPage + 1), journalNext]); setJournalPage(page => page + 1); } }} />
         </article>
       </section>
     </div>

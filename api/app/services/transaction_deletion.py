@@ -482,8 +482,22 @@ class TransactionDeletionService:
         return {"deletion_id": str(batch), "label": plan.label,
                 "deleted": {row["table"]: row["count"] for row in preview["deletes"]}}
 
-    def history(self) -> dict:
+    def history(self, page_size: int | None = None, cursor: str | None = None) -> dict:
         self._require_admin()
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("created_at", "id"))
+            query = """select id, kind, label, reason, deleted_at, deleted_at as created_at, summary->'deletes' as deletes,
+                    summary->>'deleted_by_name' as deleted_by from transaction_deletions where company_id=:company"""
+            params: dict = {"limit": page_size + 1}
+            if boundary:
+                query += " and (deleted_at,id) < (cast(:created_at as timestamptz),cast(:id as uuid))"
+                params.update(boundary)
+            rows = self._all(query + " order by deleted_at desc,id desc limit :limit", **params)
+            page = cursor_page(rows, page_size, ("created_at", "id"))
+            for item in page["items"]:
+                del item["created_at"]
+            return jsonable_encoder(page)
         rows = self._all("""select id, kind, label, reason, deleted_at, summary->'deletes' as deletes,
                 summary->>'deleted_by_name' as deleted_by
             from transaction_deletions where company_id=:company order by deleted_at desc limit 100""")

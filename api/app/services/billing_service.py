@@ -227,6 +227,20 @@ class BillingService:
             "offset": safe_offset,
         }
 
+    def export_reconcile_runs_csv(self, company_id: str | None) -> str:
+        self._ensure_tables()
+        resolved_company_id = self._resolve_company_id(company_id)
+        rows = self.db.execute(text("""
+            select created_at, healed_count, triggered_by from invoice_reconcile_runs
+            where company_id = :company_id order by created_at desc, id desc
+        """), {"company_id": resolved_company_id}).mappings()
+        output = StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(["run_at", "healed_count", "triggered_by"])
+        for row in rows:
+            writer.writerow([row["created_at"], row["healed_count"], row["triggered_by"] or ""])
+        return output.getvalue()
+
     def create_invoice(self, company_id: str | None, payload: InvoiceCreate, *, commit: bool = True) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -505,7 +519,7 @@ class BillingService:
     def list_invoices(self, company_id: str | None, collection_status: str | None = None, store_id: str | None = None,
                       *, search: str = "", limit: int | None = None, from_date: date | None = None,
                       to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False,
-                      invoice_id: str | None = None) -> dict:
+                      invoice_id: str | None = None, page_size: int | None = None, cursor: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -564,10 +578,22 @@ class BillingService:
             or strpos(lower(p.legal_name),lower(:search))>0)
             and (cast(:from_date as date) is null or i.invoice_date>=cast(:from_date as date))
             and (cast(:to_date as date) is null or i.invoice_date<=cast(:to_date as date))
-            and (not :cancelled or i.status='CANCELLED')
-            order by i.invoice_date desc, i.created_at desc,i.id limit :limit"""
+            and (not :cancelled or i.status='CANCELLED')"""
         params.update(search=search, limit=limit, from_date=from_date, to_date=to_date, cancelled=cancelled_only)
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("invoice_date", "created_at", "id"))
+            if boundary:
+                query += """ and (i.invoice_date,i.created_at,i.id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["invoice_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            query += " order by i.invoice_date desc,i.created_at desc,i.id desc limit :limit"
+        else:
+            query += " order by i.invoice_date desc, i.created_at desc,i.id limit :limit"
         rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            return cursor_page(rows, page_size, ("invoice_date", "created_at", "id"))
         return {"items": [dict(row) for row in rows]}
 
     def export_sales_register_csv(
@@ -575,17 +601,25 @@ class BillingService:
         company_id: str | None,
         from_date: str | None = None,
         to_date: str | None = None,
+        *,
+        store_id: str | None = None,
+        collection_status: str | None = None,
+        all_time: bool = False,
     ) -> str:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
         try:
-            from_value = date.fromisoformat(from_date) if from_date else date.today().replace(day=1)
-            to_value = date.fromisoformat(to_date) if to_date else date.today()
+            from_value = date.fromisoformat(from_date) if from_date else (None if all_time else date.today().replace(day=1))
+            to_value = date.fromisoformat(to_date) if to_date else (None if all_time else date.today())
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="from_date/to_date must be YYYY-MM-DD") from exc
-        if from_value > to_value:
+        if from_value and to_value and from_value > to_value:
             raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
+        status = collection_status.strip().upper() if collection_status else None
+        if collection_status and status not in {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"}:
+            raise HTTPException(status_code=422, detail="Invalid collection_status")
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
 
         company_gst = self.db.execute(
             text(
@@ -616,7 +650,11 @@ class BillingService:
                 from invoices i
                 join parties p on p.id = i.customer_party_id
                 where i.company_id = :company_id
-                  and i.invoice_date between :from_date and :to_date
+                  and (cast(:from_date as date) is null or i.invoice_date >= cast(:from_date as date))
+                  and (cast(:to_date as date) is null or i.invoice_date <= cast(:to_date as date))
+                  and (cast(:store_id as uuid) is null or i.store_id = cast(:store_id as uuid))
+                  and (cast(:permitted as uuid[]) is null or i.store_id = any(cast(:permitted as uuid[])))
+                  and (cast(:collection_status as text) is null or i.collection_status = :collection_status)
                 order by i.invoice_date asc, i.invoice_number asc
                 """
             ),
@@ -624,6 +662,9 @@ class BillingService:
                 "company_id": resolved_company_id,
                 "from_date": from_value,
                 "to_date": to_value,
+                "store_id": store_id,
+                "permitted": permitted,
+                "collection_status": status,
             },
         ).mappings().all()
 

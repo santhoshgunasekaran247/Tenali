@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from io import StringIO
 from uuid import uuid4
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -137,6 +138,130 @@ class FinanceIntegrityTests(unittest.TestCase):
         self.db.close()
         self.outer.rollback()
         self.connection.close()
+
+    def test_paginated_transactions_and_journal_totals(self):
+        ids = sorted(str(uuid4()) for _ in range(5))
+        for item_id in ids:
+            self.db.execute(self.text("""
+                insert into account_transactions(id, company_id, to_account_id, amount, transaction_date, created_at, category)
+                values(:id, :company, :account, 10, '2026-09-10', '2026-09-10T12:00:00Z', 'pagination-test')
+            """), {"id": item_id, "company": self.company, "account": self.account["id"]})
+        filters = {"from_date": "2026-09-10", "to_date": "2026-09-10", "category": "pagination-test"}
+        first = self.accounts.list_transactions(self.company, page_size=2, **filters)
+        self.assertEqual([str(row["id"]) for row in first["items"]], list(reversed(ids))[:2])
+        self.db.execute(self.text("""
+            insert into account_transactions(id, company_id, to_account_id, amount, transaction_date, created_at, category)
+            values(:id, :company, :account, 10, '2026-09-10', '2026-09-10T13:00:00Z', 'pagination-test')
+        """), {"id": str(uuid4()), "company": self.company, "account": self.account["id"]})
+        second = self.accounts.list_transactions(self.company, page_size=2, cursor=first["next_cursor"], **filters)
+        third = self.accounts.list_transactions(self.company, page_size=2, cursor=second["next_cursor"], **filters)
+        self.assertEqual([str(row["id"]) for row in second["items"] + third["items"]], list(reversed(ids))[2:])
+        self.assertIsNone(third["next_cursor"])
+        journal = self.accounts.list_audit_journal(self.company, "daily", page_size=2, **filters)
+        self.assertEqual(len(journal["items"]), 2)
+        self.assertEqual(journal["buckets"][0]["entry_count"], 6)
+        self.assertEqual(journal["buckets"][0]["total_inflow"], 60)
+        export = self.accounts.export_full_csv(self.company, journal=False, **filters)
+        try:
+            self.assertEqual(len(list(csv.DictReader(export))), 6)
+        finally:
+            export.close()
+        export = self.accounts.export_full_csv(self.company, journal=True, period="daily", **filters)
+        try:
+            self.assertEqual(len(list(csv.DictReader(export))), 6)
+        finally:
+            export.close()
+
+    def test_paginated_purchase_payments_retain_store_scope(self):
+        from app.schemas.purchases import PurchaseCreate, PurchasePaymentCreate
+
+        purchase = self.purchases.create_purchase(
+            self.company, PurchaseCreate(vendor_party_id=self.party, subtotal=100, purchase_date=date(2026, 9, 10)))
+        purchase_id = str(purchase["id"])
+        for _ in range(3):
+            self.purchases.add_purchase_payment(
+                purchase_id, self.company,
+                PurchasePaymentCreate(amount=1, account_id=self.account["id"], payment_mode="bank",
+                                      idempotency_key=str(uuid4()), payment_date=date(2026, 9, 11)))
+        first = self.purchases.list_purchase_payments(purchase_id, self.company, page_size=2)
+        second = self.purchases.list_purchase_payments(purchase_id, self.company, page_size=2,
+                                                       cursor=first["next_cursor"])
+        self.assertEqual(len(first["items"]), 2)
+        self.assertEqual(len(second["items"]), 1)
+        self.assertEqual(len({str(row["id"]) for row in first["items"] + second["items"]}), 3)
+        self.assertIsNone(second["next_cursor"])
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": []}
+        with self.assertRaises(HTTPException) as denied:
+            self.purchases.list_purchase_payments(purchase_id, self.company, page_size=2)
+        self.assertEqual(denied.exception.status_code, 404)
+
+    def test_purchase_register_export_matches_filters_and_store_scope(self):
+        from app.schemas.purchases import PurchaseCreate
+
+        for day in (10, 11, 12):
+            self.purchases.create_purchase(
+                self.company, PurchaseCreate(vendor_party_id=self.party, subtotal=100,
+                                             purchase_date=date(2026, 9, day), bill_number=f"PAGE-{day}"))
+        csv_text = self.purchases.export_purchase_register_csv(
+            self.company, from_date="2026-09-10", to_date="2026-09-11", all_dates=True, payment_status="unpaid")
+        self.assertEqual({row["bill_number"] for row in csv.DictReader(StringIO(csv_text))}, {"PAGE-10", "PAGE-11"})
+        csv_text = self.purchases.export_purchase_register_csv(self.company, all_dates=True)
+        self.assertEqual(len(list(csv.DictReader(StringIO(csv_text)))), 3)
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": []}
+        csv_text = self.purchases.export_purchase_register_csv(self.company, all_dates=True)
+        self.assertEqual(list(csv.DictReader(StringIO(csv_text))), [])
+
+    def test_sales_register_export_matches_filters_and_store_scope(self):
+        from app.schemas.billing import InvoiceCreate
+
+        for day in (10, 11, 12):
+            self.billing.create_invoice(
+                self.company, InvoiceCreate(customer_party_id=self.party, subtotal=100,
+                                            invoice_date=date(2026, 9, day), auto_create_receivable=False))
+        csv_text = self.billing.export_sales_register_csv(
+            self.company, from_date="2026-09-10", to_date="2026-09-11", all_time=True, collection_status="UNPAID")
+        self.assertEqual({row["invoice_date"] for row in csv.DictReader(StringIO(csv_text))}, {"2026-09-10", "2026-09-11"})
+        csv_text = self.billing.export_sales_register_csv(self.company, all_time=True)
+        self.assertEqual(len(list(csv.DictReader(StringIO(csv_text)))), 3)
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": []}
+        csv_text = self.billing.export_sales_register_csv(self.company, all_time=True)
+        self.assertEqual(list(csv.DictReader(StringIO(csv_text))), [])
+
+    def test_contact_and_master_cursor_queries_on_database(self):
+        from app.services.inventory_service import InventoryService
+        from app.services.parties_service import PartiesService
+
+        contacts = PartiesService(self.db)
+        first = contacts.list(self.company, search="Finance regression", page_size=1)
+        second = contacts.list(self.company, search="Finance regression", page_size=1, cursor=first["next_cursor"])
+        self.assertEqual({str(first["items"][0]["id"]), str(second["items"][0]["id"])},
+                         {self.party, self.other_party})
+        self.assertIsNone(second["next_cursor"])
+        for name in ("Page A", "Page B", "Page C"):
+            self.db.execute(self.text("insert into brands(company_id, name, code) values(:company, :name, :name)"),
+                            {"company": self.company, "name": name})
+        inventory = object.__new__(InventoryService)
+        inventory.db = self.db
+        inventory.company_id = self.company
+        first = inventory.master_entries_page("brands", 2, search="Page")
+        second = inventory.master_entries_page("brands", 2, cursor=first["next_cursor"], search="Page")
+        self.assertEqual([row["name"] for row in first["items"] + second["items"]], ["Page A", "Page B", "Page C"])
+        self.assertIsNone(second["next_cursor"])
+
+    def test_audit_date_filter_uses_india_day_boundaries(self):
+        from app.api.routes.reports import audit_events
+
+        for timestamp in ("2026-09-09T18:29:59Z", "2026-09-09T18:30:00Z",
+                          "2026-09-10T18:29:59Z", "2026-09-10T18:30:00Z"):
+            self.db.execute(self.text("""
+                insert into audit_events(company_id, action, entity_type, entity_id, created_at)
+                values(:company, 'PAGING_TEST', 'test', :id, :created)
+            """), {"company": self.company, "id": str(uuid4()), "created": timestamp})
+        with patch("app.api.routes.reports.CompanyService") as service:
+            service.return_value.get.return_value = {"id": self.company}
+            page = audit_events(company_id=None, from_date=date(2026, 9, 10), to_date=date(2026, 9, 10),
+                                limit=100, offset=0, page_size=25, cursor=None, db=self.db)
+        self.assertEqual(len([row for row in page["items"] if row["action"] == "PAGING_TEST"]), 2)
 
     def invoice(self, amount=150, initial=50, auto_create=True):
         from app.schemas.billing import InvoiceCreate

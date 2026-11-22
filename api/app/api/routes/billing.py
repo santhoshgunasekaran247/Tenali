@@ -1,6 +1,7 @@
 from uuid import UUID
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -23,8 +24,15 @@ router = APIRouter()
 
 
 @router.get("/quotations", response_model=QuotationListResponse)
-def list_quotations(company_id: str | None = None, store_id: str | None = None, db: Session = Depends(get_db)):
-    return QuotationService(db).list(company_id, store_id)
+def list_quotations(company_id: str | None = None, store_id: str | None = None,
+                    page_size: int | None = Query(None, ge=1, le=100), cursor: str | None = Query(None, max_length=1000),
+                    from_date: date | None = None, to_date: date | None = None,
+                    db: Session = Depends(get_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
+    return QuotationService(db).list(company_id, store_id, page_size=page_size, cursor=cursor, from_date=from_date, to_date=to_date)
 
 
 @router.post("/quotations", response_model=QuotationOut, status_code=201)
@@ -64,10 +72,18 @@ def list_invoices(
     company_id: str | None = None,
     collection_status: str | None = None,
     store_id: str | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
+    from_date: date | None = None,
+    to_date: date | None = None,
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
     service = BillingService(db)
-    return service.list_invoices(company_id=company_id, collection_status=collection_status, store_id=store_id)
+    return service.list_invoices(company_id=company_id, collection_status=collection_status, store_id=store_id, page_size=page_size, cursor=cursor, from_date=from_date, to_date=to_date)
 
 
 @router.post("/invoices", response_model=InvoiceOut, status_code=201)
@@ -101,11 +117,20 @@ def list_reconcile_runs(
     return service.list_reconcile_runs(company_id=company_id, limit=limit, offset=offset)
 
 
+@router.get("/invoices/reconcile-runs/export")
+def export_reconcile_runs(company_id: str | None = None, db: Session = Depends(get_db)):
+    return Response(content=BillingService(db).export_reconcile_runs_csv(company_id), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="billing_reconcile_runs.csv"'})
+
+
 @router.get("/invoices/reports/sales-register/export")
 def export_sales_register_csv(
     company_id: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    store_id: UUID | None = None,
+    collection_status: str | None = None,
+    all_time: bool = False,
     db: Session = Depends(get_db),
 ):
     service = BillingService(db)
@@ -113,6 +138,9 @@ def export_sales_register_csv(
         company_id=company_id,
         from_date=from_date,
         to_date=to_date,
+        store_id=str(store_id) if store_id else None,
+        collection_status=collection_status,
+        all_time=all_time,
     )
     return Response(
         content=csv_data,

@@ -24,6 +24,8 @@ from app.services.collection_ledger import (
 )
 from app.services.period_lock_service import assert_period_open
 from app.services.runtime_schema import managed_schema
+from app.services.access import allowed_stores
+from app.services.pagination import cursor_page, decode_cursor
 
 ALLOWED_RECEIVABLE_STATUS = {"UNPAID", "PARTIAL", "SETTLED", "BAD_DEBT"}
 
@@ -237,7 +239,9 @@ class CollectionsService:
     def list_receivables(self, company_id: str | None, status: str | None = None,
                          *, search: str = "", limit: int | None = None, store_id: str | None = None,
                          from_date: date | None = None, to_date: date | None = None,
-                         permitted_stores: list[str] | None = None) -> dict:
+                         permitted_stores: list[str] | None = None, open_only: bool = False,
+                         page_size: int | None = None, cursor: str | None = None,
+                         invoice_id: str | None = None, receivable_id: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
@@ -257,31 +261,61 @@ class CollectionsService:
                 r.reminder_date,
                 r.bad_debt_reason,
                 r.notes,
-                r.created_at
+                r.created_at,
+                coalesce(r.reminder_date,r.due_date,r.created_at::date) as sort_date
             from receivables r
             join parties p on p.id = r.party_id
             left join invoices i on i.id=r.invoice_id and i.company_id=r.company_id
             where r.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id}
+        if from_date and to_date and from_date > to_date:
+            raise HTTPException(422, "from_date cannot be after to_date")
+        identity_stores = allowed_stores(getattr(self.db, "info", {}).get("tenant_context"))
+        if identity_stores is not None:
+            permitted_stores = identity_stores if permitted_stores is None else [store for store in permitted_stores if store in identity_stores]
         if status:
             normalized = status.strip().upper()
             if normalized not in ALLOWED_RECEIVABLE_STATUS:
                 raise HTTPException(status_code=422, detail="Invalid status filter")
             query += " and r.status = :status"
             params["status"] = normalized
+        if open_only:
+            query += " and r.status in ('UNPAID','PARTIAL')"
+        if invoice_id:
+            query += " and r.invoice_id = cast(:invoice_id as uuid)"
+            params["invoice_id"] = invoice_id
+        if receivable_id:
+            query += " and r.id = cast(:receivable_id as uuid)"
+            params["receivable_id"] = receivable_id
 
         query += """ and (:search='' or strpos(lower(p.legal_name),lower(:search))>0
             or strpos(lower(coalesce(r.reference,'')),lower(:search))>0)
             and (cast(:store as uuid) is null or i.store_id=cast(:store as uuid))
             and (cast(:permitted as uuid[]) is null or i.store_id=any(cast(:permitted as uuid[])))
             and (cast(:from_date as date) is null or r.due_date>=cast(:from_date as date))
-            and (cast(:to_date as date) is null or r.due_date<=cast(:to_date as date))
-            order by coalesce(r.reminder_date,r.due_date,r.created_at::date) asc,r.created_at desc,r.id limit :limit"""
+            and (cast(:to_date as date) is null or r.due_date<=cast(:to_date as date))"""
         params.update(search=search, limit=limit, store=store_id, permitted=permitted_stores,
                       from_date=from_date, to_date=to_date)
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("sort_date", "created_at", "id"))
+            if boundary:
+                query += """ and (coalesce(r.reminder_date,r.due_date,r.created_at::date) > cast(:cursor_date as date)
+                    or (coalesce(r.reminder_date,r.due_date,r.created_at::date) = cast(:cursor_date as date)
+                        and (r.created_at,r.id) < (cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))))"""
+                params.update(cursor_date=boundary["sort_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            query += " order by coalesce(r.reminder_date,r.due_date,r.created_at::date) asc,r.created_at desc,r.id desc limit :limit"
+        else:
+            query += " order by coalesce(r.reminder_date,r.due_date,r.created_at::date) asc,r.created_at desc,r.id limit :limit"
         rows = self.db.execute(text(query), params).mappings().all()
-        return {"items": [dict(row) for row in rows]}
+        if page_size is not None:
+            page = cursor_page(rows, page_size, ("sort_date", "created_at", "id"))
+            for item in page["items"]:
+                del item["sort_date"]
+            return page
+        return {"items": [{key: value for key, value in dict(row).items() if key != "sort_date"} for row in rows]}
 
     def export_ar_aging_csv(self, company_id: str | None, as_of: str | None = None) -> str:
         self._ensure_tables()
@@ -596,14 +630,14 @@ class CollectionsService:
             self.db.commit()
         return self._get_receivable(company_id=resolved_company_id, receivable_id=receivable_id)
 
-    def list_due_reminders(self, company_id: str | None, as_of: date | None = None) -> dict:
+    def list_due_reminders(self, company_id: str | None, as_of: date | None = None, *,
+                          store_id: str | None = None, page_size: int | None = None,
+                          cursor: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
         reference_date = as_of or date.today()
 
-        rows = self.db.execute(
-            text(
-                """
+        query = """
                 select
                     r.id,
                     r.company_id,
@@ -619,18 +653,34 @@ class CollectionsService:
                     r.reminder_date,
                     r.bad_debt_reason,
                     r.notes,
-                    r.created_at
+                    r.created_at,
+                    coalesce(r.reminder_date, r.due_date) as sort_date
                 from receivables r
                 join parties p on p.id = r.party_id
+                left join invoices i on i.id = r.invoice_id and i.company_id = r.company_id
                 where r.company_id = :company_id
                   and r.status in ('UNPAID','PARTIAL')
                   and coalesce(r.reminder_date, r.due_date) <= :as_of
-                order by coalesce(r.reminder_date, r.due_date) asc, r.created_at asc
+                  and (cast(:store as uuid) is null or i.store_id = cast(:store as uuid))
+                  and (cast(:permitted as uuid[]) is null or i.store_id = any(cast(:permitted as uuid[])))
                 """
-            ),
-            {"company_id": resolved_company_id, "as_of": reference_date},
-        ).mappings().all()
-        return {"items": [dict(row) for row in rows]}
+        params = {"company_id": resolved_company_id, "as_of": reference_date, "store": store_id,
+                  "permitted": allowed_stores(getattr(self.db, "info", {}).get("tenant_context"))}
+        if page_size is not None:
+            boundary = decode_cursor(cursor, ("sort_date", "created_at", "id"))
+            if boundary:
+                query += """ and (coalesce(r.reminder_date,r.due_date),r.created_at,r.id) >
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["sort_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+        query += " order by coalesce(r.reminder_date,r.due_date) asc,r.created_at asc,r.id asc"
+        if page_size is not None:
+            query += " limit :limit"
+        rows = self.db.execute(text(query), params).mappings().all()
+        page = cursor_page(rows, page_size, ("sort_date", "created_at", "id")) if page_size is not None else {"items": [dict(row) for row in rows]}
+        for item in page["items"]:
+            item.pop("sort_date", None)
+        return page
 
     def mark_reminder(
         self, receivable_id: str, company_id: str | None, payload: ReceivableReminderUpdate, *, commit: bool = True
@@ -717,6 +767,10 @@ class CollectionsService:
         from_date: date | None = None,
         to_date: date | None = None,
         reminded_by: str | None = None,
+        *,
+        store_id: str | None = None,
+        page_size: int | None = None,
+        cursor: str | None = None,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -727,14 +781,19 @@ class CollectionsService:
         receivable_exists = self.db.execute(
             text(
                 """
-                select id
-                from receivables
-                where id = :receivable_id and company_id = :company_id
+                select r.id
+                from receivables r
+                left join invoices i on i.id = r.invoice_id and i.company_id = r.company_id
+                where r.id = :receivable_id and r.company_id = :company_id
+                  and (cast(:store as uuid) is null or i.store_id = cast(:store as uuid))
+                  and (cast(:permitted as uuid[]) is null or i.store_id = any(cast(:permitted as uuid[])))
                 """
             ),
             {
                 "receivable_id": receivable_id,
                 "company_id": resolved_company_id,
+                "store": store_id,
+                "permitted": allowed_stores(getattr(self.db, "info", {}).get("tenant_context")),
             },
         ).scalar_one_or_none()
         if not receivable_exists:
@@ -760,18 +819,26 @@ class CollectionsService:
         }
 
         if from_date:
-            query += " and reminded_at::date >= :from_date"
+            query += " and reminded_at >= (cast(:from_date as timestamp) at time zone 'Asia/Kolkata')"
             params["from_date"] = from_date
         if to_date:
-            query += " and reminded_at::date <= :to_date"
+            query += " and reminded_at < (cast((cast(:to_date as date) + 1) as timestamp) at time zone 'Asia/Kolkata')"
             params["to_date"] = to_date
         if reminded_by and reminded_by.strip():
             query += " and coalesce(reminded_by, '') ilike :reminded_by"
             params["reminded_by"] = f"%{reminded_by.strip()}%"
 
-        query += " order by reminded_at desc"
+        if page_size is not None:
+            boundary = decode_cursor(cursor, ("reminded_at", "id"))
+            if boundary:
+                query += " and (reminded_at,id) < (cast(:cursor_reminded as timestamptz),cast(:cursor_id as uuid))"
+                params.update(cursor_reminded=boundary["reminded_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+        query += " order by reminded_at desc,id desc"
+        if page_size is not None:
+            query += " limit :limit"
         rows = self.db.execute(text(query), params).mappings().all()
-        return {"items": [dict(row) for row in rows]}
+        return cursor_page(rows, page_size, ("reminded_at", "id")) if page_size is not None else {"items": [dict(row) for row in rows]}
 
     def _sync_invoice_from_receivable(self, receivable_id: str, company_id: str) -> None:
         receivable = self.db.execute(

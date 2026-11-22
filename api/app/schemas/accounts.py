@@ -104,6 +104,7 @@ class AccountTransactionCreate(BaseModel):
 
 class AccountTransactionListResponse(BaseModel):
     items: list[AccountTransactionOut]
+    next_cursor: str | None = None
 
 
 class AccountTallyRowOut(BaseModel):
@@ -164,6 +165,7 @@ class AuditJournalResponse(BaseModel):
     to_date: date
     items: list[AuditJournalEntryOut]
     buckets: list[AuditJournalBucketOut]
+    next_cursor: str | None = None
 
 
 class BusinessPaymentCreate(BaseModel):

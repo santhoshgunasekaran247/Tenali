@@ -551,11 +551,34 @@ deploying the API, because line resolution and the inventory list read it.
   stock when the transfer is submitted.
 - **Stock by store:** select the owned-stock value on a product to open its
   store/warehouse and variant balances. Balances include reservations and are
-  restricted to accessible stores. The Stock History view currently loads only
-  the latest 50 movements.
-- **Record table pages:** page-size controls operate on rows already loaded by
-  the view. Some endpoints impose separate limits; paging those rows does not
-  retrieve older records.
+  restricted to accessible stores. Stock History requests subsequent pages from
+  the server and is restricted to accessible stores.
+- **Record table pages:** Stock History, invoices, quotations, purchase bills, the receivable
+  ledger, Recent Transactions, the Audit Journal, Business Payments,
+  borrowing/lending entries, audit events, refund settlements, online orders, COD settlements, enquiries,
+  deletion history, purchase payment history, contacts, online customers, brands, categories,
+  and team members fetch subsequent pages from the server. The default page size is 25,
+  with 10, 25, 50 and 100 row options. Journal
+  summaries cover the complete matching period, not merely the displayed page.
+  Transaction and journal CSV downloads use a consistent database snapshot and
+  include all records matching the applied filters.
+  Reports uses the same complete exports. Billing reconcile audit CSV includes
+  every run in the current company, not just the visible page.
+  Sales and purchase register exports on their respective pages use the applied
+  date, status and store filters and include all matching accessible records.
+  Invoice, quotation, purchase, business payment, borrowing, online order and
+  refund histories offer date filters and default to all time. Refund dates use
+  when the refund was created in India time; its pending totals cover all dates.
+  Receivables and pending refunds default to open items without an age limit.
+  Reminder and reminder-history tables also fetch subsequent pages from the server.
+  Changes to records while paging can still affect later pages; this is not a
+  frozen snapshot. Other tables may paginate only already-loaded rows; endpoint
+  limits can prevent those tables or their exports from reaching older records.
+  The product inventory register also retrieves pages from the server, with search
+  and vendor filters applied before paging. Its header checkbox selects matching
+  products across all pages; vendor mapping accepts at most 200 per operation.
+  Stock transfer and draft merge product selectors still load the complete list
+  when opened, and alerts and reconciliation are computed separately.
 - **Reorder alerts** only appear when alerts are enabled on the product or
   variant and stock is at or below the reorder level. Entering a level in the
   editor turns alerts on and raises the target to at least the level; a level
@@ -956,6 +979,13 @@ do not refetch customers, accounts, HSN masters, products or company settings.
 Posting, cancellation, reconciliation and manual Refresh reload billing data.
 Failed reference requests are displayed with a retry action and prevent submission.
 Responses from superseded filters or unmounted pages are ignored.
+Invoice and quotation histories default to all time, newest first. Each has
+Today, This month and Custom date filters, applied by the server before paging;
+invoice dates use the invoice date and quotations use the quotation date.
+Quotations remain ordered by creation time. Changing a filter resets its page.
+Billing's Sales Register export uses the visible invoice date, collection status
+and history-store filters, including all-time when selected, and only accessible
+stores. Reports and other callers retain the sales-register date defaults.
 
 Deploy both API and web changes for these improvements; no migration is required.
 From `api`, run `python -m unittest discover -s tests -p test_tenant_concurrency.py`.

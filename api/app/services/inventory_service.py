@@ -16,6 +16,7 @@ from app.services.inventory_pricing import resolve_catalog_price
 from app.services.period_lock_service import assert_period_open
 from app.services.posting_service import replay_posting, finish_posting, request_hash
 from app.services.object_storage import FileStore, ObjectStorage
+from app.services.pagination import cursor_page, decode_cursor
 
 
 class InventoryService:
@@ -84,6 +85,22 @@ class InventoryService:
             where company_id=:company and (:search='' or strpos(lower(name),lower(:search))>0
                 or strpos(lower(code),lower(:search))>0) order by name,id limit :limit"""),
             {"company":self.company_id, "search": search, "limit": limit}).mappings()]}
+
+    def master_entries_page(self, kind: str, page_size: int, cursor: str | None = None, search: str = "") -> dict:
+        table = {"brands": "brands", "categories": "product_categories"}.get(kind)
+        if not table:
+            raise HTTPException(422, "Invalid master type")
+        boundary = decode_cursor(cursor, ("name", "id"))
+        params = {"company": self.company_id, "search": search, "limit": page_size + 1}
+        condition = ""
+        if boundary:
+            condition = "and (name,id) > (:name,cast(:id as uuid))"
+            params.update(boundary)
+        rows = self.db.execute(text(f"""select id,name,code,description,is_active from {table}
+            where company_id=:company and (:search='' or strpos(lower(name),lower(:search))>0
+                or strpos(lower(code),lower(:search))>0) {condition}
+            order by name,id limit :limit"""), params).mappings().all()
+        return cursor_page(rows, page_size, ("name", "id"))
 
     def search_stock(self, search: str, limit: int, store_id: str | None = None) -> dict:
         permitted = allowed_stores(self.db.info.get("tenant_context"))
@@ -157,27 +174,33 @@ class InventoryService:
                 {"product": product_id, "variant": variant_id, "vendor": vendor_id}).scalar_one_or_none():
                 raise HTTPException(422, "Map an active vendor offer to this product/variant before selecting it as preferred")
 
-    def _data(self) -> tuple:
+    def _data(self, product_ids: list[str] | None = None) -> tuple:
         products = [dict(row) for row in self.db.execute(text("""select p.*, b.name as brand_name, c.name as category_name
             from products p left join brands b on b.id=p.brand_id left join product_categories c on c.id=p.category_id
-            where p.company_id=:company order by p.home_order,p.name,p.id"""), {"company": self.company_id}).mappings()]
-        variants = [dict(row) for row in self.db.execute(text("select v.* from product_variants v join products p on p.id=v.product_id where p.company_id=:company order by v.created_at,v.id"), {"company": self.company_id}).mappings()]
+            where p.company_id=:company and (cast(:ids as uuid[]) is null or p.id=any(cast(:ids as uuid[])))
+            order by p.home_order,p.name,p.id"""), {"company": self.company_id, "ids": product_ids}).mappings()]
+        variants = [dict(row) for row in self.db.execute(text("""select v.* from product_variants v join products p on p.id=v.product_id
+            where p.company_id=:company and (cast(:ids as uuid[]) is null or p.id=any(cast(:ids as uuid[])))
+            order by v.created_at,v.id"""), {"company": self.company_id, "ids": product_ids}).mappings()]
         offers = [dict(row) for row in self.db.execute(text("""select offer.*, vendor.legal_name as vendor_name, vendor.contact_person,
             vendor.phone, vendor.email, vendor.address, vendor.is_active as vendor_active
             from vendor_contributions offer join products p on p.id=offer.product_id
             join parties vendor on vendor.id=offer.vendor_id and vendor.company_id=p.company_id
-            where p.company_id=:company order by offer.created_at,offer.id"""), {"company": self.company_id}).mappings()]
+            where p.company_id=:company and (cast(:ids as uuid[]) is null or p.id=any(cast(:ids as uuid[])))
+            order by offer.created_at,offer.id"""), {"company": self.company_id, "ids": product_ids}).mappings()]
         permitted = allowed_stores(self.db.info.get("tenant_context"))
         stocks = {(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None): row["quantity"] for row in self.db.execute(text("""
             select product_id,variant_id,sum(quantity) as quantity from stock_balances where company_id=:company
             and (cast(:permitted as uuid[]) is null or store_id=any(cast(:permitted as uuid[])))
+            and (cast(:ids as uuid[]) is null or product_id=any(cast(:ids as uuid[])))
             group by product_id,variant_id
-        """), {"company": self.company_id, "permitted": permitted}).mappings()}
+        """), {"company": self.company_id, "permitted": permitted, "ids": product_ids}).mappings()}
         store_stocks = defaultdict(list)
         for row in self.db.execute(text("""select b.product_id,b.variant_id,b.store_id,s.code as store_code,s.name as store_name,sum(b.quantity) as quantity
             from stock_balances b join stores s on s.id=b.store_id where b.company_id=:company
             and (cast(:permitted as uuid[]) is null or b.store_id=any(cast(:permitted as uuid[])))
-            group by b.product_id,b.variant_id,b.store_id,s.code,s.name,s.is_default order by s.is_default desc,s.code"""), {"company": self.company_id, "permitted": permitted}).mappings():
+            and (cast(:ids as uuid[]) is null or b.product_id=any(cast(:ids as uuid[])))
+            group by b.product_id,b.variant_id,b.store_id,s.code,s.name,s.is_default order by s.is_default desc,s.code"""), {"company": self.company_id, "permitted": permitted, "ids": product_ids}).mappings():
             store_stocks[(str(row["product_id"]), str(row["variant_id"]) if row["variant_id"] else None)].append(
                 {"store_id": str(row["store_id"]), "store_code": row["store_code"], "store_name": row["store_name"], "quantity": row["quantity"]})
         self._store_stocks = store_stocks
@@ -204,8 +227,8 @@ class InventoryService:
                       store_stocks=getattr(self, "_store_stocks", {}).get((str(item.get("product_id") or item.get("id")), str(item["id"]) if item.get("product_id") else None), []))
         return result
 
-    def list_products(self) -> dict:
-        products, variants, offers, stocks = self._data()
+    def list_products(self, product_ids: list[str] | None = None) -> dict:
+        products, variants, offers, stocks = self._data(product_ids)
         offer_map = defaultdict(list)
         for offer in offers:
             offer_map[(str(offer["product_id"]), str(offer["variant_id"]) if offer["variant_id"] else None)].append(offer)
@@ -224,9 +247,34 @@ class InventoryService:
             result.append(item)
         return {"items": result}
 
+    def product_page(self, page_size: int, cursor: str | None = None, search: str = "",
+                     vendor_id: str | None = None, include_inactive: bool = False,
+                     ids_only: bool = False) -> dict:
+        boundary = decode_cursor(cursor, ("home_order", "name", "id"))
+        params = {"company": self.company_id, "vendor": vendor_id, "inactive": include_inactive,
+                  "limit": page_size + 1}
+        conditions = ["p.company_id=:company", "(:inactive or p.is_active)",
+                      """(cast(:vendor as uuid) is null or exists
+                      (select 1 from vendor_contributions o where o.product_id=p.id and o.vendor_id=cast(:vendor as uuid)))"""]
+        for index, term in enumerate(search.lower().split()):
+            params[f"term{index}"] = term
+            conditions.append(f"""strpos(lower(concat_ws(' ', p.name, p.item_name, p.sku, p.portal_product_id,
+                b.name, c.name, coalesce((select string_agg(concat_ws(' ', v.variant_name,v.sku,v.size,v.colour), ' '
+                order by v.created_at,v.id) from product_variants v where v.product_id=p.id), ''))), :term{index}) > 0""")
+        if boundary:
+            conditions.append("(p.home_order,p.name,p.id) > (cast(:home_order as integer),:name,cast(:id as uuid))")
+            params.update(boundary)
+        rows = self.db.execute(text(f"""select p.id,p.home_order,p.name from products p
+            left join brands b on b.id=p.brand_id left join product_categories c on c.id=p.category_id
+            where {' and '.join(conditions)} order by p.home_order,p.name,p.id limit :limit"""), params).mappings().all()
+        page = cursor_page(rows, page_size, ("home_order", "name", "id"))
+        ids = [str(row["id"]) for row in page["items"]]
+        page["items"] = ids if ids_only else self.list_products(ids)["items"]
+        return page
+
     def detail(self, product_id: str) -> dict:
         self._product(product_id)
-        return next(item for item in self.list_products()["items"] if str(item["id"]) == product_id)
+        return next(item for item in self.list_products([product_id])["items"])
 
     def _check_price(self, product_id: str, variant_id: str | None = None) -> None:
         product = self.detail(product_id)
@@ -621,9 +669,23 @@ class InventoryService:
             {"company": self.company_id, "limit": max(1, min(limit, 500))}).mappings().all()
         return {"items": [dict(row) for row in rows]}
 
-    def movements(self, product_id: str) -> dict:
+    def movements(self, product_id: str, page_size: int | None = None, cursor: str | None = None) -> dict:
         self._product(product_id)
-        return {"items": [dict(row) for row in self.db.execute(text("select * from stock_movements where company_id=:company and product_id=:product order by created_at desc,id desc limit 50"), {"company": self.company_id, "product": product_id}).mappings()]}
+        from app.services.pagination import cursor_page, decode_cursor
+        fields = ("created_at", "id")
+        boundary = decode_cursor(cursor, fields)
+        size = page_size if page_size is not None else 50
+        query = """select * from stock_movements where company_id=:company and product_id=:product
+            and (cast(:permitted as uuid[]) is null or store_id=any(cast(:permitted as uuid[])))"""
+        params = {"company": self.company_id, "product": product_id,
+                  "permitted": allowed_stores(self.db.info.get("tenant_context")), "limit": size + (1 if page_size is not None else 0)}
+        if boundary:
+            query += " and (created_at,id) < (cast(:created_at as timestamptz),cast(:id as uuid))"
+            params.update(boundary)
+        rows = self.db.execute(text(query + " order by created_at desc,id desc limit :limit"), params).mappings().all()
+        if page_size is None:
+            return {"items": [dict(row) for row in rows]}
+        return cursor_page(rows, size, fields)
 
     def stock_reconciliation(self, *, search: str = "", limit: int | None = None, store_id: str | None = None) -> dict:
         rows = self.db.execute(

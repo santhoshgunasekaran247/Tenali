@@ -129,12 +129,38 @@ export const api = {
   inventoryUpdateMaster:(kind:string,id:string,payload:{name:string;description:string;is_active:boolean})=>request(`/inventory/lookups/${kind}/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(payload)}),
   cancelInvoice:(id:string,reason:string,reversePayments=false)=>request<CancellationResult>(`/billing/invoices/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason,reverse_payments:reversePayments})}),
   cancelPurchase:(id:string,reason:string,reversePayments=false)=>request<CancellationResult>(`/purchases/${encodeURIComponent(id)}/cancel`,{method:"POST",body:JSON.stringify({reason,reverse_payments:reversePayments})}),
-  refunds:(status?:"PENDING"|"SETTLED")=>request<{items:RefundSettlement[];summary:RefundSummary}>(`/settlements/refunds${status?`?status=${status}`:""}`),
+  refunds:(status?:"PENDING"|"SETTLED", pageSize?: number, cursor?: string | null, fromDate?: string, toDate?: string)=>{
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
+    return request<{items:RefundSettlement[];summary:RefundSummary;next_cursor?:string|null}>(`/settlements/refunds${params.size ? `?${params}` : ""}`);
+  },
   settleRefund:(id:string,payload:RefundSettleInput)=>request<{id:string;status:string}>(`/settlements/refunds/${encodeURIComponent(id)}/settle`,{method:"POST",body:JSON.stringify(payload)}),
   deletionPreview: (kind: DeletionKind, id: string | null, cascade = false) => request<DeletionPreview>(`/company/deletions/preview?${new URLSearchParams({ kind, cascade: String(cascade), ...(id ? { id } : {}) })}`),
   deleteTransaction: (payload: DeletionRequest) => request<DeletionResult>("/company/deletions", { method: "POST", body: JSON.stringify(payload) }),
-  deletionHistory: () => request<{ items: DeletionHistoryItem[] }>("/company/deletions"),
+  deletionHistory: (pageSize?: number, cursor?: string | null) => {
+    const params = new URLSearchParams();
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
+    return request<{ items: DeletionHistoryItem[]; next_cursor?: string | null }>(`/company/deletions${params.size ? `?${params}` : ""}`);
+  },
   inventoryProducts: () => request<{ items: InventoryProduct[] }>("/inventory/products"),
+  inventoryProduct: (id: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(id)}`),
+  inventoryProductPage: (pageSize: number, cursor: string | null, search: string, vendorId: string, includeInactive: boolean) => {
+    const params = new URLSearchParams({page_size: String(pageSize), search, include_inactive: String(includeInactive)});
+    if (cursor) params.set("cursor", cursor);
+    if (vendorId) params.set("vendor_id", vendorId);
+    return request<{items: InventoryProduct[]; next_cursor: string | null}>(`/inventory/products?${params}`);
+  },
+  inventoryProductIds: (cursor: string | null, search: string, vendorId: string, includeInactive: boolean) => {
+    const params = new URLSearchParams({page_size: "100", search, include_inactive: String(includeInactive), ids_only: "true"});
+    if (cursor) params.set("cursor", cursor);
+    if (vendorId) params.set("vendor_id", vendorId);
+    return request<{items: string[]; next_cursor: string | null}>(`/inventory/products?${params}`);
+  },
   inventoryDeleteProduct: (id: string) => request<{deleted: boolean; id: string}>(`/inventory/products/${encodeURIComponent(id)}`, {method: "DELETE"}),
   inventoryConfirmProduct: (id: string) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(id)}/confirm`, {method: "POST"}),
   inventoryMergeProduct: (id: string, payload: {target_product_id: string; target_variant_id: string | null}) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(id)}/merge`, {method: "POST", body: JSON.stringify(payload)}),
@@ -152,7 +178,13 @@ export const api = {
   createStockTransfer: (payload: StockTransferInput) => request<StockTransfer>("/inventory/transfers", {method: "POST", body: JSON.stringify(payload)}),
   reverseStockTransfer: (id: string, notes: string) => request<StockTransfer>(`/inventory/transfers/${encodeURIComponent(id)}/reverse`, {method: "POST", body: JSON.stringify({notes})}),
   inventoryAdjustStock: (product: string, payload: {store_id?:string|null;variant_id:string|null;direction:"IN"|"OUT";quantity:number;notes:string;idempotency_key?:string}) => request<InventoryProduct>(`/inventory/products/${encodeURIComponent(product)}/stock`, {method:"POST",body:JSON.stringify(payload)}),
-  inventoryMovements: (product: string) => request<{items:InventoryMovement[]}>(`/inventory/products/${encodeURIComponent(product)}/movements`),
+  inventoryMovements: (product: string, pageSize?: number, cursor?: string | null) => {
+    const params = new URLSearchParams();
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
+    const query = params.toString();
+    return request<{items:InventoryMovement[]; next_cursor?: string | null}>(`/inventory/products/${encodeURIComponent(product)}/movements${query ? `?${query}` : ""}`);
+  },
   inventoryReconciliation: () => request<{items:InventoryReconciliation[]}>("/inventory/reconciliation"),
   inventoryMissingSources: () => request<{items:InventoryMissingSource[]}>("/inventory/reconciliation/missing-sources"),
   inventoryAttributeExternalSource: (movement: string, external_reference: string, notes: string) =>
@@ -249,6 +281,8 @@ export const api = {
   },
   async accountTransactions(filters?: {
     limit?: number;
+    page_size?: number;
+    cursor?: string | null;
     account_id?: string;
     from_date?: string;
     to_date?: string;
@@ -259,6 +293,8 @@ export const api = {
     if (typeof filters?.limit === "number") {
       params.set("limit", String(filters.limit));
     }
+    if (filters?.page_size !== undefined) params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
     if (filters?.account_id) params.set("account_id", filters.account_id);
     if (filters?.from_date) params.set("from_date", filters.from_date);
     if (filters?.to_date) params.set("to_date", filters.to_date);
@@ -285,6 +321,8 @@ export const api = {
     category?: string;
     source_type?: string;
     limit?: number;
+    page_size?: number;
+    cursor?: string | null;
   }) {
     const params = new URLSearchParams();
     if (filters?.period) params.set("period", filters.period);
@@ -293,6 +331,8 @@ export const api = {
     if (filters?.category) params.set("category", filters.category);
     if (filters?.source_type) params.set("source_type", filters.source_type);
     if (typeof filters?.limit === "number") params.set("limit", String(filters.limit));
+    if (typeof filters?.page_size === "number") params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
     const qs = params.toString();
     return request<AuditJournalResponse>(`/accounts/journal${qs ? `?${qs}` : ""}`);
   },
@@ -333,6 +373,7 @@ export const api = {
   },
   async exportAccountTransactionsCsv(filters?: {
     limit?: number;
+    full?: boolean;
     account_id?: string;
     from_date?: string;
     to_date?: string;
@@ -341,6 +382,7 @@ export const api = {
   }) {
     const params = new URLSearchParams();
     if (typeof filters?.limit === "number") params.set("limit", String(filters.limit));
+    if (filters?.full) params.set("full", "true");
     if (filters?.account_id) params.set("account_id", filters.account_id);
     if (filters?.from_date) params.set("from_date", filters.from_date);
     if (filters?.to_date) params.set("to_date", filters.to_date);
@@ -361,6 +403,7 @@ export const api = {
     category?: string;
     source_type?: string;
     limit?: number;
+    full?: boolean;
   }) {
     const params = new URLSearchParams();
     if (filters?.period) params.set("period", filters.period);
@@ -369,6 +412,7 @@ export const api = {
     if (filters?.category) params.set("category", filters.category);
     if (filters?.source_type) params.set("source_type", filters.source_type);
     if (typeof filters?.limit === "number") params.set("limit", String(filters.limit));
+    if (filters?.full) params.set("full", "true");
     const qs = params.toString();
     const response = await tenantFetch(`${API_BASE}/accounts/journal/export${qs ? `?${qs}` : ""}`);
     if (!response.ok) {
@@ -377,10 +421,14 @@ export const api = {
     }
     return response.blob();
   },
-  async borrowings(filters?: { party_id?: string; limit?: number }) {
+  async borrowings(filters?: { party_id?: string; limit?: number; page_size?: number; cursor?: string | null; from_date?: string; to_date?: string }) {
     const params = new URLSearchParams();
     if (filters?.party_id) params.set("party_id", filters.party_id);
     if (typeof filters?.limit === "number") params.set("limit", String(filters.limit));
+    if (filters?.page_size !== undefined) params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
+    if (filters?.from_date) params.set("from_date", filters.from_date);
+    if (filters?.to_date) params.set("to_date", filters.to_date);
     const qs = params.toString();
     return request<BorrowingListResponse>(`/settlements/borrowings${qs ? `?${qs}` : ""}`);
   },
@@ -399,10 +447,21 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
-  businessPayments: () => request<AccountTransactionListResponse>("/accounts/business-payments"),
-  async receivables(filters?: { status?: string }) {
+  businessPayments: (pageSize?: number, cursor?: string | null, fromDate?: string, toDate?: string) => {
+    const params = new URLSearchParams();
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
+    const query = params.toString();
+    return request<AccountTransactionListResponse>(`/accounts/business-payments${query ? `?${query}` : ""}`);
+  },
+  async receivables(filters?: { status?: string; open_only?: boolean; page_size?: number; cursor?: string | null }) {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
+    if (filters?.open_only) params.set("open_only", "true");
+    if (filters?.page_size !== undefined) params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
     const qs = params.toString();
     return request<ReceivableListResponse>(`/collections/receivables${qs ? `?${qs}` : ""}`);
   },
@@ -453,10 +512,12 @@ export const api = {
       `/collections/receivables/${encodeURIComponent(receivableId)}/reminders${qs ? `?${qs}` : ""}`
     );
   },
-  async invoices(filters?: { collection_status?: string; store_id?: string }) {
+  async invoices(filters?: { collection_status?: string; store_id?: string; page_size?: number; cursor?: string | null }) {
     const params = new URLSearchParams();
     if (filters?.collection_status) params.set("collection_status", filters.collection_status);
     if (filters?.store_id) params.set("store_id", filters.store_id);
+    if (filters?.page_size !== undefined) params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
     const qs = params.toString();
     return request<InvoiceListResponse>(`/billing/invoices${qs ? `?${qs}` : ""}`);
   },
@@ -469,9 +530,12 @@ export const api = {
   invoice(id: string) {
     return request<Invoice>(`/billing/invoices/${encodeURIComponent(id)}`);
   },
-  quotations(storeId?: string) {
-    const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : "";
-    return request<{ items: Quotation[] }>(`/billing/quotations${query}`);
+  quotations(storeId?: string, pageSize?: number, cursor?: string | null) {
+    const params = new URLSearchParams();
+    if (storeId) params.set("store_id", storeId);
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
+    return request<{ items: Quotation[]; next_cursor?: string | null }>(`/billing/quotations${params.size ? `?${params}` : ""}`);
   },
   createQuotation(payload: QuotationCreateInput) {
     return request<Quotation>("/billing/quotations", { method: "POST", body: JSON.stringify(payload) });
@@ -504,11 +568,15 @@ export const api = {
       `/billing/invoices/reconcile-runs?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`
     );
   },
-  async purchases(filters?: { payment_status?: string; vendor_party_id?: string; store_id?: string }) {
+  async purchases(filters?: { payment_status?: string; vendor_party_id?: string; store_id?: string; page_size?: number; cursor?: string | null; from_date?: string; to_date?: string }) {
     const params = new URLSearchParams();
     if (filters?.payment_status) params.set("payment_status", filters.payment_status);
     if (filters?.store_id) params.set("store_id", filters.store_id);
     if (filters?.vendor_party_id) params.set("vendor_party_id", filters.vendor_party_id);
+    if (filters?.page_size !== undefined) params.set("page_size", String(filters.page_size));
+    if (filters?.cursor) params.set("cursor", filters.cursor);
+    if (filters?.from_date) params.set("from_date", filters.from_date);
+    if (filters?.to_date) params.set("to_date", filters.to_date);
     const qs = params.toString();
     return request<PurchaseListResponse>(`/purchases${qs ? `?${qs}` : ""}`);
   },
@@ -524,9 +592,12 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
-  purchasePayments(purchaseId: string) {
+  purchasePayments(purchaseId: string, pageSize?: number, cursor?: string | null) {
+    const params = new URLSearchParams();
+    if (pageSize !== undefined) params.set("page_size", String(pageSize));
+    if (cursor) params.set("cursor", cursor);
     return request<PurchasePaymentListResponse>(
-      `/purchases/${encodeURIComponent(purchaseId)}/payments`
+      `/purchases/${encodeURIComponent(purchaseId)}/payments${params.size ? `?${params}` : ""}`
     );
   },
   confirmPurchaseReceipt(purchaseId: string, payload: PurchaseReceiptConfirmInput) {
@@ -535,10 +606,13 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
-  async exportPurchaseRegisterCsv(filters?: { from_date?: string; to_date?: string }) {
+  async exportPurchaseRegisterCsv(filters?: { from_date?: string; to_date?: string; all_dates?: boolean; payment_status?: string; store_id?: string }) {
     const params = new URLSearchParams();
     if (filters?.from_date) params.set("from_date", filters.from_date);
     if (filters?.to_date) params.set("to_date", filters.to_date);
+    if (filters?.all_dates) params.set("all_dates", "true");
+    if (filters?.payment_status) params.set("payment_status", filters.payment_status);
+    if (filters?.store_id) params.set("store_id", filters.store_id);
     const qs = params.toString();
     const response = await tenantFetch(
       `${API_BASE}/purchases/reports/purchase-register/export${qs ? `?${qs}` : ""}`

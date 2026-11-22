@@ -33,7 +33,8 @@ test("online operations come first and provider setup has a separate admin menu"
 test("order management and provider setup render separately and retain administrator access", () => {
   const render = (setupOnly, role = "owner", shipping = "shiprocket") => {
     const { CheckoutAdminPage } = load("pages/CheckoutAdminPage.tsx", {
-      "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" },
+      "../components/CursorPagination": { CursorPagination: () => null },
+      "../components/HistoryDateFilter": { HistoryDateFilter: () => null, ALL_DATES: {from: "", to: ""} },
       "../features/auth": { useAuth: () => ({ user: { role, company_name: "Example", tenant_slug: "example" } }) },
       "../features/shop": { orderStatus: value => value },
       "../components/OrderActions": { useStoresAndAccounts: () => ({ stores: [], accounts: [] }), ShiprocketPanel: () => null, emptyPackage: {} },

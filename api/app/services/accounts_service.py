@@ -4,6 +4,7 @@ import csv
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import StringIO
+from tempfile import TemporaryFile
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -500,7 +501,7 @@ class AccountsService:
         category: str | None = None,
         source_type: str | None = None,
         business_only: bool = False,
-        *, search: str = "",
+        *, search: str = "", page_size: int | None = None, cursor: str | None = None,
     ) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         safe_limit = min(max(limit, 1), 5000)
@@ -545,6 +546,14 @@ class AccountsService:
             where t.company_id = :company_id
         """
         params: dict[str, object] = {"company_id": resolved_company_id, "limit": safe_limit}
+        if page_size is not None:
+            from app.services.pagination import decode_cursor
+            boundary = decode_cursor(cursor, ("transaction_date", "created_at", "id"))
+            params["limit"] = page_size + 1
+            if boundary:
+                query += """ and (t.transaction_date,t.created_at,t.id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["transaction_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
 
         if business_only:
             query += " and t.category in ('business_purchase','business_billing','business_expense') and t.reversal_of_transaction_id is null"
@@ -568,13 +577,18 @@ class AccountsService:
             or strpos(lower(coalesce(ta.nickname,'')),lower(:search))>0
             or strpos(lower(coalesce(t.reference,'')),lower(:search))>0
             or strpos(lower(coalesce(t.category,'')),lower(:search))>0)
-            order by t.transaction_date desc,t.created_at desc,t.id limit :limit"""
+            order by t.transaction_date desc,t.created_at desc,t.id"""
+        query += " desc" if page_size is not None else ""
+        query += " limit :limit"
         params["search"] = search
 
         rows = self.db.execute(
             text(query),
             params,
         ).mappings().all()
+        if page_size is not None:
+            from app.services.pagination import cursor_page
+            return cursor_page(rows, page_size, ("transaction_date", "created_at", "id"))
         return {"items": [dict(r) for r in rows]}
 
     def account_tally(
@@ -678,6 +692,7 @@ class AccountsService:
         category: str | None = None,
         source_type: str | None = None,
         limit: int = 2000,
+        *, page_size: int | None = None, cursor: str | None = None, include_buckets: bool = True,
     ) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         normalized_period, from_value, to_value, period_sql = self._resolve_journal_window(
@@ -737,6 +752,42 @@ class AccountsService:
         if source_type:
             query += " and t.source_type = :source_type"
             params["source_type"] = source_type
+
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("transaction_date", "created_at", "id"))
+            aggregate_query = f"""
+                select to_char(date_trunc('{period_sql}', t.transaction_date::timestamp), 'YYYY-MM-DD') as period_key,
+                    count(*) as entry_count,
+                    coalesce(sum(t.amount) filter (where t.from_account_id is null), 0) as total_inflow,
+                    coalesce(sum(t.amount) filter (where t.from_account_id is not null and t.to_account_id is null), 0) as total_outflow,
+                    coalesce(sum(t.amount) filter (where t.from_account_id is not null and t.to_account_id is not null), 0) as total_transfer
+                from account_transactions t
+                where t.company_id = :company_id and t.transaction_date between :from_date and :to_date
+            """
+            if category:
+                aggregate_query += " and t.category = :category"
+            if source_type:
+                aggregate_query += " and t.source_type = :source_type"
+            aggregate_query += " group by 1 order by 1 desc"
+            aggregate_rows = self.db.execute(text(aggregate_query), params).mappings().all() if include_buckets else []
+            buckets = []
+            for row in aggregate_rows:
+                bucket = dict(row)
+                bucket["net_flow"] = bucket["total_inflow"] - bucket["total_outflow"]
+                buckets.append(bucket)
+            if boundary:
+                query += """ and (t.transaction_date,t.created_at,t.id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["transaction_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            rows = self.db.execute(text(query + " order by t.transaction_date desc, t.created_at desc, t.id desc limit :limit"), params).mappings().all()
+            cursor_rows = [{**dict(row), "id": row["transaction_id"]} for row in rows]
+            page = cursor_page(cursor_rows, page_size, ("transaction_date", "created_at", "id"))
+            for item in page["items"]:
+                del item["id"]
+            return {"period": normalized_period, "from_date": from_value, "to_date": to_value,
+                    "items": page["items"], "buckets": buckets, "next_cursor": page["next_cursor"]}
 
         query += " order by t.transaction_date desc, t.created_at desc limit :limit"
 
@@ -1491,6 +1542,58 @@ class AccountsService:
         if not row:
             raise HTTPException(status_code=404, detail="Active period lock not found")
         return dict(row)
+
+    def export_full_csv(
+        self, company_id: str | None, *, journal: bool, period: str = "daily",
+        account_id: str | None = None, from_date: str | None = None, to_date: str | None = None,
+        category: str | None = None, source_type: str | None = None,
+    ):
+        output = TemporaryFile(mode="w+", encoding="utf-8", newline="")
+        try:
+            writer = csv.writer(output)
+            if journal:
+                writer.writerow(["transaction_date", "period_key", "direction", "amount", "from_account",
+                                 "to_account", "payment_mode", "reference", "category", "description",
+                                 "source_type", "source_id", "created_at"])
+                period, from_value, to_value, _ = self._resolve_journal_window(period, from_date, to_date)
+                from_date, to_date = from_value.isoformat(), to_value.isoformat()
+            else:
+                writer.writerow(["transaction_date", "direction", "amount", "from_account", "to_account",
+                                 "payment_mode", "reference", "category", "source_type", "description", "created_at"])
+            cursor = None
+            while True:
+                if journal:
+                    page = self.list_audit_journal(company_id, period, from_date, to_date, category, source_type,
+                                                   page_size=100, cursor=cursor, include_buckets=False)
+                else:
+                    page = self.list_transactions(company_id, account_id=account_id, from_date=from_date,
+                                                  to_date=to_date, category=category, source_type=source_type,
+                                                  page_size=100, cursor=cursor)
+                for item in page["items"]:
+                    row = [item.get("transaction_date")]
+                    if journal:
+                        row.append(item.get("period_key"))
+                    row.extend([item.get("direction"), item.get("amount"),
+                                item.get("from_account_name") or item.get("from_account_id") or "",
+                                item.get("to_account_name") or item.get("to_account_id") or "",
+                                item.get("payment_mode") or "", item.get("reference") or "", item.get("category") or ""])
+                    if journal:
+                        row.extend([item.get("description") or "", item.get("source_type") or "", item.get("source_id") or ""])
+                    else:
+                        row.extend([item.get("source_type") or "", item.get("description") or ""])
+                    row.append(item.get("created_at"))
+                    writer.writerow(row)
+                next_cursor = page["next_cursor"]
+                if not next_cursor:
+                    break
+                if next_cursor == cursor:
+                    raise RuntimeError("Export cursor did not advance")
+                cursor = next_cursor
+            output.seek(0)
+            return output
+        except Exception:
+            output.close()
+            raise
 
     def export_transactions_csv(
         self,

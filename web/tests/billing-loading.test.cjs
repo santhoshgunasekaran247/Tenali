@@ -43,12 +43,20 @@ function mountBilling() {
   const overrides = {
     react,
     "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" },
+    "../components/CursorPagination": { CursorPagination: () => null },
     "react-router-dom": { Link: component },
     "lucide-react": { Download: component },
     "../components/TaxLinesEditor": { TaxLinesEditor: component, newTaxLine: () => ({ quantity: "1", rate: "0", gst_rate: "0" }) },
     "../components/PortalHomeLink": { PortalHomeLink: component },
     "../api": { api },
+    "../features/historyClient": { historyClient: {
+      invoices: (...args) => { const request = { ...deferred(), args }; (requests.filteredInvoices ||= []).push(request); return request.promise; },
+      quotations: (...args) => { const request = { ...deferred(), args }; (requests.filteredQuotations ||= []).push(request); return request.promise; },
+      reconcileCsv: (...args) => { const request = { ...deferred(), args }; (requests.reconcileCsv ||= []).push(request); return request.promise; },
+      salesRegisterCsv: (...args) => { const request = { ...deferred(), args }; (requests.salesRegisterCsv ||= []).push(request); return request.promise; },
+    } },
     "../features/postingKey": { postingKey: () => "key" },
+    "../features/workflowDates": { indiaDateKey: () => "2026-03-25" },
     "../features/taxTotals": { calculateLineTotals: () => ({ subtotal: 0, gstTotal: 0, total: 0 }) },
     "../features/stores": { StoreSelect: component, useStores: () => ({ stores: [], stockStores: [], selectedId: "", selected: null, error: "" }) },
     "../components/BillingCustomer": { BillingCustomer: component },
@@ -65,7 +73,10 @@ function mountBilling() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, Error, require: name => overrides[name] || require(name) });
+  const link = { click() {} };
+  vm.runInNewContext(compiled, { exports, Error, Date, URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    document: { createElement: () => link, body: { appendChild() {}, removeChild() {} } },
+    require: name => overrides[name] || require(name) });
   function render() {
     cursor = 0;
     const tree = exports.BillingPage();
@@ -97,6 +108,75 @@ test("billing keeps quotations, invoices and audit stacked beside the creation f
   ]);
   assert.equal(nodes(records).filter(node => node.type === "table").length, 3);
   assert.ok(nodes(records).some(node => node.props?.["aria-label"] === "Collection status"));
+});
+
+test("history ranges default to all time and reset paging with independent server filters", () => {
+  const { requests, render } = mountBilling();
+  let tree = render();
+  const range = label => nodes(tree).find(node => node.props?.label === label && node.props?.value?.preset);
+  assert.equal(range("Invoice").props.value.preset, "all");
+  assert.equal(range("Quotation").props.value.preset, "all");
+  range("Invoice").props.onChange({ preset: "custom", from: "", to: "" });
+  tree = render();
+  assert.equal(requests.filteredInvoices, undefined);
+  range("Invoice").props.onChange({ preset: "custom", from: "2026-01-01", to: "2026-01-31" });
+  tree = render();
+  assert.equal(requests.filteredInvoices[0].args[0].from_date, "2026-01-01");
+  assert.equal(requests.filteredInvoices[0].args[0].to_date, "2026-01-31");
+  assert.equal(requests.filteredInvoices[0].args[0].cursor, null);
+  range("Quotation").props.onChange({ preset: "today", from: "", to: "" });
+  tree = render();
+  assert.equal(requests.filteredQuotations[0].args[0].from_date, requests.filteredQuotations[0].args[0].to_date);
+  assert.equal(requests.filteredInvoices.length, 1);
+  range("Quotation").props.onChange({ preset: "month", from: "", to: "" });
+  tree = render();
+  assert.match(requests.filteredQuotations[1].args[0].from_date, /^\d{4}-\d{2}-01$/);
+  assert.equal(requests.filteredQuotations[1].args[0].to_date.slice(0, 7), requests.filteredQuotations[1].args[0].from_date.slice(0, 7));
+  range("Invoice").props.onChange({ preset: "all", from: "", to: "" });
+  render();
+  assert.equal(requests.invoices.length, 2);
+});
+
+test("reconcile export requests complete CSV even when the displayed page is empty", async () => {
+  const { requests, render } = mountBilling();
+  requests.invoiceReconcileRuns[0].resolve({ items: [], total: 0 });
+  await flush();
+  let tree = render();
+  const button = nodes(tree).find(node => node.type === "button" && String(node.props.children).includes("Export CSV"));
+  assert.ok(button);
+  button.props.onClick();
+  tree = render();
+  assert.equal(requests.reconcileCsv.length, 1);
+  assert.equal(requests.reconcileCsv[0].args.length, 0);
+  assert.equal(nodes(tree).find(node => node.type === "button" && String(node.props.children).includes("Export CSV")).props.disabled, true);
+  requests.reconcileCsv[0].reject(new Error("Export failed"));
+  await flush();
+  assert.ok(JSON.stringify(render()).includes("Export failed"));
+});
+
+test("sales register exports the visible invoice date, status and store filters", () => {
+  const { requests, render } = mountBilling();
+  let tree = render();
+  nodes(tree).find(node => node.props?.["aria-label"] === "Collection status").props.onChange({ target: { value: "PARTIAL" } });
+  tree = render();
+  nodes(tree).find(node => node.props?.["aria-label"] === "History store").props.onChange({ target: { value: "store-1" } });
+  tree = render();
+  nodes(tree).find(node => node.props?.label === "Invoice" && node.props?.value?.preset).props.onChange({
+    preset: "custom", from: "2026-03-01", to: "2026-03-31",
+  });
+  tree = render();
+  nodes(tree).find(node => node.type === "button" && node.props.children === "Export Sales Register").props.onClick();
+  const filters = requests.salesRegisterCsv[0].args[0];
+  assert.equal(filters.from_date, "2026-03-01");
+  assert.equal(filters.to_date, "2026-03-31");
+  assert.equal(filters.collection_status, "PARTIAL");
+  assert.equal(filters.store_id, "store-1");
+  assert.equal(filters.all_time, true);
+  nodes(tree).find(node => node.props?.label === "Invoice" && node.props?.value?.preset).props.onChange({ preset: "all", from: "", to: "" });
+  tree = render();
+  nodes(tree).find(node => node.type === "button" && node.props.children === "Export Sales Register").props.onClick();
+  assert.equal(requests.salesRegisterCsv[1].args[0].from_date, "");
+  assert.equal(requests.salesRegisterCsv[1].args[0].all_time, true);
 });
 
 test("customers render before inventory, invoices, or reconciliation finish; failures do not hide successful data", async () => {

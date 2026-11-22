@@ -103,6 +103,30 @@ class InventoryDatabaseTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
         self.outer.rollback()
+
+    def test_product_pages_filter_before_cursor_and_scope_stock(self):
+        from app.schemas.inventory import StockAdjustment
+        second = str(self.db.execute(self.text("""insert into stores(company_id,code,name,kind,holds_stock,state_code)
+            values(:company,'PAGE','Page store','warehouse',true,'33') returning id"""),
+            {"company": self.company}).scalar_one())
+        self.service.adjust_stock(self.product_id, StockAdjustment(direction="IN", quantity=5, notes="Page test"), store_id=second)
+        self.service.save_variant(self.product_id, VariantInput(variant_name="Large Blue", size="Large", colour="Blue"))
+        self.service.save_offer(self.product_id, VendorOfferInput(vendor_id=self.vendor_a, mrp=100))
+        other = self.service.save_product(ProductInput(name="Shared regression product"))
+        self.db.execute(self.text("insert into products(company_id,portal_product_id,name) values(:company,:portal,:name)"),
+                        {"company": self.other, "portal": str(uuid4()), "name": "Shared regression product"})
+        self.db.info["tenant_context"] = {"company_id": self.company, "role": "staff", "store_ids": [second]}
+        first = self.service.product_page(1, search="shared regression")
+        next_page = self.service.product_page(1, first["next_cursor"], search="shared regression")
+        self.assertEqual({str(first["items"][0]["id"]), str(next_page["items"][0]["id"])},
+                         {self.product_id, str(other["id"])})
+        self.assertIsNone(next_page["next_cursor"])
+        filtered = self.service.product_page(10, search="shared BLUE large", vendor_id=self.vendor_a)
+        self.assertEqual([str(item["id"]) for item in filtered["items"]], [self.product_id])
+        self.assertEqual(filtered["items"][0]["stock_qty"], Decimal("5"))
+        self.assertEqual([entry["store_id"] for entry in filtered["items"][0]["store_stocks"]], [second])
+        ids = self.service.product_page(10, search="shared BLUE", ids_only=True)
+        self.assertEqual(ids["items"], [self.product_id])
         self.connection.close()
 
     def test_multiple_vendors_do_not_duplicate_products(self):

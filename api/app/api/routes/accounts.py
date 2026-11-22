@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
@@ -69,8 +69,12 @@ def list_transactions(
     to_date: str | None = None,
     category: str | None = None,
     source_type: str | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = AccountsService(db)
     return service.list_transactions(
         company_id=company_id,
@@ -80,6 +84,7 @@ def list_transactions(
         to_date=to_date,
         category=category,
         source_type=source_type,
+        page_size=page_size, cursor=cursor,
     )
 
 
@@ -107,8 +112,12 @@ def extract_audit_journal(
     category: str | None = None,
     source_type: str | None = None,
     limit: int = 2000,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = AccountsService(db)
     return service.list_audit_journal(
         company_id=company_id,
@@ -118,6 +127,8 @@ def extract_audit_journal(
         category=category,
         source_type=source_type,
         limit=limit,
+        page_size=page_size,
+        cursor=cursor,
     )
 
 
@@ -157,8 +168,15 @@ def create_business_payment(
 
 
 @router.get("/business-payments", response_model=AccountTransactionListResponse)
-def list_business_payments(company_id: str | None = None, limit: int = 100, db: Session = Depends(get_db)):
-    return AccountsService(db).list_transactions(company_id=company_id, limit=limit, business_only=True)
+def list_business_payments(company_id: str | None = None, limit: int = 100,
+                           page_size: int | None = Query(None, ge=1, le=100),
+                           cursor: str | None = Query(None, max_length=1000),
+                           from_date: str | None = None, to_date: str | None = None,
+                           db: Session = Depends(get_db)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    return AccountsService(db).list_transactions(company_id=company_id, limit=limit, business_only=True,
+                                                 page_size=page_size, cursor=cursor, from_date=from_date, to_date=to_date)
 
 
 @router.get("/period-locks", response_model=PeriodLockListResponse)
@@ -201,9 +219,15 @@ def export_transactions_csv(
     to_date: str | None = None,
     category: str | None = None,
     source_type: str | None = None,
+    full: bool = False,
     db: Session = Depends(get_db),
 ):
     service = AccountsService(db)
+    if full:
+        db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        output = service.export_full_csv(company_id, journal=False, account_id=account_id, from_date=from_date,
+                                         to_date=to_date, category=category, source_type=source_type)
+        return csv_file_response(output, "account_transactions.csv")
     csv_data = service.export_transactions_csv(
         company_id=company_id,
         limit=limit,
@@ -230,9 +254,15 @@ def export_journal_csv(
     category: str | None = None,
     source_type: str | None = None,
     limit: int = 5000,
+    full: bool = False,
     db: Session = Depends(get_db),
 ):
     service = AccountsService(db)
+    if full:
+        db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        output = service.export_full_csv(company_id, journal=True, period=period, from_date=from_date,
+                                         to_date=to_date, category=category, source_type=source_type)
+        return csv_file_response(output, "audit_journal.csv")
     csv_data = service.export_journal_csv(
         company_id=company_id,
         period=period,
@@ -248,3 +278,14 @@ def export_journal_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
     )
+
+
+def csv_file_response(output, filename: str) -> StreamingResponse:
+    def chunks():
+        try:
+            while chunk := output.read(65536):
+                yield chunk
+        finally:
+            output.close()
+    return StreamingResponse(chunks(), media_type="text/csv",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})

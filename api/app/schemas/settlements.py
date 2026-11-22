@@ -35,6 +35,7 @@ class BorrowingEntryOut(BaseModel):
 
 class BorrowingListResponse(BaseModel):
     items: list[BorrowingEntryOut]
+    next_cursor: str | None = None
 
 
 class BorrowingSummaryOut(BaseModel):

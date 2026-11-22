@@ -1,7 +1,8 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
+import { ALL_DATES, HistoryDateFilter } from "../components/HistoryDateFilter";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { AttachmentManager, AttachmentPicker } from "../components/Attachments";
 import { PortalHomeLink } from "../components/PortalHomeLink";
@@ -42,6 +43,12 @@ export function BusinessPaymentsPage() {
   const [attachments, setAttachments] = useDraftState<AttachmentInput[]>("BusinessPaymentsPage.attachments", []);
   const [attachmentReading, setAttachmentReading] = useState(false);
   const [payments, setPayments] = useState<AccountTransaction[]>([]);
+  const [pageSize, setPageSize] = useState(25);
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const [page, setPage] = useState(0);
+  const [next, setNext] = useState<string | null>(null);
+  const [historyDates, setHistoryDates] = useState(ALL_DATES);
+  const loadVersion = useRef(0);
   const [attachmentTarget, setAttachmentTarget] = useState<AccountTransaction | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,27 +56,32 @@ export function BusinessPaymentsPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
+    setPayments([]); setNext(null);
     setError(null);
     try {
       const [accountResponse, partyResponse, paymentResponse] = await Promise.all([
         api.accounts({ active_only: true }),
         api.parties({ active_only: true }),
-        api.businessPayments(),
+        api.businessPayments(pageSize, cursors[page], historyDates.from, historyDates.to),
       ]);
+      if (version !== loadVersion.current) return;
       setAccounts(accountResponse.items);
       setParties(partyResponse.items);
       setPayments(paymentResponse.items);
+      setNext(paymentResponse.next_cursor || null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load accounts.");
+      if (version === loadVersion.current) { setPayments([]); setNext(null); setError(loadError instanceof Error ? loadError.message : "Unable to load accounts."); }
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
-  }, []);
+    return () => { loadVersion.current++; };
+  }, [pageSize, cursors, page, historyDates]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -252,17 +264,18 @@ export function BusinessPaymentsPage() {
           <div className="ops-card-head"><h2>Recent Business Payments</h2>
             <button className="ops-link-btn" type="button" onClick={() => void load()} disabled={loading}>Refresh</button>
           </div>
-          <p className="ops-copy-note">This view loads at most the newest 100 business payments; older payments are not shown.</p>
+          <HistoryDateFilter onChange={range => { setCursors([null]); setPage(0); setHistoryDates(range); }} />
           <div className="ops-table-wrap"><table className="ops-table">
             <thead><tr><th>Date</th><th>Account</th><th>Purpose</th><th>Reference</th><th>Amount</th><th>Status</th><th>Files</th></tr></thead>
-            <PaginatedTableBody>{payments.length ? payments.map((payment) => <tr key={payment.id}>
+            <tbody>{payments.length ? payments.map((payment) => <tr key={payment.id}>
               <td>{payment.transaction_date}</td><td>{payment.from_account_name || "-"}</td>
               <td>{payment.category?.replace("business_", "")}</td><td>{payment.reference || payment.description || "-"}</td>
               <td>{payment.amount.toFixed(2)}</td><td>{payment.is_reversed ? "Reversed" : "Posted"}</td>
               <td><button className="ops-link-btn" type="button" title="Receipts and bills" aria-label={`Attachments for payment ${payment.reference || payment.id}`}
                 onClick={() => setAttachmentTarget(payment)}><Paperclip size={16} aria-hidden="true" /></button></td>
-            </tr>) : <tr><td colSpan={7}>{loading ? "Loading..." : "No business payments found."}</td></tr>}</PaginatedTableBody>
+            </tr>) : <tr><td colSpan={7}>{loading ? "Loading..." : error ? "Unable to load business payments." : "No business payments on this page."}</td></tr>}</tbody>
           </table></div>
+          <CursorPagination size={pageSize} page={page} hasNext={!!next} busy={loading} onSize={size => { setPageSize(size); setCursors([null]); setPage(0); }} onPrevious={() => setPage(value => value - 1)} onNext={() => { if (next) { setCursors(previous => [...previous.slice(0, page + 1), next]); setPage(value => value + 1); } }} />
           {attachmentTarget ? <AttachmentManager key={attachmentTarget.id} entity="business_payment" recordId={attachmentTarget.id}
             title={attachmentTarget.reference || attachmentTarget.id} onClose={() => setAttachmentTarget(null)} /> : null}
         </article>

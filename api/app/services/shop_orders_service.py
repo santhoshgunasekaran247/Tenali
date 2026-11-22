@@ -436,7 +436,7 @@ def cod_settlement(db: Session, company_id: str, settlement_id: str) -> dict:
     return {**dict(row), "items": [dict(item) for item in items]}
 
 
-def cod_outstanding(db: Session, company_id: str) -> dict:
+def cod_outstanding(db: Session, company_id: str, *, page_size: int | None = None, cursor: str | None = None) -> dict:
     settings = checkout_policy(db, company_id)
     rows = db.execute(text(f"""select o.id as order_id, o.status, o.dispatched_at, o.delivered_at, i.invoice_number, i.total,
             r.amount_received, i.total - r.amount_received as outstanding,
@@ -445,14 +445,38 @@ def cod_outstanding(db: Session, company_id: str) -> dict:
         from shop_orders o join invoices i on i.id=o.invoice_id join receivables r on r.invoice_id=i.id
         where o.company_id=:company and o.payment_method='cod' and o.invoice_id is not null and r.status in ('UNPAID','PARTIAL')
         order by o.dispatched_at"""), {"company": company_id, "overdue": settings["cod_overdue_days"]}).mappings().all()
-    settlements = db.execute(text("""select id, courier, settlement_reference, settlement_date, expected_amount, received_amount, shortfall_reason
-        from cod_settlements where company_id=:company order by settlement_date desc, created_at desc limit 100"""),
-        {"company": company_id}).mappings().all()
-    return {"items": [dict(row) for row in rows], "settlements": [dict(row) for row in settlements],
-            "total_outstanding": sum((Decimal(row["outstanding"]) for row in rows), Decimal("0"))}
+    query = """select id, courier, settlement_reference, settlement_date, expected_amount, received_amount, shortfall_reason,
+        created_at, settlement_date as transaction_date from cod_settlements where company_id=:company"""
+    params: dict = {"company": company_id}
+    next_cursor = None
+    if page_size is not None:
+        from app.services.pagination import cursor_page, decode_cursor
+        boundary = decode_cursor(cursor, ("transaction_date", "created_at", "id"))
+        if boundary:
+            query += """ and (settlement_date,created_at,id) <
+                (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+            params.update(cursor_date=boundary["transaction_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+        params["limit"] = page_size + 1
+        settlements = db.execute(text(query + " order by settlement_date desc, created_at desc, id desc limit :limit"), params).mappings().all()
+        page = cursor_page(settlements, page_size, ("transaction_date", "created_at", "id"))
+        items = page["items"]
+        next_cursor = page["next_cursor"]
+    else:
+        settlements = db.execute(text(query + " order by settlement_date desc, created_at desc limit 100"), params).mappings().all()
+        items = [dict(row) for row in settlements]
+    for item in items:
+        del item["created_at"]
+        del item["transaction_date"]
+    result = {"items": [dict(row) for row in rows], "settlements": items,
+              "total_outstanding": sum((Decimal(row["outstanding"]) for row in rows), Decimal("0"))}
+    if page_size is not None:
+        result["next_cursor"] = next_cursor
+    return result
 
 
-def staff_orders(db: Session, company_id: str, offset: int = 0, status: str | None = None) -> dict:
+def staff_orders(db: Session, company_id: str, offset: int = 0, status: str | None = None,
+                 *, page_size: int | None = None, cursor: str | None = None, shopper_id: str | None = None,
+                 from_date: date | None = None, to_date: date | None = None) -> dict:
     expire_orders(db, company_id)
     db.commit()
     query = f"select {ORDER_COLUMNS} from shop_orders where company_id=:company"
@@ -460,6 +484,26 @@ def staff_orders(db: Session, company_id: str, offset: int = 0, status: str | No
     if status:
         query += " and status=:status"
         params["status"] = status
+    if shopper_id:
+        query += " and shopper_id=:shopper"
+        params["shopper"] = shopper_id
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
+    if from_date:
+        query += " and created_at >= (cast(:from_date as timestamp) at time zone 'Asia/Kolkata')"
+        params["from_date"] = from_date
+    if to_date:
+        query += " and created_at < (cast((cast(:to_date as date) + 1) as timestamp) at time zone 'Asia/Kolkata')"
+        params["to_date"] = to_date
+    if page_size is not None:
+        from app.services.pagination import cursor_page, decode_cursor
+        boundary = decode_cursor(cursor, ("created_at", "id"))
+        if boundary:
+            query += " and (created_at,id) < (cast(:created_at as timestamptz),cast(:id as uuid))"
+            params.update(boundary)
+        params["limit"] = page_size + 1
+        rows = db.execute(text(query + " order by created_at desc,id desc limit :limit"), params).mappings().all()
+        return cursor_page(rows, page_size, ("created_at", "id"))
     rows = db.execute(text(query + " order by created_at desc,id limit 50 offset :offset"), params).mappings().all()
     return {"items": [dict(row) for row in rows]}
 
@@ -498,7 +542,8 @@ def whatsapp_number(db: Session, company_id: str, store_id: str | None) -> str |
     return row
 
 
-def list_enquiries(db: Session, company_id: str, status: str | None = None) -> dict:
+def list_enquiries(db: Session, company_id: str, status: str | None = None,
+                   *, page_size: int | None = None, cursor: str | None = None) -> dict:
     query = """select e.*, p.name as product_name, v.variant_name, s.code as store_code
         from enquiries e join products p on p.id=e.product_id left join product_variants v on v.id=e.variant_id
         left join stores s on s.id=e.store_id where e.company_id=:company"""
@@ -506,6 +551,15 @@ def list_enquiries(db: Session, company_id: str, status: str | None = None) -> d
     if status:
         query += " and e.status=:status"
         params["status"] = status
+    if page_size is not None:
+        from app.services.pagination import cursor_page, decode_cursor
+        boundary = decode_cursor(cursor, ("created_at", "id"))
+        if boundary:
+            query += " and (e.created_at,e.id) < (cast(:created_at as timestamptz),cast(:id as uuid))"
+            params.update(boundary)
+        params["limit"] = page_size + 1
+        rows = db.execute(text(query + " order by e.created_at desc,e.id desc limit :limit"), params).mappings().all()
+        return cursor_page(rows, page_size, ("created_at", "id"))
     rows = db.execute(text(query + " order by e.created_at desc limit 200"), params).mappings().all()
     return {"items": [dict(row) for row in rows]}
 

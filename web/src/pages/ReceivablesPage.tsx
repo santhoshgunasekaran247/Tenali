@@ -1,10 +1,11 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { PartySelect } from "../components/PartySelect";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import { receivablesClient } from "../features/receivablesClient";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import type { Account, Party, Receivable, ReceivableReminderLog } from "../types";
 
@@ -80,14 +81,38 @@ export function ReceivablesPage() {
   const invoiceIdQuery = searchParams.get("invoice_id") || "";
   const statusQuery = (searchParams.get("status") || "").toUpperCase();
   const focusQuery = (searchParams.get("focus") || "").toLowerCase();
+  const storeIdQuery = searchParams.get("store_id") || undefined;
   const [parties, setParties] = useState<Party[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [receivables, setReceivables] = useState<Receivable[]>([]);
+  const [selectionSearch, setSelectionSearch] = useState("");
+  const [selectionCursors, setSelectionCursors] = useState<Array<string | null>>([null]);
+  const [selectionPage, setSelectionPage] = useState(0);
+  const [selectionSize, setSelectionSize] = useState(25);
+  const [selectionNext, setSelectionNext] = useState<string | null>(null);
+  const [selectionLoading, setSelectionLoading] = useState(false);
+  const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
+  const [selectionRefresh, setSelectionRefresh] = useState(0);
+  const selectionVersion = useRef(0);
+  const resolutionVersion = useRef(0);
+  const [ledgerRows, setLedgerRows] = useState<Receivable[]>([]);
+  const [ledgerSize, setLedgerSize] = useState(25);
+  const [ledgerCursors, setLedgerCursors] = useState<Array<string | null>>([null]);
+  const [ledgerPage, setLedgerPage] = useState(0);
+  const [ledgerNext, setLedgerNext] = useState<string | null>(null);
+  const loadVersion = useRef(0);
   const [reminders, setReminders] = useState<Receivable[]>([]);
+  const [dueSize, setDueSize] = useState(25);
+  const [dueCursors, setDueCursors] = useState<Array<string | null>>([null]);
+  const [duePage, setDuePage] = useState(0);
+  const [dueNext, setDueNext] = useState<string | null>(null);
+  const [dueAsOf, setDueAsOf] = useState("");
+  const [dueLoading, setDueLoading] = useState(false);
+  const dueVersion = useRef(0);
   const [statusFilter, setStatusFilter] = useState(
     statusQuery && statusQuery !== "OPEN" ? statusQuery : ""
   );
-  const [showOpenOnly, setShowOpenOnly] = useState(statusQuery === "OPEN");
+  const [showOpenOnly, setShowOpenOnly] = useState(!statusQuery || statusQuery === "OPEN");
   const [receivableForm, setReceivableForm] = useDraftState<ReceivableForm>("ReceivablesPage.receivableForm", EMPTY_RECEIVABLE_FORM);
   const [collectionForm, setCollectionForm] = useDraftState<CollectionForm>("ReceivablesPage.collectionForm", createEmptyCollectionForm);
   const [loading, setLoading] = useState(true);
@@ -105,6 +130,12 @@ export function ReceivablesPage() {
   const [historyForReceivableLabel, setHistoryForReceivableLabel] = useState<string>("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [reminderHistory, setReminderHistory] = useState<ReceivableReminderLog[]>([]);
+  const [historySize, setHistorySize] = useState(25);
+  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyNext, setHistoryNext] = useState<string | null>(null);
+  const [appliedHistoryFilters, setAppliedHistoryFilters] = useState<ReminderHistoryFilters>(EMPTY_HISTORY_FILTERS);
+  const historyVersion = useRef(0);
   const [historyFilters, setHistoryFilters] = useState<ReminderHistoryFilters>(
     EMPTY_HISTORY_FILTERS
   );
@@ -116,14 +147,11 @@ export function ReceivablesPage() {
     if (badDebtTarget) badDebtDialog.current?.showModal();
   }, [badDebtTarget]);
 
-  const ledgerRows = useMemo(() => {
-    if (!showOpenOnly) return receivables;
-    return receivables.filter((item) => item.status === "UNPAID" || item.status === "PARTIAL");
-  }, [receivables, showOpenOnly]);
-
   useEffect(() => {
+    setLedgerCursors([null]); setLedgerPage(0);
     if (!statusQuery) {
-      setShowOpenOnly(false);
+      setStatusFilter("");
+      setShowOpenOnly(true);
       return;
     }
     if (statusQuery === "OPEN") {
@@ -138,53 +166,99 @@ export function ReceivablesPage() {
   }, [statusQuery]);
 
   useEffect(() => {
-    if (invoiceIdQuery && statusFilter) {
-      setStatusFilter("");
-      setShowOpenOnly(false);
-    }
-  }, [invoiceIdQuery, statusFilter]);
-
-  useEffect(() => {
     if (!loading && focusQuery === "reminders") {
       remindersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [focusQuery, loading]);
 
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
+    setLedgerRows([]); setLedgerNext(null);
     setError(null);
     try {
-      const [partyRes, accountRes, receivableRes, reminderRes] = await Promise.all([
-        api.parties({ active_only: true }),
-        api.accounts({ active_only: true }),
-        api.receivables({ status: statusFilter || undefined }),
-        api.dueReceivableReminders(),
-      ]);
-      setParties(partyRes.items);
-      setAccounts(accountRes.items);
-      setReceivables(receivableRes.items);
-      setReminders(reminderRes.items);
+      const ledgerRes = await receivablesClient.ledger({ status: statusFilter || undefined, open_only: showOpenOnly, store_id: storeIdQuery, page_size: ledgerSize, cursor: ledgerCursors[ledgerPage] });
+      if (version !== loadVersion.current) return;
+      setLedgerRows(ledgerRes.items);
+      setLedgerNext(ledgerRes.next_cursor || null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load receivables.");
+      if (version === loadVersion.current) setError(loadError instanceof Error ? loadError.message : "Unable to load receivables.");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
-  }, [statusFilter]);
+    return () => { loadVersion.current++; };
+  }, [statusFilter, showOpenOnly, ledgerSize, ledgerCursors, ledgerPage, storeIdQuery]);
 
   useEffect(() => {
-    if (!invoiceIdQuery || receivables.length === 0) return;
-    const match = receivables.find((item) => item.invoice_id === invoiceIdQuery);
-    if (!match) return;
-    setCollectionForm((prev) => ({
-      ...prev,
-      receivable_id: match.id,
-      amount: prev.amount || String(match.balance_amount),
-    }));
-  }, [invoiceIdQuery, receivables]);
+    let active = true;
+    void Promise.all([api.parties({ active_only: true }), api.accounts({ active_only: true })])
+      .then(([partyRes, accountRes]) => { if (active) { setParties(partyRes.items); setAccounts(accountRes.items); } })
+      .catch(failure => { if (active) setError(failure instanceof Error ? failure.message : "Unable to load contacts and accounts."); });
+    return () => { active = false; };
+  }, [storeIdQuery]);
+
+  useEffect(() => {
+    const version = ++selectionVersion.current;
+    setSelectionLoading(true); setReceivables([]); setSelectionNext(null);
+    void receivablesClient.ledger({ page_size: selectionSize, open_only: true, search: selectionSearch, cursor: selectionCursors[selectionPage], store_id: storeIdQuery })
+      .then(response => {
+        if (version !== selectionVersion.current) return;
+        setReceivables(response.items); setSelectionNext(response.next_cursor || null);
+      })
+      .catch(failure => { if (version === selectionVersion.current) setError(failure instanceof Error ? failure.message : "Unable to load collection choices."); })
+      .finally(() => { if (version === selectionVersion.current) setSelectionLoading(false); });
+    return () => { selectionVersion.current++; };
+  }, [selectionSearch, selectionCursors, selectionPage, selectionSize, storeIdQuery, selectionRefresh]);
+
+  useEffect(() => {
+    if (!invoiceIdQuery) return;
+    const version = ++resolutionVersion.current;
+    setSelectedReceivable(null);
+    void receivablesClient.ledger({ invoice_id: invoiceIdQuery, page_size: 1, store_id: storeIdQuery })
+      .then(response => {
+        if (version !== resolutionVersion.current) return;
+        const match = response.items[0];
+        setSelectedReceivable(match || null);
+        if (match && invoiceIdQuery) setCollectionForm(prev => ({
+          ...prev, receivable_id: match.id, amount: prev.amount || String(match.balance_amount),
+        }));
+      })
+      .catch(failure => { if (version === resolutionVersion.current) setError(failure instanceof Error ? failure.message : "Unable to resolve selected receivable."); });
+    return () => { resolutionVersion.current++; };
+  }, [invoiceIdQuery, storeIdQuery, selectionRefresh]);
+
+  useEffect(() => {
+    if (invoiceIdQuery || !collectionForm.receivable_id) return;
+    const version = ++resolutionVersion.current;
+    setSelectedReceivable(null);
+    void receivablesClient.ledger({ receivable_id: collectionForm.receivable_id, page_size: 1, store_id: storeIdQuery })
+      .then(response => { if (version === resolutionVersion.current) setSelectedReceivable(response.items[0] || null); })
+      .catch(failure => { if (version === resolutionVersion.current) setError(failure instanceof Error ? failure.message : "Unable to resolve selected receivable."); });
+    return () => { resolutionVersion.current++; };
+  }, [collectionForm.receivable_id, storeIdQuery, selectionRefresh, invoiceIdQuery]);
+
+  const loadDue = async () => {
+    const version = ++dueVersion.current;
+    setDueLoading(true); setReminders([]); setDueNext(null);
+    try {
+      const response = await receivablesClient.due({ page_size: dueSize, cursor: dueCursors[duePage], as_of: dueAsOf || undefined, store_id: storeIdQuery });
+      if (version !== dueVersion.current) return;
+      setReminders(response.items); setDueNext(response.next_cursor || null);
+    } catch (failure) {
+      if (version === dueVersion.current) setError(failure instanceof Error ? failure.message : "Unable to load reminders.");
+    } finally {
+      if (version === dueVersion.current) setDueLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadDue();
+    return () => { dueVersion.current++; };
+  }, [dueSize, dueCursors, duePage, dueAsOf, storeIdQuery]);
 
   const createReceivable = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -207,7 +281,9 @@ export function ReceivablesPage() {
 
       setReceivableForm(EMPTY_RECEIVABLE_FORM);
       setSuccess("Receivable created.");
+      setSelectionRefresh(value => value + 1);
       await load();
+      await loadDue();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create receivable.");
     } finally {
@@ -238,7 +314,9 @@ export function ReceivablesPage() {
 
       setCollectionForm(createEmptyCollectionForm());
       setSuccess("Collection recorded.");
+      setSelectedReceivable(null); setSelectionRefresh(value => value + 1);
       await load();
+      await loadDue();
     } catch (collectError) {
       setError(collectError instanceof Error ? collectError.message : "Unable to collect payment.");
     } finally {
@@ -256,8 +334,10 @@ export function ReceivablesPage() {
         bad_debt_reason: badDebtReason.trim(),
       });
       setSuccess("Receivable marked as bad debt.");
+      setSelectionRefresh(value => value + 1);
       setBadDebtTarget(null);
       await load();
+      await loadDue();
     } catch (updateError) {
       setBadDebtError(`${updateError instanceof Error ? updateError.message : "Unable to confirm the result."} Close and refresh the ledger to check the status before trying again.`);
     } finally { setBadDebtSaving(false); }
@@ -279,6 +359,8 @@ export function ReceivablesPage() {
       });
       setSuccess("Reminder marked.");
       await load();
+      await loadDue();
+      if (historyForReceivableId === receivableId) await loadHistory();
     } catch (reminderError) {
       setError(reminderError instanceof Error ? reminderError.message : "Unable to mark reminder.");
     } finally {
@@ -286,42 +368,57 @@ export function ReceivablesPage() {
     }
   };
 
-  const openReminderHistory = async (
-    receivableId: string,
-    label: string,
-    filters?: ReminderHistoryFilters
-  ) => {
-    setError(null);
+  const openReminderHistory = (receivableId: string, label: string) => {
+    historyVersion.current++;
     setHistoryForReceivableId(receivableId);
     setHistoryForReceivableLabel(label);
+    setAppliedHistoryFilters({ ...historyFilters });
+    setHistoryCursors([null]); setHistoryPage(0);
+  };
+
+  const loadHistory = async () => {
+    if (!historyForReceivableId) return;
+    const version = ++historyVersion.current;
+    setError(null);
     setHistoryLoading(true);
+    setReminderHistory([]); setHistoryNext(null);
     try {
-      const appliedFilters = filters || historyFilters;
-      const response = await api.receivableReminderHistory(receivableId, {
-        from_date: appliedFilters.from_date || undefined,
-        to_date: appliedFilters.to_date || undefined,
-        reminded_by: appliedFilters.reminded_by || undefined,
+      const response = await receivablesClient.history(historyForReceivableId, {
+        from_date: appliedHistoryFilters.from_date || undefined,
+        to_date: appliedHistoryFilters.to_date || undefined,
+        reminded_by: appliedHistoryFilters.reminded_by || undefined,
+        page_size: historySize, cursor: historyCursors[historyPage], store_id: storeIdQuery,
       });
+      if (version !== historyVersion.current) return;
       setReminderHistory(response.items);
+      setHistoryNext(response.next_cursor || null);
     } catch (historyError) {
+      if (version !== historyVersion.current) return;
       setError(
         historyError instanceof Error ? historyError.message : "Unable to load reminder history."
       );
       setReminderHistory([]);
     } finally {
-      setHistoryLoading(false);
+      if (version === historyVersion.current) setHistoryLoading(false);
     }
   };
 
+  useEffect(() => {
+    void loadHistory();
+    return () => { historyVersion.current++; };
+  }, [historyForReceivableId, appliedHistoryFilters, historySize, historyCursors, historyPage, storeIdQuery]);
+
   const applyHistoryFilters = async () => {
     if (!historyForReceivableId) return;
-    await openReminderHistory(historyForReceivableId, historyForReceivableLabel);
+    setAppliedHistoryFilters({ ...historyFilters });
+    setHistoryCursors([null]); setHistoryPage(0);
   };
 
   const resetHistoryFilters = async () => {
     setHistoryFilters(EMPTY_HISTORY_FILTERS);
     if (!historyForReceivableId) return;
-    await openReminderHistory(historyForReceivableId, historyForReceivableLabel, EMPTY_HISTORY_FILTERS);
+    setAppliedHistoryFilters(EMPTY_HISTORY_FILTERS);
+    setHistoryCursors([null]); setHistoryPage(0);
   };
 
   const exportArAgingCsv = () => {
@@ -430,16 +527,25 @@ export function ReceivablesPage() {
             <h2>Collect Payment</h2>
           </div>
           <form className="ops-form" onSubmit={collect}>
+            <label>Search open receivables
+              <input type="search" value={selectionSearch} placeholder="Contact or reference"
+                onChange={event => { setSelectionSearch(event.target.value); setSelectionCursors([null]); setSelectionPage(0); }} />
+            </label>
             <label>
               Receivable
               <select
                 value={collectionForm.receivable_id}
-                onChange={(event) =>
-                  setCollectionForm((prev) => ({ ...prev, receivable_id: event.target.value }))
-                }
+                onChange={event => {
+                  setSelectedReceivable(receivables.find(item => item.id === event.target.value) || null);
+                  setCollectionForm(prev => ({ ...prev, receivable_id: event.target.value }));
+                }}
                 required
               >
                 <option value="">Select receivable</option>
+                {selectedReceivable && !receivables.some(item => item.id === selectedReceivable.id) ?
+                  <option value={selectedReceivable.id} disabled={!["UNPAID", "PARTIAL"].includes(selectedReceivable.status)}>
+                    {selectedReceivable.party_name} - {selectedReceivable.reference || selectedReceivable.id} - {selectedReceivable.status} - Bal {selectedReceivable.balance_amount.toFixed(2)}
+                  </option> : null}
                 {receivables
                   .filter((item) => item.status === "UNPAID" || item.status === "PARTIAL")
                   .map((item) => (
@@ -449,6 +555,7 @@ export function ReceivablesPage() {
                   ))}
               </select>
             </label>
+            <CursorPagination size={selectionSize} page={selectionPage} hasNext={!!selectionNext} busy={selectionLoading} onSize={size => { setSelectionSize(size); setSelectionCursors([null]); setSelectionPage(0); }} onPrevious={() => setSelectionPage(page => page - 1)} onNext={() => { if (selectionNext) { setSelectionCursors(previous => [...previous.slice(0, selectionPage + 1), selectionNext]); setSelectionPage(page => page + 1); } }} />
             <label>
               Amount
               <input
@@ -529,7 +636,7 @@ export function ReceivablesPage() {
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
             <h2>Receivable Ledger</h2>
-            <span className="catalog-count">{ledgerRows.length} records</span>
+            <span className="catalog-count">{ledgerRows.length} records on this page</span>
           </div>
 
           <div className="ops-list-tools">
@@ -538,6 +645,7 @@ export function ReceivablesPage() {
               onChange={(event) => {
                 setStatusFilter(event.target.value);
                 setShowOpenOnly(false);
+                setLedgerCursors([null]); setLedgerPage(0);
               }}
             >
               <option value="">All status</option>
@@ -552,6 +660,7 @@ export function ReceivablesPage() {
                 checked={showOpenOnly}
                 onChange={(event) => {
                   setShowOpenOnly(event.target.checked);
+                  setLedgerCursors([null]); setLedgerPage(0);
                   if (event.target.checked) {
                     setStatusFilter("");
                   }
@@ -559,7 +668,7 @@ export function ReceivablesPage() {
               />
               Open only
             </label>
-            <button className="btn" type="button" onClick={() => void load()}>
+            <button className="btn" type="button" onClick={() => { setSelectionRefresh(value => value + 1); void Promise.all([load(), loadDue(), loadHistory()]); }}>
               Refresh
             </button>
             <button className="btn" type="button" onClick={exportArAgingCsv}>
@@ -584,10 +693,10 @@ export function ReceivablesPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {ledgerRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>No receivables found.</td>
+                    <td colSpan={8}>{loading ? "Loading receivables..." : error ? "Unable to load receivables." : "No receivables on this page."}</td>
                   </tr>
                 ) : (
                   ledgerRows.map((item) => (
@@ -624,16 +733,18 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={ledgerSize} page={ledgerPage} hasNext={!!ledgerNext} busy={loading} onSize={size => { setLedgerSize(size); setLedgerCursors([null]); setLedgerPage(0); }} onPrevious={() => setLedgerPage(page => page - 1)} onNext={() => { if (ledgerNext) { setLedgerCursors(previous => [...previous.slice(0, ledgerPage + 1), ledgerNext]); setLedgerPage(page => page + 1); } }} />
         </article>
 
         <article className="ops-card ops-list-card" ref={remindersRef}>
           <div className="ops-card-head">
             <h2>Due Reminders</h2>
-            <span className="catalog-count">{reminders.length} due</span>
+            <span className="catalog-count">{reminders.length} on this page</span>
           </div>
+          <label>Due as of (blank = today)<input type="date" value={dueAsOf} onChange={event => { setDueAsOf(event.target.value); setDueCursors([null]); setDuePage(0); }} /></label>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -647,10 +758,10 @@ export function ReceivablesPage() {
                   <th>Action</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {reminders.length === 0 ? (
                   <tr>
-                    <td colSpan={7}>No reminders due.</td>
+                    <td colSpan={7}>{dueLoading ? "Loading reminders..." : "No reminders due on this page."}</td>
                   </tr>
                 ) : (
                   reminders.map((item) => (
@@ -702,9 +813,10 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={dueSize} page={duePage} hasNext={!!dueNext} busy={dueLoading || !!remindingId} onSize={size => { setDueSize(size); setDueCursors([null]); setDuePage(0); }} onPrevious={() => setDuePage(page => page - 1)} onNext={() => { if (dueNext) { setDueCursors(previous => [...previous.slice(0, duePage + 1), dueNext]); setDuePage(page => page + 1); } }} />
         </article>
 
         <article className="ops-card ops-list-card">
@@ -770,14 +882,14 @@ export function ReceivablesPage() {
                   <th>Notes</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {!historyForReceivableId ? (
                   <tr>
                     <td colSpan={5}>Use a History action to load entries.</td>
                   </tr>
                 ) : reminderHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={5}>No reminder history yet.</td>
+                    <td colSpan={5}>{historyLoading ? "Loading history..." : "No reminder history on this page."}</td>
                   </tr>
                 ) : (
                   reminderHistory.map((entry) => (
@@ -790,9 +902,10 @@ export function ReceivablesPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={historySize} page={historyPage} hasNext={!!historyNext} busy={historyLoading || !historyForReceivableId} onSize={size => { setHistorySize(size); setHistoryCursors([null]); setHistoryPage(0); }} onPrevious={() => setHistoryPage(page => page - 1)} onNext={() => { if (historyNext) { setHistoryCursors(previous => [...previous.slice(0, historyPage + 1), historyNext]); setHistoryPage(page => page + 1); } }} />
         </article>
       </section>
       {badDebtTarget ? <dialog ref={badDebtDialog} className="inventory-dialog" aria-labelledby="bad-debt-title" onCancel={event => { event.preventDefault(); if (!badDebtSaving) setBadDebtTarget(null); }}>

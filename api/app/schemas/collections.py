@@ -39,6 +39,7 @@ class ReceivableOut(BaseModel):
 
 class ReceivableListResponse(BaseModel):
     items: list[ReceivableOut]
+    next_cursor: str | None = None
 
 
 class ReceivablePaymentCreate(BaseModel):
@@ -73,6 +74,7 @@ class ReceivableStatusUpdate(BaseModel):
 
 class ReminderListResponse(BaseModel):
     items: list[ReceivableOut]
+    next_cursor: str | None = None
 
 
 class ReceivableReminderUpdate(BaseModel):
@@ -94,3 +96,4 @@ class ReceivableReminderLogOut(BaseModel):
 
 class ReceivableReminderLogListResponse(BaseModel):
     items: list[ReceivableReminderLogOut]
+    next_cursor: str | None = None

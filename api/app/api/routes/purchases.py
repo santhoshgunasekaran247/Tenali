@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -29,14 +31,26 @@ def list_purchases(
     vendor_party_id: str | None = None,
     payment_status: str | None = None,
     store_id: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, "from_date cannot be after to_date")
     service = PurchasesService(db)
     return service.list_purchases(
         company_id=company_id,
         vendor_party_id=vendor_party_id,
         payment_status=payment_status,
         store_id=store_id,
+        from_date=from_date,
+        to_date=to_date,
+        page_size=page_size,
+        cursor=cursor,
     )
 
 
@@ -69,12 +83,18 @@ def add_purchase_payment(
 def list_purchase_payments(
     purchase_id: str,
     company_id: str | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = PurchasesService(db)
     return service.list_purchase_payments(
         purchase_id=purchase_id,
         company_id=company_id,
+        page_size=page_size,
+        cursor=cursor,
     )
 
 
@@ -98,6 +118,9 @@ def export_purchase_register_csv(
     company_id: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    all_dates: bool = False,
+    payment_status: str | None = None,
+    store_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     service = PurchasesService(db)
@@ -105,6 +128,9 @@ def export_purchase_register_csv(
         company_id=company_id,
         from_date=from_date,
         to_date=to_date,
+        all_dates=all_dates,
+        payment_status=payment_status,
+        store_id=store_id,
     )
     return Response(
         content=csv_data,

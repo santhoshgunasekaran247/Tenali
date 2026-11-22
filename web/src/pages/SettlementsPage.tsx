@@ -1,4 +1,6 @@
 import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
+import { ALL_DATES, HistoryDateFilter } from "../components/HistoryDateFilter";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -53,6 +55,11 @@ export function SettlementsPage() {
   const [summary, setSummary] = useState<BorrowingSummary[]>([]);
   const [form, setForm] = useDraftState<BorrowingForm>("SettlementsPage.form", EMPTY_FORM);
   const [selectedParty, setSelectedParty] = useState("");
+  const [pageSize, setPageSize] = useState(25);
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const [page, setPage] = useState(0);
+  const [next, setNext] = useState<string | null>(null);
+  const [historyDates, setHistoryDates] = useState(ALL_DATES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,21 +68,25 @@ export function SettlementsPage() {
   const load = async () => {
     const version = ++loadVersion.current;
     setLoading(true);
+    setEntries([]); setNext(null);
     setError(null);
     try {
       const [partyResponse, accountResponse, summaryResponse, entriesResponse] = await Promise.all([
         api.parties({ active_only: true }),
         api.accounts({ active_only: true }),
         api.borrowingSummary(),
-        api.borrowings({ party_id: selectedParty || undefined, limit: 200 }),
+        api.borrowings({ party_id: selectedParty || undefined, page_size: pageSize, cursor: cursors[page],
+          from_date: historyDates.from || undefined, to_date: historyDates.to || undefined }),
       ]);
       if (version !== loadVersion.current) return;
       setParties(partyResponse.items);
       setAccounts(accountResponse.items);
       setSummary(summaryResponse.items);
       setEntries(entriesResponse.items);
+      setNext(entriesResponse.next_cursor || null);
     } catch (loadError) {
       if (version === loadVersion.current) {
+        setEntries([]); setNext(null);
         setError(loadError instanceof Error ? loadError.message : "Unable to load settlements.");
       }
     } finally {
@@ -85,7 +96,8 @@ export function SettlementsPage() {
 
   useEffect(() => {
     void load();
-  }, [selectedParty]);
+    return () => { loadVersion.current++; };
+  }, [selectedParty, pageSize, cursors, page, historyDates]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -230,7 +242,7 @@ export function SettlementsPage() {
           {error ? <FloatingAlert>{error}</FloatingAlert> : null}
 
           <div className="ops-list-tools">
-            <PartySelect parties={parties} value={selectedParty} onChange={setSelectedParty} label="Contact filter" placeholder="All contacts" />
+            <PartySelect parties={parties} value={selectedParty} onChange={value => { setSelectedParty(value); setCursors([null]); setPage(0); }} label="Contact filter" placeholder="All contacts" />
             <button className="btn" type="button" onClick={() => void load()}>
               Refresh
             </button>
@@ -283,8 +295,8 @@ export function SettlementsPage() {
             <h2>Borrowing &amp; Lending Timeline</h2>
             <span className="catalog-count">{entries.length} entries</span>
           </div>
+          <HistoryDateFilter onChange={range => { setCursors([null]); setPage(0); setHistoryDates(range); }} />
 
-          <p className="ops-copy-note">This timeline loads at most the newest 200 matching entries; older entries are not shown.</p>
           <div className="ops-table-wrap">
             <table className="ops-table">
               <thead>
@@ -297,10 +309,10 @@ export function SettlementsPage() {
                   <th>Notes</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {entries.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No entries found.</td>
+                    <td colSpan={6}>{loading ? "Loading entries..." : error ? "Unable to load entries." : "No entries on this page."}</td>
                   </tr>
                 ) : (
                   entries.map((entry) => (
@@ -314,9 +326,10 @@ export function SettlementsPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={pageSize} page={page} hasNext={!!next} busy={loading} onSize={size => { setPageSize(size); setCursors([null]); setPage(0); }} onPrevious={() => setPage(value => value - 1)} onNext={() => { if (next) { setCursors(previous => [...previous.slice(0, page + 1), next]); setPage(value => value + 1); } }} />
         </article>
       </section>
     </div>

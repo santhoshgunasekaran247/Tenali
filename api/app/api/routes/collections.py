@@ -1,6 +1,7 @@
 from datetime import date
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -25,10 +26,21 @@ router = APIRouter()
 def list_receivables(
     company_id: str | None = None,
     status: str | None = None,
+    open_only: bool = False,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    store_id: str | None = None,
+    search: str = Query("", max_length=200),
+    invoice_id: UUID | None = None,
+    receivable_id: UUID | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = CollectionsService(db)
-    return service.list_receivables(company_id=company_id, status=status)
+    return service.list_receivables(company_id=company_id, status=status, open_only=open_only, from_date=from_date, to_date=to_date, store_id=store_id, search=search, invoice_id=str(invoice_id) if invoice_id else None, receivable_id=str(receivable_id) if receivable_id else None, page_size=page_size, cursor=cursor)
 
 
 @router.post("/receivables", response_model=ReceivableOut, status_code=201)
@@ -75,10 +87,15 @@ def update_receivable_status(
 def list_due_reminders(
     company_id: str | None = None,
     as_of: date | None = None,
+    store_id: str | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = CollectionsService(db)
-    return service.list_due_reminders(company_id=company_id, as_of=as_of)
+    return service.list_due_reminders(company_id=company_id, as_of=as_of, store_id=store_id, page_size=page_size, cursor=cursor)
 
 
 @router.post("/receivables/{receivable_id}/remind", response_model=ReceivableOut)
@@ -103,8 +120,13 @@ def list_receivable_reminder_history(
     from_date: date | None = None,
     to_date: date | None = None,
     reminded_by: str | None = None,
+    store_id: str | None = None,
+    page_size: int | None = Query(None, ge=1, le=100),
+    cursor: str | None = Query(None, max_length=1000),
     db: Session = Depends(get_db),
 ):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
     service = CollectionsService(db)
     return service.list_reminder_history(
         receivable_id=receivable_id,
@@ -112,6 +134,9 @@ def list_receivable_reminder_history(
         from_date=from_date,
         to_date=to_date,
         reminded_by=reminded_by,
+        store_id=store_id,
+        page_size=page_size,
+        cursor=cursor,
     )
 
 

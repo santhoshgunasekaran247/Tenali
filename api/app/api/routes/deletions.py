@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -29,8 +29,11 @@ def deletion_service(db: Session = Depends(get_db)) -> TransactionDeletionServic
 
 
 @router.get("")
-def history(service: TransactionDeletionService = Depends(deletion_service)):
-    return service.history()
+def history(page_size: int | None = Query(None, ge=1, le=100), cursor: str | None = Query(None, max_length=1000),
+            service: TransactionDeletionService = Depends(deletion_service)):
+    if cursor and page_size is None:
+        raise HTTPException(422, "page_size is required with cursor")
+    return service.history(page_size, cursor)
 
 
 @router.get("/preview")

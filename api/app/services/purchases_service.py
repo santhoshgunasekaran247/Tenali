@@ -205,6 +205,7 @@ class PurchasesService:
         store_id: str | None = None,
         *, search: str = "", limit: int = 500, from_date: date | None = None,
         to_date: date | None = None, cancelled_only: bool = False, summary_only: bool = False,
+        page_size: int | None = None, cursor: str | None = None,
     ) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
@@ -269,11 +270,23 @@ class PurchasesService:
             or strpos(lower(v.legal_name),lower(:search))>0)
             and (cast(:from_date as date) is null or p.purchase_date>=cast(:from_date as date))
             and (cast(:to_date as date) is null or p.purchase_date<=cast(:to_date as date))
-            and (not :cancelled or p.status='CANCELLED')
-            order by p.purchase_date desc,p.created_at desc,p.id limit :limit"""
+            and (not :cancelled or p.status='CANCELLED')"""
         params.update(search=search, limit=limit, from_date=from_date, to_date=to_date, cancelled=cancelled_only)
 
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("purchase_date", "created_at", "id"))
+            if boundary:
+                query += """ and (p.purchase_date,p.created_at,p.id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["purchase_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            query += " order by p.purchase_date desc,p.created_at desc,p.id desc limit :limit"
+        else:
+            query += " order by p.purchase_date desc,p.created_at desc,p.id limit :limit"
         rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            return cursor_page(rows, page_size, ("purchase_date", "created_at", "id"))
         return {"items": [dict(row) for row in rows]}
 
     def create_purchase(self, company_id: str | None, payload: PurchaseCreate, *, commit: bool = True,
@@ -821,29 +834,31 @@ class PurchasesService:
             raise HTTPException(status_code=500, detail="Failed to load updated purchase")
         return dict(result)
 
-    def list_purchase_payments(self, purchase_id: str, company_id: str | None) -> dict:
+    def list_purchase_payments(self, purchase_id: str, company_id: str | None,
+                               *, page_size: int | None = None, cursor: str | None = None) -> dict:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
         purchase = self.db.execute(
             text(
                 """
                 select id
                 from purchases
                 where id = :purchase_id and company_id = :company_id
+                  and (cast(:permitted as uuid[]) is null or store_id=any(cast(:permitted as uuid[])))
                 """
             ),
             {
                 "purchase_id": purchase_id,
                 "company_id": resolved_company_id,
+                "permitted": permitted,
             },
         ).scalar_one_or_none()
         if not purchase:
             raise HTTPException(status_code=404, detail="Purchase not found")
 
-        rows = self.db.execute(
-            text(
-                """
+        query = """
                 select
                     id,
                     purchase_id,
@@ -860,14 +875,22 @@ class PurchasesService:
                     created_at
                 from purchase_payments
                 where purchase_id = :purchase_id and company_id = :company_id
-                order by payment_date desc, created_at desc
                 """
-            ),
-            {
-                "purchase_id": purchase_id,
-                "company_id": resolved_company_id,
-            },
-        ).mappings().all()
+        params = {"purchase_id": purchase_id, "company_id": resolved_company_id}
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("payment_date", "created_at", "id"))
+            if boundary:
+                query += """ and (payment_date,created_at,id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["payment_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+            params["limit"] = page_size + 1
+            query += " order by payment_date desc,created_at desc,id desc limit :limit"
+        else:
+            query += " order by payment_date desc,created_at desc"
+        rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            return cursor_page(rows, page_size, ("payment_date", "created_at", "id"))
         return {"items": [dict(row) for row in rows]}
 
     def confirm_purchase_receipt(
@@ -973,17 +996,22 @@ class PurchasesService:
         company_id: str | None,
         from_date: str | None = None,
         to_date: str | None = None,
+        *, all_dates: bool = False, payment_status: str | None = None, store_id: str | None = None,
     ) -> str:
         self._ensure_tables()
         resolved_company_id = self._resolve_company_id(company_id)
 
         try:
-            from_value = date.fromisoformat(from_date) if from_date else date.today().replace(day=1)
-            to_value = date.fromisoformat(to_date) if to_date else date.today()
+            from_value = date.fromisoformat(from_date) if from_date else (None if all_dates else date.today().replace(day=1))
+            to_value = date.fromisoformat(to_date) if to_date else (None if all_dates else date.today())
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="from_date/to_date must be YYYY-MM-DD") from exc
-        if from_value > to_value:
+        if from_value and to_value and from_value > to_value:
             raise HTTPException(status_code=422, detail="from_date cannot be after to_date")
+        normalized_status = payment_status.strip().upper() if payment_status else None
+        if normalized_status and normalized_status not in {"UNPAID", "PARTIAL", "PAID"}:
+            raise HTTPException(status_code=422, detail="payment_status must be UNPAID, PARTIAL, or PAID")
+        permitted = allowed_stores(self.db.info.get("tenant_context"))
 
         company_gst = self.db.execute(
             text("select gst_number from companies where id = :company_id"),
@@ -1010,7 +1038,11 @@ class PurchasesService:
                 join parties v on v.id = p.vendor_party_id
                 left join stores s on s.id = p.store_id
                 where p.company_id = :company_id
-                  and p.purchase_date between :from_date and :to_date
+                  and (cast(:from_date as date) is null or p.purchase_date >= cast(:from_date as date))
+                  and (cast(:to_date as date) is null or p.purchase_date <= cast(:to_date as date))
+                  and (cast(:payment_status as text) is null or p.payment_status = :payment_status)
+                  and (cast(:store_id as uuid) is null or p.store_id = cast(:store_id as uuid))
+                  and (cast(:permitted as uuid[]) is null or p.store_id = any(cast(:permitted as uuid[])))
                 order by p.purchase_date asc, p.created_at asc
                 """
             ),
@@ -1018,6 +1050,9 @@ class PurchasesService:
                 "company_id": resolved_company_id,
                 "from_date": from_value,
                 "to_date": to_value,
+                "payment_status": normalized_status,
+                "store_id": store_id,
+                "permitted": permitted,
             },
         ).mappings().all()
 

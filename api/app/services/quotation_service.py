@@ -23,18 +23,34 @@ class QuotationService:
     def __init__(self, db):
         self.db = db
 
-    def list(self, company_id, store_id=None, *, quotation_id=None):
+    def list(self, company_id, store_id=None, *, quotation_id=None, page_size: int | None = None, cursor: str | None = None,
+             from_date: date | None = None, to_date: date | None = None):
         company = BillingService(self.db)._resolve_company_id(company_id)
         permitted = allowed_stores(self.db.info.get("tenant_context"))
         if store_id:
             get_store(self.db, company, store_id, require_active=False)
-        rows = self.db.execute(text("""select q.*, s.code as store_code
+        query = """select q.*, s.code as store_code
             from quotations q join stores s on s.id=q.store_id and s.company_id=q.company_id
             where q.company_id=:company and (cast(:store as uuid) is null or q.store_id=cast(:store as uuid))
               and (cast(:quotation as uuid) is null or q.id=cast(:quotation as uuid))
               and (cast(:permitted as uuid[]) is null or q.store_id=any(cast(:permitted as uuid[])))
-            order by q.created_at desc, q.id desc"""),
-            {"company": company, "store": store_id, "quotation": quotation_id, "permitted": permitted}).mappings().all()
+              and (cast(:from_date as date) is null or q.quotation_date>=cast(:from_date as date))
+              and (cast(:to_date as date) is null or q.quotation_date<=cast(:to_date as date))"""
+        params = {"company": company, "store": store_id, "quotation": quotation_id, "permitted": permitted,
+                  "from_date": from_date, "to_date": to_date}
+        if page_size is not None:
+            from app.services.pagination import cursor_page, decode_cursor
+            boundary = decode_cursor(cursor, ("created_at", "id"))
+            if boundary:
+                query += " and (q.created_at,q.id) < (cast(:created_at as timestamptz),cast(:id as uuid))"
+                params.update(boundary)
+            params["limit"] = page_size + 1
+            query += " order by q.created_at desc,q.id desc limit :limit"
+        else:
+            query += " order by q.created_at desc,q.id desc"
+        rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            return cursor_page(rows, page_size, ("created_at", "id"))
         return {"items": [dict(row) for row in rows]}
 
     def prepare(self, company_id, payload: QuotationCreate):

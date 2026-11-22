@@ -107,7 +107,7 @@ test("bad debt requires a reason and acknowledgement before submitting the selec
   const react = { ...React,
     useState(initial) {
       const index = cursor++;
-      if (!(index in slots)) slots[index] = index === 2 ? [receivable] : typeof initial === "function" ? initial() : initial;
+      if (!(index in slots)) slots[index] = index === 2 || index === 11 ? [receivable] : typeof initial === "function" ? initial() : initial;
       return [slots[index], value => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
     },
     useRef: value => ({ current: value }), useEffect: () => {}, useMemo: fn => fn(),
@@ -119,7 +119,12 @@ test("bad debt requires a reason and acknowledgement before submitting the selec
   };
   const mocks = {
     react, "../api": { api },
+    "../features/receivablesClient": { receivablesClient: {
+      ledger: async () => ({ items: [] }), due: async () => ({ items: [] }),
+      history: async () => ({ items: [] }),
+    } },
     "../components/PaginatedTableBody": { PaginatedTableBody: "tbody" },
+    "../components/CursorPagination": { CursorPagination: () => null },
     "react-router-dom": { useSearchParams: () => [new URLSearchParams()] },
     "../features/drafts": { useDraftState: (_key, initial) => [typeof initial === "function" ? initial() : initial, () => {}] },
     "../components/Notifications": { FloatingAlert: () => null },

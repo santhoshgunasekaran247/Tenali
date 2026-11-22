@@ -1,4 +1,5 @@
 import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
@@ -13,6 +14,8 @@ import { StoreSelect, useStores } from "../features/stores";
 import { BillingCustomer } from "../components/BillingCustomer";
 import { reissueInvoice } from "../features/invoiceReissue";
 import { CancelDocumentDialog } from "../components/CancelDocumentDialog";
+import { historyClient } from "../features/historyClient";
+import { indiaDateKey } from "../features/workflowDates";
 import type { InventoryProduct } from "../types";
 import type { Account, CompanySetup, HsnMaster, Invoice, InvoiceLineInput, InvoiceReconcileRun, Party, Quotation } from "../types";
 
@@ -61,6 +64,23 @@ const SUPPLY_STATES = [
   "35 - Andaman and Nicobar Islands", "36 - Telangana", "37 - Andhra Pradesh", "38 - Ladakh",
 ];
 
+type Range = { preset: string; from: string; to: string };
+const ALL_TIME: Range = { preset: "all", from: "", to: "" };
+function rangeDates(range: Range) {
+  if (range.preset === "all") return { from_date: "", to_date: "" };
+  if (range.preset === "custom") return { from_date: range.from, to_date: range.to };
+  const today = indiaDateKey();
+  return { from_date: range.preset === "today" ? today : `${today.slice(0,7)}-01`, to_date: today };
+}
+function HistoryRange({ label, value, onChange }: { label: string; value: Range; onChange: (value: Range) => void }) {
+  return <div className="ops-list-tools"><label>{label} date range <select aria-label={`${label} date range`} value={value.preset} onChange={event=>onChange({...value,preset:event.target.value})}>
+    <option value="all">All time</option><option value="today">Today</option><option value="month">This month</option><option value="custom">Custom</option>
+  </select></label>{value.preset==="custom"?<>
+    <label>From Date<input aria-label={`${label} from date`} type="date" value={value.from} onChange={event=>onChange({...value,from:event.target.value})}/></label>
+    <label>To Date<input aria-label={`${label} to date`} type="date" value={value.to} onChange={event=>onChange({...value,to:event.target.value})}/></label>
+  </>:null}</div>;
+}
+
 export function BillingPage() {
   const [cancelTarget, setCancelTarget] = useState<Invoice | null>(null);
   const [reconcilePageSize, setReconcilePageSize] = useState(10);
@@ -71,7 +91,17 @@ export function BillingPage() {
   const [requestKey,setRequestKey]=useDraftState("BillingPage.requestKey", postingKey);
   const [hsnMasters, setHsnMasters] = useState<HsnMaster[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicePageSize, setInvoicePageSize] = useState(25);
+  const [invoiceCursors, setInvoiceCursors] = useState<Array<string | null>>([null]);
+  const [invoicePage, setInvoicePage] = useState(0);
+  const [invoiceNext, setInvoiceNext] = useState<string | null>(null);
+  const [invoiceRange, setInvoiceRange] = useState<Range>(ALL_TIME);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotationSize, setQuotationSize] = useState(25);
+  const [quotationCursors, setQuotationCursors] = useState<Array<string | null>>([null]);
+  const [quotationPage, setQuotationPage] = useState(0);
+  const [quotationNext, setQuotationNext] = useState<string | null>(null);
+  const [quotationRange, setQuotationRange] = useState<Range>(ALL_TIME);
   const [quotationError, setQuotationError] = useState("");
   const [quotationLoading, setQuotationLoading] = useState(true);
   const [documentKind, setDocumentKind] = useDraftState<"invoice" | "quotation">("BillingPage.documentKind", "invoice");
@@ -84,6 +114,7 @@ export function BillingPage() {
   const [reconcileOffset, setReconcileOffset] = useState(0);
   const [reconcileTotal, setReconcileTotal] = useState(0);
   const [reconcileLoading, setReconcileLoading] = useState(true);
+  const [reconcileExporting, setReconcileExporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [invoiceLoading, setInvoiceLoading] = useState(true);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -97,6 +128,10 @@ export function BillingPage() {
   const storeContext = useStores();
   const [storeFilter, setStoreFilter] = useState("");
   const { subtotal, gstTotal, total } = calculateLineTotals(company?.gst_registered === false ? lines.map(line => ({ ...line, gst_rate: 0 })) : lines, true);
+  const invoiceDates = rangeDates(invoiceRange);
+  const quotationDates = rangeDates(quotationRange);
+  const invoiceRangeInvalid = invoiceRange.preset === "custom" && (!invoiceRange.from || !invoiceRange.to || invoiceRange.from > invoiceRange.to);
+  const quotationRangeInvalid = quotationRange.preset === "custom" && (!quotationRange.from || !quotationRange.to || quotationRange.from > quotationRange.to);
 
   const exportInvoice = async (invoice: Invoice) => {
     setPdfBusy(invoice.id);
@@ -145,22 +180,27 @@ export function BillingPage() {
 
   useEffect(() => {
     let active = true;
-    setInvoiceLoading(true); setInvoiceError("");
-    api.invoices({ collection_status: collectionStatus || undefined, store_id: storeFilter || undefined })
-      .then(result => { if (active) setInvoices(result.items); })
+    setInvoiceLoading(true); setInvoiceError(""); setInvoices([]); setInvoiceNext(null);
+    if (invoiceRangeInvalid) { setInvoiceLoading(false); return () => { active = false; }; }
+    const filters = { collection_status: collectionStatus || undefined, store_id: storeFilter || undefined,
+      page_size: invoicePageSize, cursor: invoiceCursors[invoicePage] };
+    (invoiceRange.preset === "all" ? api.invoices(filters) : historyClient.invoices({...filters, ...invoiceDates}))
+      .then(result => { if (active) { setInvoices(result.items); setInvoiceNext(result.next_cursor || null); } })
       .catch(failure => { if (active) setInvoiceError(failure instanceof Error ? failure.message : "Unable to load invoices."); })
       .finally(() => { if (active) setInvoiceLoading(false); });
     return () => { active = false; };
-  }, [collectionStatus, storeFilter, refreshVersion]);
+  }, [collectionStatus, storeFilter, refreshVersion, invoicePageSize, invoiceCursors, invoicePage, invoiceRange, invoiceRangeInvalid]);
 
   useEffect(() => {
     let active = true;
-    setQuotationError(""); setQuotationLoading(true);
-    api.quotations(storeFilter || undefined).then(result => { if (active) setQuotations(result.items); })
+    setQuotationError(""); setQuotationLoading(true); setQuotations([]); setQuotationNext(null);
+    if (quotationRangeInvalid) { setQuotationLoading(false); return () => { active = false; }; }
+    (quotationRange.preset === "all" ? api.quotations(storeFilter || undefined, quotationSize, quotationCursors[quotationPage]) :
+      historyClient.quotations({store_id:storeFilter, page_size:quotationSize, cursor:quotationCursors[quotationPage], ...quotationDates})).then(result => { if (active) { setQuotations(result.items); setQuotationNext(result.next_cursor || null); } })
       .catch(failure => { if (active) setQuotationError(failure instanceof Error ? failure.message : "Unable to load quotations."); })
       .finally(() => { if (active) setQuotationLoading(false); });
     return () => { active = false; };
-  }, [storeFilter, refreshVersion]);
+  }, [storeFilter, refreshVersion, quotationSize, quotationCursors, quotationPage, quotationRange, quotationRangeInvalid]);
 
   useEffect(() => {
     let active = true;
@@ -246,22 +286,10 @@ export function BillingPage() {
     }
   };
 
-  const exportReconcileRunsCsv = () => {
-    if (reconcileRuns.length === 0) {
-      setMessage("No reconcile runs available for export on this page.");
-      return;
-    }
-    const header = ["run_at", "healed_count", "triggered_by"];
-    const rows = reconcileRuns.map((run) => [
-      run.created_at,
-      String(run.healed_count),
-      run.triggered_by || "",
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const exportReconcileRunsCsv = async () => {
+    setReconcileExporting(true); setError(null); setMessage(null);
+    try {
+    const blob = await historyClient.reconcileCsv();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -271,6 +299,9 @@ export function BillingPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     setMessage("Reconcile audit CSV exported.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to export reconcile audit.");
+    } finally { setReconcileExporting(false); }
   };
 
   const exportSalesRegisterCsv = () => {
@@ -278,7 +309,8 @@ export function BillingPage() {
       setError(null);
       setMessage(null);
       try {
-        const blob = await api.exportSalesRegisterCsv();
+        const blob = await historyClient.salesRegisterCsv({ ...invoiceDates, all_time: true,
+          store_id: storeFilter, collection_status: collectionStatus });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -487,30 +519,37 @@ export function BillingPage() {
 
         <div className="billing-records">
         <article className="ops-card ops-list-card billing-quotations-card" aria-labelledby="billing-quotations-heading">
-          <div className="ops-card-head"><h2 id="billing-quotations-heading">Quotations</h2><span className="catalog-count">{quotations.length} records</span></div>
+          <div className="ops-card-head"><h2 id="billing-quotations-heading">Quotations</h2><span className="catalog-count">{quotations.length} records on this page</span></div>
+          <HistoryRange label="Quotation" value={quotationRange} onChange={value=>{setQuotationRange(value);setQuotationCursors([null]);setQuotationPage(0);}} />
+          {quotationRangeInvalid?<FloatingAlert>Select a valid quotation date range.</FloatingAlert>:null}
           {quotationError ? <FloatingAlert>{quotationError}</FloatingAlert> : null}
           {quotationLoading ? <p role="status">Loading quotations...</p> : null}
           <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
             <th>Quotation #</th><th>Store</th><th>Date</th><th>Customer</th><th>Total</th><th>Actions</th>
-          </tr></thead><PaginatedTableBody>
+          </tr></thead><tbody>
             {quotations.length ? quotations.map(item => <tr key={item.id}>
               <td>{item.quotation_number}</td><td>{item.store_code}</td><td>{item.quotation_date}</td>
               <td>{item.document_data.bill_to.name}</td><td>{Number(item.document_data.total).toFixed(2)}</td>
               <td><button className="ops-link-btn" type="button" disabled={pdfBusy !== null}
                 onClick={() => void exportQuotation(item)} aria-label={`Download PDF for ${item.quotation_number}`}>
                 <Download size={16} aria-hidden="true" /> {pdfBusy === item.id ? "Generating..." : "PDF"}</button></td>
-            </tr>) : !quotationLoading && !quotationError ? <tr><td colSpan={6}>No quotations found.</td></tr> : null}
-          </PaginatedTableBody></table></div>
+            </tr>) : !quotationLoading && !quotationError && !quotationRangeInvalid ? <tr><td colSpan={6}>No quotations found.</td></tr> : null}
+          </tbody></table></div>
+          <CursorPagination size={quotationSize} page={quotationPage} hasNext={!!quotationNext} busy={quotationLoading} onSize={size => { setQuotationSize(size); setQuotationCursors([null]); setQuotationPage(0); }} onPrevious={() => setQuotationPage(page => page - 1)} onNext={() => { if (quotationNext) { setQuotationCursors(previous => [...previous.slice(0, quotationPage + 1), quotationNext]); setQuotationPage(page => page + 1); } }} />
         </article>
 
         <article className="ops-card ops-list-card billing-invoices-card" aria-labelledby="billing-invoices-heading">
           <div className="ops-card-head">
             <h2 id="billing-invoices-heading">Invoices</h2>
-            <span className="catalog-count">{invoices.length} records</span>
+            <span className="catalog-count">{invoices.length} records on this page</span>
           </div>
 
           <div className="ops-list-tools">
-            <select aria-label="Collection status" value={collectionStatus} onChange={(event) => setCollectionStatus(event.target.value)}>
+            <label>History store <select aria-label="History store" value={storeFilter} onChange={event => {
+              setStoreFilter(event.target.value); setInvoiceCursors([null]); setInvoicePage(0);
+              setQuotationCursors([null]); setQuotationPage(0);
+            }}><option value="">All stores</option>{storeContext.stores.map(store=><option key={store.id} value={store.id}>{store.code} · {store.name}</option>)}</select></label>
+            <select aria-label="Collection status" value={collectionStatus} onChange={(event) => { setCollectionStatus(event.target.value); setInvoiceCursors([null]); setInvoicePage(0); }}>
               <option value="">All Collection Status</option>
               <option value="UNPAID">UNPAID</option>
               <option value="PARTIAL">PARTIAL</option>
@@ -523,10 +562,12 @@ export function BillingPage() {
             <button className="btn" type="button" onClick={() => setRefreshVersion(previous => previous + 1)}>
               Refresh
             </button>
-            <button className="btn" type="button" onClick={exportSalesRegisterCsv}>
+            <button className="btn" type="button" disabled={invoiceRangeInvalid} onClick={exportSalesRegisterCsv}>
               Export Sales Register
             </button>
           </div>
+          <HistoryRange label="Invoice" value={invoiceRange} onChange={value=>{setInvoiceRange(value);setInvoiceCursors([null]);setInvoicePage(0);}} />
+          {invoiceRangeInvalid?<FloatingAlert>Select a valid invoice date range.</FloatingAlert>:null}
 
           {invoiceLoading ? <p role="status">Loading invoices...</p> : null}
           {invoiceError ? <FloatingAlert>{invoiceError}</FloatingAlert> : null}
@@ -547,10 +588,10 @@ export function BillingPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {invoices.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>No invoices found.</td>
+                    <td colSpan={9}>{invoiceLoading ? "Loading invoices..." : invoiceError ? "Unable to load invoices." : invoiceRangeInvalid ? "Select a valid date range." : "No invoices on this page."}</td>
                   </tr>
                 ) : (
                   invoices.map((item) => (
@@ -592,9 +633,10 @@ export function BillingPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={invoicePageSize} page={invoicePage} hasNext={!!invoiceNext} busy={invoiceLoading} onSize={size => { setInvoicePageSize(size); setInvoiceCursors([null]); setInvoicePage(0); }} onPrevious={() => setInvoicePage(page => page - 1)} onNext={() => { if (invoiceNext) { setInvoiceCursors(previous => [...previous.slice(0, invoicePage + 1), invoiceNext]); setInvoicePage(page => page + 1); } }} />
           {cancelTarget ? <CancelDocumentDialog kind="invoice" id={cancelTarget.id} number={cancelTarget.invoice_number} paid={Number(cancelTarget.amount_received || 0)}
             onClose={() => setCancelTarget(null)}
             onDone={result => { const refunds = result.refunds?.length || 0; setMessage(`${cancelTarget.invoice_number} was cancelled. Its PDF now shows CANCELLED${refunds ? `; ${refunds} refund(s) are pending in Settlements ? Refunds` : ""}. Use Reissue for a corrected invoice.`); setCancelTarget(null); setRefreshVersion(previous => previous + 1); }} /> : null}
@@ -624,7 +666,7 @@ export function BillingPage() {
             >
               Next
             </button>
-            <button className="btn" type="button" onClick={() => exportReconcileRunsCsv()}>
+            <button className="btn" type="button" disabled={reconcileExporting} onClick={() => void exportReconcileRunsCsv()}>
               Export CSV
             </button>
             <span className="catalog-count">

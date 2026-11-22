@@ -1,6 +1,7 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
+import { ALL_DATES, HistoryDateFilter } from "../components/HistoryDateFilter";
 import { FloatingAlert } from "../components/Notifications";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { CheckCircle2, CreditCard, ExternalLink, MessageCircle, Package, ShoppingBag, Truck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth";
@@ -41,10 +42,23 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   const [policy, setPolicy] = useState<Policy>(defaultPolicy);
   const [pincodeText, setPincodeText] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [cod, setCod] = useState<{ items: CodRow[]; settlements: Settlement[]; total_outstanding: number } | null>(null);
+  const [cod, setCod] = useState<{ items: CodRow[]; settlements: Settlement[]; total_outstanding: number; next_cursor?: string | null } | null>(null);
+  const [codSize, setCodSize] = useState(25);
+  const [codCursors, setCodCursors] = useState<Array<string | null>>([null]);
+  const [codPage, setCodPage] = useState(0);
+  const [codLoading, setCodLoading] = useState(false);
+  const [codError, setCodError] = useState("");
+  const codVersion = useRef(0);
   const [settlement, setSettlement] = useState({ courier: "", settlement_reference: "", settlement_date: new Date().toISOString().slice(0, 10), account_id: "", shortfall_reason: "", notes: "" });
   const [settlementItems, setSettlementItems] = useState<Record<string, string>>({});
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [enquirySize, setEnquirySize] = useState(25);
+  const [enquiryCursors, setEnquiryCursors] = useState<Array<string | null>>([null]);
+  const [enquiryPage, setEnquiryPage] = useState(0);
+  const [enquiryNext, setEnquiryNext] = useState<string | null>(null);
+  const [enquiryLoading, setEnquiryLoading] = useState(false);
+  const [enquiryError, setEnquiryError] = useState("");
+  const enquiryVersion = useRef(0);
   const [enquiryInvoice, setEnquiryInvoice] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<Settings>({ configured: false, payment_mode: null });
   const [loaded, setLoaded] = useState(false);
@@ -54,7 +68,13 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   const [checking, setChecking] = useState<Provider | null>(null);
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
-  const [offset, setOffset] = useState(0);
+  const [orderSize, setOrderSize] = useState(25);
+  const [orderCursors, setOrderCursors] = useState<Array<string | null>>([null]);
+  const [orderPage, setOrderPage] = useState(0);
+  const [orderNext, setOrderNext] = useState<string | null>(null);
+  const [orderDates, setOrderDates] = useState(ALL_DATES);
+  const [orderError, setOrderError] = useState("");
+  const orderVersion = useRef(0);
   const [packages, setPackages] = useState<Record<string, PackageSize>>({});
   const [reconcileIds, setReconcileIds] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
@@ -65,16 +85,61 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   const webhookUrl = `${window.location.origin}/api/shop/webhooks/razorpay/${user?.tenant_slug || ""}`;
   const localWebhook = ["localhost", "127.0.0.1"].includes(window.location.hostname) || window.location.protocol !== "https:";
   const refreshOrders = async () => {
-    const result = await accountRequest<{ items: ShopOrder[] }>(`/orders?offset=${offset}${statusFilter ? `&status=${statusFilter}` : ""}`, undefined, "checkout-admin");
-    setOrders(result.items); setOrdersLoaded(true);
+    const version = ++orderVersion.current;
+    setOrdersLoaded(false); setOrders([]); setOrderNext(null); setOrderError("");
+    try {
+      const params = new URLSearchParams({ page_size: String(orderSize) });
+      if (statusFilter) params.set("status", statusFilter);
+      if (orderDates.from) params.set("from_date", orderDates.from);
+      if (orderDates.to) params.set("to_date", orderDates.to);
+      if (orderCursors[orderPage]) params.set("cursor", orderCursors[orderPage]!);
+      const result = await accountRequest<{ items: ShopOrder[]; next_cursor?: string | null }>(`/orders?${params}`, undefined, "checkout-admin");
+      if (version === orderVersion.current) { setOrders(result.items); setOrderNext(result.next_cursor || null); }
+    } catch (failure) {
+      if (version === orderVersion.current) setOrderError(failure instanceof Error ? failure.message : "Unable to load orders.");
+    } finally {
+      if (version === orderVersion.current) setOrdersLoaded(true);
+    }
   };
-  const refreshCod = async () => setCod(await accountRequest("/cod", undefined, "checkout-admin"));
-  const refreshEnquiries = async () => setEnquiries((await accountRequest<{ items: Enquiry[] }>("/enquiries", undefined, "checkout-admin")).items);
+  const refreshOrdersRef = useRef(refreshOrders);
+  refreshOrdersRef.current = refreshOrders;
+  const refreshCod = async () => {
+    const version = ++codVersion.current;
+    setCodLoading(true); setCodError(""); setCod(null);
+    try {
+      const params = new URLSearchParams({ page_size: String(codSize) });
+      if (codCursors[codPage]) params.set("cursor", codCursors[codPage]!);
+      const result = await accountRequest<{ items: CodRow[]; settlements: Settlement[]; total_outstanding: number; next_cursor?: string | null }>(`/cod?${params}`, undefined, "checkout-admin");
+      if (version === codVersion.current) setCod(result);
+    } catch (failure) {
+      if (version === codVersion.current) setCodError(failure instanceof Error ? failure.message : "Unable to load COD settlements.");
+    } finally {
+      if (version === codVersion.current) setCodLoading(false);
+    }
+  };
+  const refreshEnquiries = async () => {
+    const version = ++enquiryVersion.current;
+    setEnquiryLoading(true); setEnquiries([]); setEnquiryNext(null); setEnquiryError("");
+    try {
+      const params = new URLSearchParams({ page_size: String(enquirySize) });
+      if (enquiryCursors[enquiryPage]) params.set("cursor", enquiryCursors[enquiryPage]!);
+      const result = await accountRequest<{ items: Enquiry[]; next_cursor?: string | null }>(`/enquiries?${params}`, undefined, "checkout-admin");
+      if (version === enquiryVersion.current) { setEnquiries(result.items); setEnquiryNext(result.next_cursor || null); }
+    } catch (failure) {
+      if (version === enquiryVersion.current) setEnquiryError(failure instanceof Error ? failure.message : "Unable to load enquiries.");
+    } finally {
+      if (version === enquiryVersion.current) setEnquiryLoading(false);
+    }
+  };
   useEffect(() => {
     if (!allowed || setupOnly) return;
-    if (tab === "cod") void refreshCod().catch(failure => setError(String(failure)));
-    if (tab === "enquiries") void refreshEnquiries().catch(failure => setError(String(failure)));
-  }, [allowed, setupOnly, tab, user?.company_id]);
+    if (allowed && !setupOnly && tab === "cod") void refreshCod();
+    return () => { codVersion.current++; };
+  }, [allowed, setupOnly, tab, user?.company_id, codSize, codCursors, codPage]);
+  useEffect(() => {
+    if (allowed && !setupOnly && tab === "enquiries") void refreshEnquiries();
+    return () => { enquiryVersion.current++; };
+  }, [allowed, setupOnly, tab, user?.company_id, enquirySize, enquiryCursors, enquiryPage]);
   useEffect(() => {
     if (!allowed || !setupOnly) return;
     let active = true;
@@ -90,16 +155,16 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
   }, [allowed, setupOnly, user?.company_id]);
   useEffect(() => {
     if (allowed && !setupOnly && tab === "orders") {
-      setOrdersLoaded(false);
-      void refreshOrders().catch(failure => setError(String(failure)));
+      void refreshOrders();
     }
-  }, [allowed, setupOnly, tab, offset, statusFilter, user?.company_id]);
+    return () => { orderVersion.current++; };
+  }, [allowed, setupOnly, tab, orderSize, orderCursors, orderPage, statusFilter, orderDates, user?.company_id]);
   // Pull AWB/courier from Shiprocket in the background; the server throttles and skips orders that already have tracking.
   useEffect(() => {
     if (!allowed || setupOnly || tab !== "orders") return;
     let active = true;
     const sync = () => void accountRequest<{ updated: number }>("/tracking/sync", { method: "POST" }, "checkout-admin")
-      .then(result => { if (active && result?.updated) return refreshOrders(); })
+      .then(result => { if (active && result?.updated) return refreshOrdersRef.current(); })
       .catch(() => {});
     sync();
     const timer = window.setInterval(sync, 180_000);
@@ -258,8 +323,10 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
             <article><h3>Self-shipping: arrange your own delivery</h3><p>No Shiprocket credentials or checks are needed. Confirm your courier coverage and costs, then dispatch from Online Orders. Add optional courier and tracking details, mark delivery when completed and record COD receipts separately.</p></article>}
         </div><p className="checkout-notice"><strong>Before your first real sale:</strong> verify the payment methods you enabled, delivery costs and coverage. Turn on Add to Cart only when ready. Shoppers can still contact you through WhatsApp while you prepare.</p></section>
       </> : tab === "orders" ? <section className="checkout-orders-section">
-        <div className="checkout-orders-heading"><div><h2>Shopper orders</h2><p>Only this workspace&apos;s orders. Approve, dispatch and collect from here; each dispatch or collection creates the invoice and books stock.</p></div><div className="shop-actions"><label>Status<select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setOffset(0); }}><option value="">All</option>{["awaiting_payment", "expired", "cod_requested", "paid", "confirmed", "fulfilment_review", "shipping_pending", "shipment_booked", "dispatched", "ready_for_pickup", "delivered", "collected", "cancelled"].map(value => <option key={value} value={value}>{orderStatus(value as ShopOrder["status"])}</option>)}</select></label><button className="btn light" disabled={locked} onClick={() => void refreshOrders().catch(failure => setError(String(failure)))}>Refresh orders</button></div></div>
-        {!ordersLoaded ? <p role="status">Loading orders...</p> : !orders.length ? <div className="checkout-empty"><ShoppingBag size={32} aria-hidden="true" /><h3>No orders on this page yet</h3><p>Orders appear here when shoppers proceed to payment for their carts. Adding to cart alone and WhatsApp chats do not create an order.</p><Link className="btn light" to="/portal/checkout-setup">Review payments &amp; delivery setup</Link></div> : <>
+        <div className="checkout-orders-heading"><div><h2>Shopper orders</h2><p>Only this workspace&apos;s orders. Approve, dispatch and collect from here; each dispatch or collection creates the invoice and books stock.</p></div><div className="shop-actions"><label>Status<select value={statusFilter} onChange={event => { setStatusFilter(event.target.value); setOrderCursors([null]); setOrderPage(0); }}><option value="">All</option>{["awaiting_payment", "expired", "cod_requested", "paid", "confirmed", "fulfilment_review", "shipping_pending", "shipment_booked", "dispatched", "ready_for_pickup", "delivered", "collected", "cancelled"].map(value => <option key={value} value={value}>{orderStatus(value as ShopOrder["status"])}</option>)}</select></label><button className="btn light" disabled={locked} onClick={() => void refreshOrders()}>Refresh orders</button></div></div>
+        <HistoryDateFilter onChange={range => { setOrderCursors([null]); setOrderPage(0); setOrderDates(range); }} />
+        {orderError ? <FloatingAlert>{orderError}</FloatingAlert> : null}
+        {!ordersLoaded ? <p role="status">Loading orders...</p> : orderError ? null : !orders.length ? <div className="checkout-empty"><ShoppingBag size={32} aria-hidden="true" /><h3>No orders on this page yet</h3><p>Orders appear here when shoppers proceed to payment for their carts. Adding to cart alone and WhatsApp chats do not create an order.</p><Link className="btn light" to="/portal/checkout-setup">Review payments &amp; delivery setup</Link></div> : <>
           {orders.map(order => <article className="checkout-step shop-order online-order-card" key={order.id}><header className="checkout-order-heading"><div><p className="checkout-kicker">Order #{order.id.slice(0, 8)}</p><h3>{order.address.name}</h3><time dateTime={order.created_at}>{new Date(order.created_at).toLocaleString()}</time></div><div className="order-heading-total"><span className="checkout-order-total">{rupees(order.total_paise)}</span><span>{paymentLabel(order.payment_method)}</span></div></header>
             <div className="order-status-row"><span className={`order-status-badge order-status-${order.status}`}>{orderStatus(order.status)}</span>{(order.provider_key_id || "").startsWith("rzp_test_") ? <span className="order-test-badge">Test payment - no real shipment</span> : null}</div>
             <div className="order-details-grid"><section aria-label="Ordered items"><h4>Items</h4><OrderItems items={order.items} /><p className="order-delivery-charge">Delivery <strong>{order.shipping_paise ? rupees(order.shipping_paise) : "Free"}</strong></p></section>
@@ -277,11 +344,13 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
               }}>Verify payment with Razorpay</button> : null}</div>
           </article>)}
         </>}
-        <div className="shop-actions checkout-pagination"><button disabled={offset === 0 || locked} onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button><span>Page {offset / 50 + 1}</span><button disabled={orders.length < 50 || locked || !ordersLoaded} onClick={() => setOffset(offset + 50)}>Next</button></div>
+        <CursorPagination size={orderSize} page={orderPage} hasNext={!!orderNext} busy={locked || !ordersLoaded} onSize={size => { setOrderSize(size); setOrderCursors([null]); setOrderPage(0); }} onPrevious={() => setOrderPage(page => page - 1)} onNext={() => { if (orderNext) { setOrderCursors(previous => [...previous.slice(0, orderPage + 1), orderNext]); setOrderPage(page => page + 1); } }} />
         <p className="checkout-fine-print">Self-shipping: arrange your own courier, dispatch &amp; invoice, then mark delivered. For Shiprocket orders, submission alone is not delivery confirmation; manage AWB and pickup in Shiprocket.</p>
       </section> : null}
       {!setupOnly && tab === "cod" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>Cash on delivery</h2><p>Dispatched COD invoices stay open until the courier remits. Record each remittance against its orders; shortfalls need a reason.</p></div><button className="btn light" disabled={locked} onClick={() => void refreshCod().catch(failure => setError(String(failure)))}>Refresh</button></div>
+        {codLoading ? <p>Loading COD settlements...</p> : null}
+        {codError ? <FloatingAlert>{codError}</FloatingAlert> : null}
         {!cod ? <p role="status">Loading...</p> : <>
           <p>Outstanding: <strong>{rupees(Math.round(Number(cod.total_outstanding) * 100))}</strong></p>
           <form className="ops-form" onSubmit={event => { event.preventDefault(); setBusy(true); setError(""); setMessage("");
@@ -303,21 +372,24 @@ export function CheckoutAdminPage({ setupOnly = false }: { setupOnly?: boolean }
           </form>
           <h3>Recent settlements</h3>
           <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Date</th><th>Courier</th><th>Reference</th><th>Expected</th><th>Received</th>          <th>Shortfall reason</th><th>Actions</th></tr></thead>
-                      <PaginatedTableBody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td>
-                        <td>{allowed ? <button type="button" className="ops-link-btn" onClick={() => setSettlementDelete(row)}>Delete</button> : null}</td></tr>) : <tr><td colSpan={7}>No settlements yet.</td></tr>}</PaginatedTableBody></table></div>
+                      <tbody>{cod.settlements.length ? cod.settlements.map(row => <tr key={row.id}><td>{row.settlement_date}</td><td>{row.courier}</td><td>{row.settlement_reference}</td><td>{Number(row.expected_amount).toFixed(2)}</td><td>{Number(row.received_amount).toFixed(2)}</td><td>{row.shortfall_reason || ""}</td>
+                        <td>{allowed ? <button type="button" className="ops-link-btn" onClick={() => setSettlementDelete(row)}>Delete</button> : null}</td></tr>) : <tr><td colSpan={7}>No settlements on this page.</td></tr>}</tbody></table></div>
                     {settlementDelete ? <DeleteTransactionDialog kind="cod_settlement" id={settlementDelete.id} title={`COD settlement ${settlementDelete.settlement_reference}`}
                       onClose={() => setSettlementDelete(null)} onDone={async result => { setSettlementDelete(null); setMessage(`Deleted ${result.label}.`); await refreshCod(); }} /> : null}
         </>}
+        <CursorPagination size={codSize} page={codPage} hasNext={!!cod?.next_cursor} busy={codLoading} onSize={size => { setCodSize(size); setCodCursors([null]); setCodPage(0); }} onPrevious={() => setCodPage(page => page - 1)} onNext={() => { if (cod?.next_cursor) { const next = cod.next_cursor; setCodCursors(previous => [...previous.slice(0, codPage + 1), next]); setCodPage(page => page + 1); } }} />
       </section> : null}
       {!setupOnly && tab === "enquiries" ? <section className="checkout-orders-section">
         <div className="checkout-orders-heading"><div><h2>WhatsApp enquiries</h2><p>Recorded when shoppers tap &quot;Ask this store&quot;. Convert to an invoice from Billing, then link it here.</p></div><button className="btn light" disabled={locked} onClick={() => void refreshEnquiries().catch(failure => setError(String(failure)))}>Refresh</button></div>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr><th>Ref</th><th>When</th><th>Product</th><th>Qty</th><th>Shopper</th><th>Store</th><th>Status</th><th>Actions</th></tr></thead>
-          <PaginatedTableBody>{enquiries.length ? enquiries.map(row => <tr key={row.id}><td>{row.reference}</td><td>{new Date(row.created_at).toLocaleString()}</td><td>{row.product_name}{row.variant_name ? ` - ${row.variant_name}` : ""}{row.message ? <small> · {row.message}</small> : null}</td><td>{Number(row.quantity)}</td><td>{row.shopper_name}<br /><a href={`https://wa.me/${row.shopper_phone.replace("+", "")}`} target="_blank" rel="noopener noreferrer">{row.shopper_phone}</a></td><td>{row.store_code || ""}</td><td>{row.status}</td>
+          <tbody>{enquiries.length ? enquiries.map(row => <tr key={row.id}><td>{row.reference}</td><td>{new Date(row.created_at).toLocaleString()}</td><td>{row.product_name}{row.variant_name ? ` - ${row.variant_name}` : ""}{row.message ? <small> · {row.message}</small> : null}</td><td>{Number(row.quantity)}</td><td>{row.shopper_name}<br /><a href={`https://wa.me/${row.shopper_phone.replace("+", "")}`} target="_blank" rel="noopener noreferrer">{row.shopper_phone}</a></td><td>{row.store_code || ""}</td><td>{row.status}</td>
             <td>{row.status !== "converted" ? <span className="shop-actions">
               {["quoted", "closed"].filter(value => value !== row.status).map(value => <button key={value} type="button" className="ops-link-btn" disabled={locked} onClick={() => void accountRequest(`/enquiries/${row.id}`, { method: "PUT", body: JSON.stringify({ status: value }) }, "checkout-admin").then(refreshEnquiries).catch(failure => setError(String(failure)))}>{value}</button>)}
               <input aria-label={`Invoice id for ${row.reference}`} placeholder="Invoice ID" value={enquiryInvoice[row.id] || ""} onChange={event => setEnquiryInvoice({ ...enquiryInvoice, [row.id]: event.target.value })} />
               <button type="button" className="ops-link-btn" disabled={locked || !enquiryInvoice[row.id]} onClick={() => void accountRequest(`/enquiries/${row.id}`, { method: "PUT", body: JSON.stringify({ status: "converted", invoice_id: enquiryInvoice[row.id] }) }, "checkout-admin").then(refreshEnquiries).catch(failure => setError(String(failure)))}>Mark converted</button>
-            </span> : <span>Invoice {row.invoice_id}</span>}</td></tr>) : <tr><td colSpan={8}>No enquiries.</td></tr>}</PaginatedTableBody></table></div>
+            </span> : <span>Invoice {row.invoice_id}</span>}</td></tr>) : <tr><td colSpan={8}>{enquiryLoading ? "Loading enquiries..." : enquiryError ? "Unable to load enquiries." : "No enquiries on this page."}</td></tr>}</tbody></table></div>
+        {enquiryError ? <FloatingAlert>{enquiryError}</FloatingAlert> : null}
+        <CursorPagination size={enquirySize} page={enquiryPage} hasNext={!!enquiryNext} busy={enquiryLoading} onSize={size => { setEnquirySize(size); setEnquiryCursors([null]); setEnquiryPage(0); }} onPrevious={() => setEnquiryPage(page => page - 1)} onNext={() => { if (enquiryNext) { setEnquiryCursors(previous => [...previous.slice(0, enquiryPage + 1), enquiryNext]); setEnquiryPage(page => page + 1); } }} />
       </section> : null}
     </div>
   </main>;

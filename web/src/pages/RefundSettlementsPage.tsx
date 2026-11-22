@@ -1,4 +1,5 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
+import { ALL_DATES, HistoryDateFilter } from "../components/HistoryDateFilter";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -17,6 +18,11 @@ type SettleForm = { account_id: string; settled_on: string; payment_mode: string
 export function RefundSettlementsPage() {
   const [status, setStatus] = useState<"PENDING" | "SETTLED">("PENDING");
   const [items, setItems] = useState<RefundSettlement[]>([]);
+  const [size, setSize] = useState(25);
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const [page, setPage] = useState(0);
+  const [next, setNext] = useState<string | null>(null);
+  const [historyDates, setHistoryDates] = useState(ALL_DATES);
   const [summary, setSummary] = useState<RefundSummary | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [target, setTarget] = useState<RefundSettlement | null>(null);
@@ -29,18 +35,18 @@ export function RefundSettlementsPage() {
 
   const load = async () => {
     const current = ++version.current;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setItems([]); setNext(null);
     try {
-      const [refunds, accountList] = await Promise.all([api.refunds(status), api.accounts({ active_only: true })]);
+      const [refunds, accountList] = await Promise.all([api.refunds(status, size, cursors[page], historyDates.from, historyDates.to), api.accounts({ active_only: true })]);
       if (current !== version.current) return;
-      setItems(refunds.items); setSummary(refunds.summary); setAccounts(accountList.items);
+      setItems(refunds.items); setSummary(refunds.summary); setAccounts(accountList.items); setNext(refunds.next_cursor || null);
     } catch (failure) {
       if (current === version.current) setError(failure instanceof Error ? failure.message : "Unable to load refunds.");
     } finally {
       if (current === version.current) setLoading(false);
     }
   };
-  useEffect(() => { void load(); }, [status]);
+  useEffect(() => { void load(); return () => { version.current++; }; }, [status, size, cursors, page, historyDates]);
   const formCard = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!target || !formCard.current) return;
@@ -86,11 +92,13 @@ export function RefundSettlementsPage() {
     <section className="ops-grid ops-grid-single">
       <article className="ops-card ops-list-card">
         <div className="ops-card-head"><h2>{status === "PENDING" ? "Pending refunds" : "Settled refunds"}</h2>
-          <div className="ops-list-tools"><select aria-label="Refund status" value={status} onChange={event => setStatus(event.target.value as "PENDING" | "SETTLED")}>
+          <div className="ops-list-tools"><select aria-label="Refund status" value={status} onChange={event => { setStatus(event.target.value as "PENDING" | "SETTLED"); setCursors([null]); setPage(0); }}>
             <option value="PENDING">Pending</option><option value="SETTLED">Settled</option></select></div></div>
+        <HistoryDateFilter onChange={range => { setCursors([null]); setPage(0); setHistoryDates(range); }} />
+        <p className="ops-copy-note">Date filter uses the date the refund was created. Pending totals above cover all dates.</p>
         <div className="ops-table-wrap"><table className="ops-table"><thead><tr>
           <th>Document</th><th>Contact</th><th>Direction</th><th>Amount</th><th>Originally</th><th>{status === "PENDING" ? "Reversed on" : "Settled"}</th><th></th></tr></thead>
-          <PaginatedTableBody>{loading ? <tr><td colSpan={7}>Loading refunds...</td></tr> : !items.length ? <tr><td colSpan={7}>{status === "PENDING" ? "No refunds are waiting for confirmation." : "No settled refunds yet."}</td></tr> :
+          <tbody>{loading ? <tr><td colSpan={7}>Loading refunds...</td></tr> : error ? <tr><td colSpan={7}>Unable to load refunds.</td></tr> : !items.length ? <tr><td colSpan={7}>{status === "PENDING" ? "No refunds are waiting for confirmation on this page." : "No settled refunds on this page."}</td></tr> :
             items.map(item => <tr key={item.id}>
               <td><Link className="ops-inline-link" to={item.document_type === "invoice" ? "/portal/billing" : "/portal/purchases"}>{item.document_type === "invoice" ? "Invoice" : "Bill"} {item.document_number || ""}</Link>{item.reason ? <><br /><small>{item.reason}</small></> : null}</td>
               <td>{item.party_name || "-"}</td>
@@ -99,7 +107,8 @@ export function RefundSettlementsPage() {
               <td>{item.original_account_name || "-"} · {item.original_payment_mode || "-"}<br /><small>{item.paid_on}</small></td>
               <td>{status === "PENDING" ? item.reversal_date : <>{item.settled_on} · {item.account_name} · {item.payment_mode || "-"}{item.reference ? <><br /><small>Ref {item.reference}</small></> : null}</>}</td>
               <td>{item.status === "PENDING" ? <button type="button" className="ops-link-btn" onClick={() => open(item)}>Settle / change account</button> : null}</td>
-            </tr>)}</PaginatedTableBody></table></div>
+            </tr>)}</tbody></table></div>
+        <CursorPagination size={size} page={page} hasNext={!!next} busy={loading || busy} onSize={value => { setSize(value); setCursors([null]); setPage(0); }} onPrevious={() => setPage(value => value - 1)} onNext={() => { if (next) { setCursors(previous => [...previous.slice(0, page + 1), next]); setPage(value => value + 1); } }} />
       </article>
       {target ? <article className="ops-card" ref={formCard}>
         <div className="ops-card-head"><h2>Confirm refund · {money(target.amount)}</h2>

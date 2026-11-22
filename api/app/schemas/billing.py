@@ -79,6 +79,7 @@ class QuotationOut(BaseModel):
 
 class QuotationListResponse(BaseModel):
     items: list[QuotationOut]
+    next_cursor: str | None = None
 
 
 class InvoiceOut(BaseModel):
@@ -111,6 +112,7 @@ class InvoiceOut(BaseModel):
 
 class InvoiceListResponse(BaseModel):
     items: list[InvoiceOut]
+    next_cursor: str | None = None
 
 
 class InvoiceReconcileResponse(BaseModel):

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.parties import PartyCreate, PartyUpdate
+from app.services.pagination import cursor_page, decode_cursor
 
 ALLOWED_PARTY_TYPES = {
     "customer",
@@ -32,7 +33,7 @@ class PartiesService:
         return str(first_company)
 
     def list(self, company_id: str | None, search: str | None = None, active_only: bool = True,
-             *, limit: int | None = None) -> dict:
+             *, limit: int | None = None, page_size: int | None = None, cursor: str | None = None) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         query = """
             select
@@ -59,9 +60,16 @@ class PartiesService:
             query += " and (legal_name ilike :search or coalesce(nickname, '') ilike :search or coalesce(phone, '') ilike :search)"
             params["search"] = f"%{search.strip()}%"
 
+        if page_size is not None:
+            boundary = decode_cursor(cursor, ("legal_name", "id"))
+            if boundary:
+                query += " and (legal_name, id) > (:cursor_name, cast(:cursor_id as uuid))"
+                params.update(cursor_name=boundary["legal_name"], cursor_id=boundary["id"])
         query += " order by legal_name asc, id limit :limit"
-        params["limit"] = limit
+        params["limit"] = page_size + 1 if page_size is not None else limit
         rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            return cursor_page(rows, page_size, ("legal_name", "id"))
         return {"items": [dict(r) for r in rows]}
 
     def create(self, company_id: str | None, payload: PartyCreate, *, commit: bool = True) -> dict:

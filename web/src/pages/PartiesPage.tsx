@@ -1,8 +1,9 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { contactsPage } from "../features/partiesPagination";
 import { SiteFooter } from "../components/SiteFooter";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { Link } from "react-router-dom";
@@ -41,23 +42,29 @@ export function PartiesPage() {
   const [form, setForm] = useDraftState<FormState>("PartiesPage.form", INITIAL_FORM);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useDraftState<string | null>("PartiesPage.editingId", null);
-
-  async function loadParties() {
-    setLoading(true);
-    setError(undefined);
-    try {
-      const response = await api.parties({ search: search.trim() || undefined, active_only: activeOnly });
-      setItems(response.items);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load contacts");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [size, setSize] = useState(25);
+  const [page, setPage] = useState(0);
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const [next, setNext] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    loadParties();
-  }, [activeOnly]);
+    let active = true;
+    setLoading(true);
+    setLoadError("");
+    setItems([]);
+    setNext(null);
+    contactsPage(search, activeOnly, size, cursors[page]).then(response => {
+      if (active) { setItems(response.items); setNext(response.next_cursor); }
+    }).catch(e => {
+      if (active) setLoadError(e instanceof Error ? e.message : "Failed to load contacts");
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [search, activeOnly, size, page, cursors, revision]);
+
+  function resetPage() { setPage(0); setCursors([null]); }
+  function refresh() { setRevision(value => value + 1); }
 
   const title = useMemo(() => (editingId ? "Edit contact" : "Add contact"), [editingId]);
 
@@ -100,7 +107,8 @@ export function PartiesPage() {
         });
       }
       resetForm();
-      await loadParties();
+      resetPage();
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save contact");
     } finally {
@@ -217,22 +225,25 @@ export function PartiesPage() {
             <div className="ops-list-tools">
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, nickname, email or phone"
+                onChange={(event) => { setSearch(event.target.value); resetPage(); }}
+                placeholder="Search by name, nickname or phone"
               />
               <label className="ops-toggle">
                 <input
                   type="checkbox"
                   checked={activeOnly}
-                  onChange={(event) => setActiveOnly(event.target.checked)}
+                  onChange={(event) => { setActiveOnly(event.target.checked); resetPage(); }}
                 />
                 Active only
               </label>
-              <button className="btn" type="button" onClick={loadParties} disabled={loading}>
+              <button className="btn" type="button" onClick={refresh} disabled={loading}>
                 {loading ? "Loading..." : "Refresh"}
               </button>
+              <button type="button" onClick={() => { setSearch(""); setActiveOnly(true); resetPage(); }}>Reset filters</button>
             </div>
             {error && <FloatingAlert>{error}</FloatingAlert>}
+            {loadError && <><FloatingAlert>{loadError}</FloatingAlert><button type="button" onClick={refresh}>Retry</button></>}
+            {loading && <p role="status">Loading contacts...</p>}
             <div className="ops-table-wrap">
               <table className="ops-table">
                 <thead>
@@ -244,7 +255,7 @@ export function PartiesPage() {
                     <th>Action</th>
                   </tr>
                 </thead>
-                <PaginatedTableBody>
+                <tbody>
                   {items.map((party) => (
                     <tr key={party.id}>
                       <td>
@@ -264,14 +275,16 @@ export function PartiesPage() {
                       </td>
                     </tr>
                   ))}
-                  {!items.length && !loading && (
+                  {!items.length && !loading && !loadError && (
                     <tr>
                       <td colSpan={5}>No contacts found.</td>
                     </tr>
                   )}
-                </PaginatedTableBody>
+                </tbody>
               </table>
             </div>
+            <CursorPagination size={size} page={page} hasNext={!!next} busy={loading} onSize={value => { setSize(value); resetPage(); }}
+              onPrevious={() => setPage(value => value - 1)} onNext={() => { if (next) { setCursors(values => [...values.slice(0, page + 1), next]); setPage(value => value + 1); } }} />
           </article>
         </section>
       </main>

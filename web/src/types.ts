@@ -393,6 +393,7 @@ export type AccountTransaction = {
 
 export type AccountTransactionListResponse = {
   items: AccountTransaction[];
+  next_cursor?: string | null;
 };
 
 export type AccountTallyRow = {
@@ -453,6 +454,7 @@ export type AuditJournalResponse = {
   to_date: string;
   items: AuditJournalEntry[];
   buckets: AuditJournalBucket[];
+  next_cursor?: string | null;
 };
 
 export type AccountTransactionCreateInput = {
@@ -537,6 +539,7 @@ export type BorrowingEntryCreateInput = {
 
 export type BorrowingListResponse = {
   items: BorrowingEntry[];
+  next_cursor?: string | null;
 };
 
 export type BorrowingSummary = {
@@ -593,6 +596,7 @@ export type Receivable = {
 
 export type ReceivableListResponse = {
   items: Receivable[];
+  next_cursor?: string | null;
 };
 
 export type ReceivableCreateInput = {
@@ -716,6 +720,7 @@ export type Invoice = {
 
 export type InvoiceListResponse = {
   items: Invoice[];
+  next_cursor?: string | null;
 };
 
 export type Quotation = {
@@ -819,6 +824,7 @@ export type Purchase = {
 
 export type PurchaseListResponse = {
   items: Purchase[];
+  next_cursor?: string | null;
 };
 
 export type PurchaseCreateInput = {
@@ -868,6 +874,7 @@ export type PurchasePayment = {
 
 export type PurchasePaymentListResponse = {
   items: PurchasePayment[];
+  next_cursor?: string | null;
 };
 
 export type PurchaseReceiptConfirmInput = {

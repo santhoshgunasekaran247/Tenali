@@ -1,4 +1,5 @@
-import { PaginatedTableBody } from "../components/PaginatedTableBody";
+import { CursorPagination } from "../components/CursorPagination";
+import { ALL_DATES, HistoryDateFilter } from "../components/HistoryDateFilter";
 import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -91,6 +92,11 @@ export function PurchasesPage() {
   const [inventory,setInventory]=useState<InventoryProduct[]>([]);
   const [requestKey,setRequestKey]=useDraftState("PurchasesPage.requestKey", postingKey);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchasePageSize, setPurchasePageSize] = useState(25);
+  const [purchaseCursors, setPurchaseCursors] = useState<Array<string | null>>([null]);
+  const [purchasePage, setPurchasePage] = useState(0);
+  const [purchaseNext, setPurchaseNext] = useState<string | null>(null);
+  const [historyDates, setHistoryDates] = useState(ALL_DATES);
   const [paymentStatus, setPaymentStatus] = useState("");
   const [form, setForm] = useDraftState<PurchaseForm>("PurchasesPage.form", EMPTY_FORM);
   const [attachments, setAttachments] = useDraftState<AttachmentInput[]>("PurchasesPage.attachments", []);
@@ -109,6 +115,11 @@ export function PurchasesPage() {
   const [paymentForm, setPaymentForm] = useDraftState<PaymentForm>("PurchasesPage.paymentForm", EMPTY_PAYMENT_FORM);
   const [paymentHistory, setPaymentHistory] = useState<PurchasePayment[]>([]);
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [paymentHistoryError, setPaymentHistoryError] = useState("");
+  const [paymentSize, setPaymentSize] = useState(25);
+  const [paymentCursors, setPaymentCursors] = useState<Array<string | null>>([null]);
+  const [paymentPage, setPaymentPage] = useState(0);
+  const [paymentNext, setPaymentNext] = useState<string | null>(null);
   const [receiptTarget, setReceiptTarget] = useDraftState<Purchase | null>("PurchasesPage.receiptTarget", null);
   const [receiptForm, setReceiptForm] = useDraftState<ReceiptForm>("PurchasesPage.receiptForm", EMPTY_RECEIPT_FORM);
   const [loading, setLoading] = useState(true);
@@ -123,6 +134,7 @@ export function PurchasesPage() {
   const load = async () => {
     const version = ++loadVersion.current;
     setLoading(true);
+    setPurchases([]); setPurchaseNext(null);
     setLoadErrors([]);
     const accept = <T,>(set: (value: T) => void) => (value: T) => { if (version === loadVersion.current) set(value); };
     const report = (label: string) => (failure: unknown) => {
@@ -132,8 +144,10 @@ export function PurchasesPage() {
       api.parties({ active_only: true }).then(result => result.items.filter(party => party.party_type === "vendor" || party.party_type === "customer_vendor"))
         .then(accept(setVendors)).catch(report("Vendors")),
       api.accounts({ active_only: true }).then(result => result.items).then(accept(setAccounts)).catch(report("Accounts")),
-      api.purchases({ payment_status: paymentStatus || undefined, store_id: storeFilter || undefined })
-        .then(result => result.items).then(accept(setPurchases)).catch(report("Purchase history")),
+      api.purchases({ payment_status: paymentStatus || undefined, store_id: storeFilter || undefined,
+        page_size: purchasePageSize, cursor: purchaseCursors[purchasePage],
+        from_date: historyDates.from || undefined, to_date: historyDates.to || undefined })
+        .then(result => { if (version === loadVersion.current) { setPurchases(result.items); setPurchaseNext(result.next_cursor || null); } }).catch(report("Purchase history")),
       api.hsnMasters().then(result => result.items).then(accept(setHsnMasters)).catch(report("HSN / SAC")),
       api.inventoryProducts().then(result => result.items).then(accept(setInventory)).catch(report("Product inventory")),
     ]);
@@ -143,7 +157,20 @@ export function PurchasesPage() {
   useEffect(() => {
     void load();
     return () => { loadVersion.current += 1; };
-  }, [paymentStatus, storeFilter]);
+  }, [paymentStatus, storeFilter, purchasePageSize, purchaseCursors, purchasePage, historyDates]);
+
+  useEffect(() => {
+    let active = true;
+    if (paymentTarget) {
+      setPaymentHistoryLoading(true); setPaymentHistoryError(""); setPaymentHistory([]); setPaymentNext(null);
+      api.purchasePayments(paymentTarget.id, paymentSize, paymentCursors[paymentPage]).then(result => {
+        if (active) { setPaymentHistory(result.items); setPaymentNext(result.next_cursor || null); }
+      }).catch(failure => {
+        if (active) setPaymentHistoryError(failure instanceof Error ? failure.message : "Unable to load payment history.");
+      }).finally(() => { if (active) setPaymentHistoryLoading(false); });
+    }
+    return () => { active = false; };
+  }, [paymentTarget?.id, paymentSize, paymentCursors, paymentPage]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -247,7 +274,8 @@ export function PurchasesPage() {
     }
   };
 
-  const startPayment = async (purchase: Purchase) => {
+  const startPayment = (purchase: Purchase) => {
+    setPaymentCursors([null]); setPaymentPage(0);
     setPaymentTarget(purchase);
     setPaymentForm({
       amount: purchase.balance_amount > 0 ? purchase.balance_amount.toFixed(2) : "",
@@ -258,15 +286,6 @@ export function PurchasesPage() {
       reference: purchase.reference || "",
       notes: "",
     });
-    setPaymentHistoryLoading(true);
-    try {
-      const response = await api.purchasePayments(purchase.id);
-      setPaymentHistory(response.items);
-    } catch {
-      setPaymentHistory([]);
-    } finally {
-      setPaymentHistoryLoading(false);
-    }
     setError(null);
     setMessage(null);
   };
@@ -314,7 +333,10 @@ export function PurchasesPage() {
       setError(null);
       setMessage(null);
       try {
-        const blob = await api.exportPurchaseRegisterCsv();
+        const blob = await api.exportPurchaseRegisterCsv({
+          all_dates: true, from_date: historyDates.from || undefined, to_date: historyDates.to || undefined,
+          payment_status: paymentStatus || undefined, store_id: storeFilter || undefined,
+        });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -501,11 +523,12 @@ export function PurchasesPage() {
         <article className="ops-card ops-list-card">
           <div className="ops-card-head">
             <h2>Purchase Bills</h2>
-            <span className="catalog-count">{purchases.length} records</span>
+            <span className="catalog-count">{purchases.length} records on this page</span>
           </div>
 
+          <HistoryDateFilter onChange={range => { setPurchaseCursors([null]); setPurchasePage(0); setHistoryDates(range); }} />
           <div className="ops-list-tools">
-            <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}>
+            <select value={paymentStatus} onChange={(event) => { setPaymentStatus(event.target.value); setPurchaseCursors([null]); setPurchasePage(0); }}>
               <option value="">All Payment Status</option>
               <option value="UNPAID">UNPAID</option>
               <option value="PARTIAL">PARTIAL</option>
@@ -515,7 +538,7 @@ export function PurchasesPage() {
               Refresh
             </button>
             <button className="btn" type="button" onClick={exportPurchaseRegisterCsv}>
-              Export Purchase Register
+              Export Filtered Purchase Register
             </button>
             <button className="btn" type="button" onClick={exportApAgingCsv}>
               Export AP Aging
@@ -541,10 +564,10 @@ export function PurchasesPage() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <PaginatedTableBody>
+              <tbody>
                 {purchases.length === 0 ? (
                   <tr>
-                    <td colSpan={11}>No purchases found.</td>
+                    <td colSpan={11}>{loading ? "Loading purchases..." : loadErrors.some(error => error.startsWith("Purchase history:")) ? "Unable to load purchases." : "No purchases on this page."}</td>
                   </tr>
                 ) : (
                   purchases.map((item) => (
@@ -589,9 +612,10 @@ export function PurchasesPage() {
                     </tr>
                   ))
                 )}
-              </PaginatedTableBody>
+              </tbody>
             </table>
           </div>
+          <CursorPagination size={purchasePageSize} page={purchasePage} hasNext={!!purchaseNext} busy={loading} onSize={size => { setPurchasePageSize(size); setPurchaseCursors([null]); setPurchasePage(0); }} onPrevious={() => setPurchasePage(page => page - 1)} onNext={() => { if (purchaseNext) { setPurchaseCursors(previous => [...previous.slice(0, purchasePage + 1), purchaseNext]); setPurchasePage(page => page + 1); } }} />
 
           {cancelTarget ? <CancelDocumentDialog kind="purchase" id={cancelTarget.id} number={cancelTarget.bill_number || cancelTarget.voucher_number || cancelTarget.id.slice(0, 8)}
             paid={Number(cancelTarget.amount_paid || 0)} onClose={() => setCancelTarget(null)} onDone={result => {
@@ -707,6 +731,7 @@ export function PurchasesPage() {
                 </div>
               </form>
 
+              {paymentHistoryError ? <FloatingAlert>{paymentHistoryError}</FloatingAlert> : null}
               <div className="ops-table-wrap">
                 <table className="ops-table">
                   <thead>
@@ -718,14 +743,14 @@ export function PurchasesPage() {
                       {canDelete ? <th>Actions</th> : null}
                     </tr>
                   </thead>
-                  <PaginatedTableBody>
+                  <tbody>
                     {paymentHistoryLoading ? (
                       <tr>
                         <td colSpan={5}>Loading payment history...</td>
                       </tr>
                     ) : paymentHistory.length === 0 ? (
                       <tr>
-                        <td colSpan={5}>No payments recorded yet.</td>
+                        <td colSpan={5}>{paymentHistoryError ? "Unable to load payment history." : "No payments recorded on this page."}</td>
                       </tr>
                     ) : (
                       paymentHistory.map((entry) => (
@@ -739,9 +764,13 @@ export function PurchasesPage() {
                         </tr>
                       ))
                     )}
-                  </PaginatedTableBody>
+                  </tbody>
                 </table>
               </div>
+              <CursorPagination size={paymentSize} page={paymentPage} hasNext={!!paymentNext} busy={paymentHistoryLoading}
+                onSize={size => { setPaymentSize(size); setPaymentCursors([null]); setPaymentPage(0); }}
+                onPrevious={() => setPaymentPage(page => page - 1)}
+                onNext={() => { if (paymentNext) { setPaymentCursors(previous => [...previous.slice(0, paymentPage + 1), paymentNext]); setPaymentPage(page => page + 1); } }} />
             </div>
           ) : null}
 

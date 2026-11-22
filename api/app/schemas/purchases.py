@@ -66,6 +66,7 @@ class PurchaseOut(BaseModel):
 
 class PurchaseListResponse(BaseModel):
     items: list[PurchaseOut]
+    next_cursor: str | None = None
 
 
 class PurchasePaymentCreate(BaseModel):
@@ -94,6 +95,7 @@ class PurchasePaymentOut(BaseModel):
 
 class PurchasePaymentListResponse(BaseModel):
     items: list[PurchasePaymentOut]
+    next_cursor: str | None = None
 
 
 class PurchaseReceiptConfirm(BaseModel):

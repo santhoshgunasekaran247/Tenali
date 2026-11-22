@@ -77,7 +77,9 @@ class SettlementsService:
         )
 
     def list_borrowings(
-        self, company_id: str | None, party_id: str | None = None, limit: int = 200
+        self, company_id: str | None, party_id: str | None = None, limit: int = 200,
+        *, page_size: int | None = None, cursor: str | None = None,
+        from_date: date | None = None, to_date: date | None = None,
     ) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
         self._ensure_table()
@@ -105,9 +107,31 @@ class SettlementsService:
         if party_id:
             query += " and b.party_id = :party_id"
             params["party_id"] = party_id
+        if from_date and to_date and from_date > to_date:
+            raise HTTPException(422, "from_date cannot be after to_date")
+        if from_date:
+            query += " and b.transaction_date >= :from_date"
+            params["from_date"] = from_date
+        if to_date:
+            query += " and b.transaction_date <= :to_date"
+            params["to_date"] = to_date
 
-        query += " order by b.transaction_date desc, b.created_at desc limit :limit"
+        if page_size is not None:
+            from app.services.pagination import decode_cursor
+            boundary = decode_cursor(cursor, ("transaction_date", "created_at", "id"))
+            params["limit"] = page_size + 1
+            if boundary:
+                query += """ and (b.transaction_date,b.created_at,b.id) <
+                    (cast(:cursor_date as date),cast(:cursor_created as timestamptz),cast(:cursor_id as uuid))"""
+                params.update(cursor_date=boundary["transaction_date"], cursor_created=boundary["created_at"], cursor_id=boundary["id"])
+        query += " order by b.transaction_date desc, b.created_at desc"
+        if page_size is not None:
+            query += ", b.id desc"
+        query += " limit :limit"
         rows = self.db.execute(text(query), params).mappings().all()
+        if page_size is not None:
+            from app.services.pagination import cursor_page
+            return cursor_page(rows, page_size, ("transaction_date", "created_at", "id"))
         return {"items": [dict(row) for row in rows]}
 
     def summarize_borrowings(self, company_id: str | None, *, search: str = "", limit: int | None = None) -> dict:

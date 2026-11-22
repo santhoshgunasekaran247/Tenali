@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.services.tenant_security import PASSWORD_ITERATIONS, Registration, password_hash, password_matches, token_digest
+from app.services.pagination import cursor_page, decode_cursor
 
 
 class TenantAuth:
@@ -153,7 +154,25 @@ class TenantAuth:
             from tenant_memberships member join tenant_users account on account.id=member.user_id
             where member.company_id=:company order by member.created_at"""), {"company": company_id}).mappings()]
 
-    def add_member(self, company_id: str, payload, actor_id:str|None=None):
+    def team_page(self, company_id: str, page_size: int, cursor: str | None = None, search: str = "") -> dict:
+        boundary = decode_cursor(cursor, ("created_at", "id"))
+        params = {"company": company_id, "search": search, "limit": page_size + 1}
+        condition = ""
+        if boundary:
+            condition = "and (member.created_at,account.id) > (cast(:created_at as timestamptz),cast(:id as uuid))"
+            params.update(boundary)
+        rows = self.db.execute(text(f"""select account.id,account.email,account.display_name,member.role,
+            member.is_active,member.store_ids,member.modules,member.created_at
+            from tenant_memberships member join tenant_users account on account.id=member.user_id
+            where member.company_id=:company and (:search='' or strpos(lower(account.display_name),lower(:search))>0
+                or strpos(lower(account.email),lower(:search))>0 or strpos(lower(member.role),lower(:search))>0)
+            {condition} order by member.created_at,account.id limit :limit"""), params).mappings().all()
+        page = cursor_page(rows, page_size, ("created_at", "id"))
+        for item in page["items"]:
+            del item["created_at"]
+        return page
+
+    def add_member(self, company_id: str, payload, actor_id:str|None=None, *, return_team: bool = True):
         try:
             user_id = self.db.execute(text("insert into tenant_users(company_id,email,display_name,password_hash) values(:company,:email,:name,:password) returning id"),
                                       {"company": company_id, "email": payload.email, "name": payload.display_name.strip(), "password": password_hash(payload.password)}).scalar_one()
@@ -163,9 +182,9 @@ class TenantAuth:
         except IntegrityError as error:
             self.db.rollback()
             raise HTTPException(409, "This email is already registered in this workspace.") from error
-        return self.team(company_id)
+        return self.team(company_id) if return_team else []
 
-    def update_member(self, company_id: str, user_id: str, role: str, active: bool, actor_id:str|None=None, store_ids=None, modules=None):
+    def update_member(self, company_id: str, user_id: str, role: str, active: bool, actor_id:str|None=None, store_ids=None, modules=None, *, return_team: bool = True):
         existing = self.db.execute(text("select role from tenant_memberships where company_id=:company and user_id=:user for update"), {"company": company_id, "user": user_id}).scalar_one_or_none()
         if not existing:
             raise HTTPException(404, "Team member not found")
@@ -182,4 +201,4 @@ class TenantAuth:
         self.db.execute(text("delete from tenant_sessions where company_id=:company and user_id=:user"), {"company": company_id, "user": user_id})
         if actor_id:self.audit(company_id,actor_id,'TEAM_ACCESS_CHANGED',user_id,{'previous_role':existing,'role':role,'is_active':active})
         self.db.commit()
-        return self.team(company_id)
+        return self.team(company_id) if return_team else []

@@ -91,10 +91,10 @@ export function ReportsPage() {
 
         <article className="ops-card">
           <div className="ops-card-head"><h2>Account Records</h2></div>
-          <p className="ops-copy-note">Transactions are limited to the newest 1,000 rows and journal exports to the newest 5,000 rows. Files may be incomplete; narrow the date range and verify the results.</p>
+          <p className="ops-copy-note">Exports include all matching transactions and journal entries for the selected period.</p>
           <div className="reports-actions-row">
-            <button className="btn" type="button" disabled={!!periodError||states.transactions?.loading} onClick={()=>void runExport('transactions',`transactions_${fromDate}_${toDate}.csv`,()=>api.exportAccountTransactionsCsv({from_date:fromDate,to_date:toDate}))}>Export Transactions</button>
-            <button className="btn" type="button" disabled={!!periodError||states.journal?.loading} onClick={()=>void runExport('journal',`journal_${fromDate}_${toDate}.csv`,()=>api.exportAccountJournalCsv({from_date:fromDate,to_date:toDate}))}>Export Journal</button>
+            <button className="btn" type="button" disabled={!!periodError||states.transactions?.loading} onClick={()=>void runExport('transactions',`transactions_${fromDate}_${toDate}.csv`,()=>api.exportAccountTransactionsCsv({from_date:fromDate,to_date:toDate,full:true}))}>Export Transactions</button>
+            <button className="btn" type="button" disabled={!!periodError||states.journal?.loading} onClick={()=>void runExport('journal',`journal_${fromDate}_${toDate}.csv`,()=>api.exportAccountJournalCsv({from_date:fromDate,to_date:toDate,full:true}))}>Export Journal</button>
           </div>
           {states.transactions?.error?<p role="alert" className="ops-error">{states.transactions.error}</p>:null}
           {states.journal?.error?<p role="alert" className="ops-error">{states.journal.error}</p>:null}
