@@ -1038,8 +1038,11 @@ lists pending and settled refunds. Confirming a refund records the account, mode
 date and reference actually used; the reversal entry is corrected in place (audit
 logged) and the row becomes SETTLED, which is final. The settle date cannot be
 before the original payment or in the future, and both dates must be in open
-periods. The operations dashboard shows receivables outstanding and pending
-customer/vendor refunds.
+periods. At the top of the operations dashboard, Outstanding & Follow-up groups
+current receivables, reminders and bad debts separately from borrowing and pending
+customer/vendor refunds. These balances cover all dates, not the reporting period;
+collections follow the selected store and accessible-store scope, while borrowing
+and refunds are workspace-wide.
 
 Migration `038_transaction_deletions` adds a database guard. Deleting from ledger
 tables outside a reviewed deletion batch raises an error, and every deleted row is
