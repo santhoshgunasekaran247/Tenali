@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-  <rect width="1280" height="720" fill="#f1f5f0"/>
+  <rect width="1280" height="720" fill="#eef4fb"/>
   <rect width="1280" height="66" fill="#fff"/>
-  <text x="56" y="43" fill="#183e3c" font-family="Georgia,serif" font-size="29" font-weight="bold">tenali</text>
+  <text x="56" y="43" fill="#17385f" font-family="Georgia,serif" font-size="29" font-weight="bold">tenali</text>
   <text x="76" y="175" fill="#a57748" font-family="Arial,sans-serif" font-size="15" font-weight="bold">THE BUSINESS OF EVERY DAY</text>
-  <text x="76" y="251" fill="#173e3b" font-family="Georgia,serif" font-size="48">A clearer way to work.</text>
-  <text x="76" y="298" fill="#617970" font-family="Arial,sans-serif" font-size="19">Meet Tenali: your business, in one connected workspace.</text>
-  <rect x="628" y="136" width="573" height="424" rx="10" fill="#dce9df"/>
+  <text x="76" y="251" fill="#17385f" font-family="Georgia,serif" font-size="48">A clearer way to work.</text>
+  <text x="76" y="298" fill="#5f7690" font-family="Arial,sans-serif" font-size="19">Meet Tenali: your business, in one connected workspace.</text>
+  <rect x="628" y="136" width="573" height="424" rx="10" fill="#dce9f7"/>
   <rect x="608" y="155" width="573" height="424" rx="8" fill="#fff"/>
-  <rect x="608" y="155" width="63" height="424" rx="7" fill="#1b413e"/>
+  <rect x="608" y="155" width="63" height="424" rx="7" fill="#193d67"/>
   <text x="629" y="193" fill="#fff" font-family="Georgia,serif" font-size="25">t.</text>
-  <text x="694" y="190" fill="#95a79c" font-family="Arial,sans-serif" font-size="10">WORKSPACE / OVERVIEW</text>
-  <text x="694" y="233" fill="#213e39" font-family="Georgia,serif" font-size="23">Your business at a glance</text>
-  <rect x="694" y="279" width="139" height="92" fill="#f1f5f0"/><rect x="845" y="279" width="139" height="92" fill="#f1f5f0"/><rect x="996" y="279" width="139" height="92" fill="#f1f5f0"/>
-  <text x="707" y="304" fill="#81978b" font-family="Arial,sans-serif" font-size="10">SALES</text><text x="858" y="304" fill="#81978b" font-family="Arial,sans-serif" font-size="10">INVENTORY</text><text x="1009" y="304" fill="#81978b" font-family="Arial,sans-serif" font-size="10">FOLLOW-UPS</text>
-  <rect x="694" y="390" width="443" height="145" fill="#f8faf7"/>
-  <circle cx="914" cy="462" r="36" fill="#193e3b"/><path d="M906 445v34l27-17z" fill="#fff"/>
-  <text x="76" y="650" fill="#849b8e" font-family="Arial,sans-serif" font-size="12">AN ILLUSTRATED TOUR · SAMPLE DATA · NO AUDIO</text>
+  <text x="694" y="190" fill="#93a6bc" font-family="Arial,sans-serif" font-size="10">WORKSPACE / OVERVIEW</text>
+  <text x="694" y="233" fill="#213f61" font-family="Georgia,serif" font-size="23">Your business at a glance</text>
+  <rect x="694" y="279" width="139" height="92" fill="#eef4fb"/><rect x="845" y="279" width="139" height="92" fill="#eef4fb"/><rect x="996" y="279" width="139" height="92" fill="#eef4fb"/>
+  <text x="707" y="304" fill="#7f96ae" font-family="Arial,sans-serif" font-size="10">SALES</text><text x="858" y="304" fill="#7f96ae" font-family="Arial,sans-serif" font-size="10">INVENTORY</text><text x="1009" y="304" fill="#7f96ae" font-family="Arial,sans-serif" font-size="10">FOLLOW-UPS</text>
+  <rect x="694" y="390" width="443" height="145" fill="#f7fafe"/>
+  <circle cx="914" cy="462" r="36" fill="#16395f"/><path d="M906 445v34l27-17z" fill="#fff"/>
+  <text x="76" y="650" fill="#8199b2" font-family="Arial,sans-serif" font-size="12">AN ILLUSTRATED TOUR · SAMPLE DATA · NO AUDIO</text>
 </svg>
