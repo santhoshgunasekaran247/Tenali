@@ -1,6 +1,6 @@
 import { createContext,ReactNode,useContext,useEffect,useState } from "react";
 import { Navigate,Outlet,useLocation } from "react-router-dom";
-import { tenantBase,tenantFetch,tenantSlug } from "./tenantTransport";
+import { tenantApiOrigin,tenantBase,tenantFetch,tenantSlug } from "./tenantTransport";
 import type { SiteTheme,StorefrontContent } from "../types";
 import { PlatformHomePage } from "../pages/PlatformHomePage";
 import { WorkspaceDraftProvider } from "./drafts";
@@ -75,6 +75,7 @@ export function RequireWorkspace(){
 
 export function StorefrontRoot({children}:{children:ReactNode}){
   const auth=useAuth();if(auth.loading)return <main className="loading">Loading...</main>;
+  if(!auth.storefront&&!tenantBase()&&!tenantApiOrigin())return <PlatformHomePage/>;
   if(!auth.storefront)return auth.user?(tenantBase()?<Navigate to="/portal" replace/>:<TenantRedirect to={`/c/${auth.user.tenant_slug}/portal`}/>):<PlatformHomePage/>;
   return <>{children}</>;
 }

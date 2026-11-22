@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Header } from "./components/Header";
-import { RequireWorkspace,StorefrontRoot } from "./features/auth";
+import { RequireWorkspace,StorefrontRoot,useAuth } from "./features/auth";
+import { tenantApiOrigin, tenantBase } from "./features/tenantTransport";
+import { useLocation } from "react-router-dom";
 import { AccessPage } from "./pages/AccessPage";
 import { TeamPage } from "./pages/TeamPage";
 import { DomainsPage } from "./pages/DomainsPage";
@@ -42,11 +44,14 @@ import { StorefrontGate } from "./components/StorefrontGate";
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const auth = useAuth();
+  const location = useLocation();
+  const platformHome = location.pathname === "/" && !tenantBase() && !tenantApiOrigin() && !auth.storefront;
 
   return (
     <div>
       <RouteScroll />
-      <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} />
+      {!platformHome && <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} />}
       <Routes>
         <Route path="/" element={<StorefrontRoot><StorefrontGate><HomePage /></StorefrontGate></StorefrontRoot>} />
         <Route path="/login" element={<AccessPage />} />
@@ -96,7 +101,7 @@ export default function App() {
         <Route path="/portal/domains" element={<DomainsPage/>}/>
         </Route>
       </Routes>
-      <div className="policy-footer"><PolicyLinks /></div>
+      {!platformHome && <div className="policy-footer"><PolicyLinks /></div>}
     </div>
   );
 }

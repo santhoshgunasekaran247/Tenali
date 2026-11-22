@@ -52,7 +52,7 @@ class TenantBoundary(BaseHTTPMiddleware):
         path = request.url.path
         if path.startswith("/api/"):
             path = path[4:]
-        if request.method == "OPTIONS" or path in {"/health", "/health/", "/docs", "/redoc", "/openapi.json", "/domain-authorization"} or path.startswith("/catalog-assets/"):
+        if request.method == "OPTIONS" or path in {"/health", "/health/", "/docs", "/redoc", "/openapi.json", "/domain-authorization"} or path.startswith("/catalog-assets/") or (request.method in {"GET", "HEAD"} and path.startswith("/public-images/")):
             return await call_next(request)
         try:
             await run_in_threadpool(self.prepare_request, request, path)

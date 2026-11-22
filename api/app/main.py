@@ -14,9 +14,12 @@ from app.services.custom_domain_routing import CustomDomainRouting
 from app.services.domain_onboarding import domain_lifespan
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi import Query,HTTPException
 from sqlalchemy import text
 from app.core.database import SessionLocal
+from uuid import UUID
+from app.services.object_storage import PUBLIC_BUCKET, image_storage
 
 
 def create_app() -> FastAPI:
@@ -63,6 +66,23 @@ def create_app() -> FastAPI:
     # Serve routes at both root and /api so older clients keep working.
     app.include_router(api_router)
     app.include_router(api_router, prefix="/api")
+
+    @app.get("/api/public-images/{company_id}/{file_id}", include_in_schema=False)
+    def public_product_image(company_id: UUID, file_id: UUID):
+        with SessionLocal() as db:
+            db.info["tenant_context"] = {"company_id": str(company_id), "role": "public", "user_id": None}
+            file = db.execute(text("""select f.bucket, f.object_path, f.mime_type
+                from stored_files f join companies c on c.id=f.company_id
+                where f.id=:id and f.company_id=:company and c.is_active
+                  and f.bucket=:bucket and f.file_kind='image'"""),
+                {"id": str(file_id), "company": str(company_id), "bucket": PUBLIC_BUCKET}).mappings().first()
+            if not file:
+                raise HTTPException(404, "Image not found")
+            content = image_storage().read(file["bucket"], file["object_path"])
+            return Response(content, media_type=file["mime_type"], headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "X-Content-Type-Options": "nosniff",
+            })
 
     prototype_assets_dir = (
         Path(__file__).resolve().parents[2] / "tenali-v31-exact-prototype" / "assets"

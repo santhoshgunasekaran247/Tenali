@@ -14,3 +14,4 @@ Pillow>=11.0
 pypdf>=5.0
 numpy>=2.0
 opencv-contrib-python-headless>=4.10
+boto3>=1.35

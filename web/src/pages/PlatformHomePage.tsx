@@ -1,19 +1,99 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { policyPath } from "../features/policies";
+import { ArrowDownRight, ArrowRight, BarChart3, Boxes, CircleDollarSign, ClipboardList, Globe2, Layers3, Menu, ShieldCheck, Sparkles, Store, UsersRound, X } from "lucide-react";
+import { useState } from "react";
+import { policyPath, policyRequest, type PublicPolicy } from "../features/policies";
+import "./platform-home.css";
+
+const capabilities = [
+  { icon: Boxes, number: "01", title: "Inventory, in context", text: "Organise products, variants and stock across your stores, with the information your team needs close at hand." },
+  { icon: ClipboardList, number: "02", title: "Sales & purchasing", text: "Create bills and purchase records, track orders and keep your day-to-day transactions moving." },
+  { icon: CircleDollarSign, number: "03", title: "Money, made clearer", text: "Follow receivables, payments and account activity so the next action is easier to see." },
+  { icon: Store, number: "04", title: "A storefront of your own", text: "Share your catalogue online and configure your storefront, orders and checkout for your business." },
+  { icon: BarChart3, number: "05", title: "A better view of the day", text: "Bring sales, cash flow and operational follow-ups together in a dashboard and reports." },
+  { icon: Sparkles, number: "06", title: "Help when you need it", text: "Ask Tenali AI about your business records and get help navigating everyday work where enabled." },
+];
 
 export function PlatformHomePage() {
-  return <main className="ops-page policy-page">
-    <header className="ops-hero"><p className="eyebrow">SRU GLOBAL</p><h1>Tenali Business Platform</h1>
-      <p>Business workspaces and independent online storefronts, with inventory, billing, accounts and order management in one place.</p>
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactUnavailable, setContactUnavailable] = useState(false);
+  useEffect(() => {
+    const previous = document.title;
+    document.title = "Tenali | A clearer way to run your business";
+    return () => { document.title = previous; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    void policyRequest<PublicPolicy>("/legal/platform/contact").then(policy => {
+      if (active) {
+        setContactEmail(policy.content.contact_email);
+        setContactUnavailable(!policy.content.contact_email);
+      }
+    }).catch(() => {
+      if (active) setContactUnavailable(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  return <div className="marketing">
+    <a className="marketing-skip" href="#main-content">Skip to content</a>
+    <header className="marketing-header">
+      <a className="marketing-brand" href="#top" aria-label="Tenali home"><img src="/tenali-logo.png" alt="Tenali" /></a>
+      <button className="marketing-menu" type="button" aria-expanded={menuOpen} aria-controls="marketing-nav" aria-label={menuOpen ? "Close menu" : "Open menu"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+      <nav id="marketing-nav" className={menuOpen ? "marketing-nav is-open" : "marketing-nav"} aria-label="Main navigation" onClick={() => setMenuOpen(false)}>
+        <a href="#what-we-do">What we do</a><a href="#how-it-works">How it works</a><a href="#demo">Product tour</a><a href="#about">About</a><a href="#contact">Contact</a>
+        <Link className="marketing-nav-login" to="/login">Sign in</Link><Link className="marketing-button small" to="/register">Get started <ArrowRight size={16} /></Link>
+      </nav>
     </header>
-    <section className="ops-card"><h2>For business owners and their customers</h2>
-      <p>Owners manage their company, catalogue, team and business records in a dedicated workspace. Shoppers browse a seller&apos;s storefront and use a separate store account for orders.</p>
-      <p>Social sign-in uses enabled identity providers through Supabase. Stores may offer Razorpay payments and Shiprocket-assisted delivery using their own configured provider accounts. Each seller is responsible for its products, prices, fulfilment and commercial policies.</p>
-      <div className="shop-actions"><Link className="btn" to="/login">Sign in to a workspace</Link><Link className="btn light" to="/register">Create a workspace</Link></div>
-    </section>
-    <section className="ops-card"><h2>Transparency and support</h2>
-      <p>Tenali is operated by Sru Global. Read our <Link to={policyPath("platform", "privacy")}>privacy policy</Link>, <Link to={policyPath("platform", "terms")}>terms of service</Link> and <Link to={policyPath("platform", "data-deletion")}>account/data-deletion instructions</Link>.</p>
-      <p><Link to={policyPath("platform", "contact")}>Contact and business information</Link>. For store orders, use the seller&apos;s contact and policies on that storefront.</p>
-    </section>
-  </main>;
+
+    <main id="main-content">
+      <section className="marketing-hero" id="top">
+        <div className="marketing-container hero-grid">
+          <div className="hero-copy">
+            <p className="marketing-kicker"><span /> BUILT FOR THE BUSINESS OF EVERY DAY</p>
+            <h1>Make room for <em>better business.</em></h1>
+            <p className="hero-description">From stock and sales to your online storefront, Tenali brings the moving parts of your business into one clearer picture.</p>
+            <div className="marketing-actions"><Link className="marketing-button" to="/register">Get started <ArrowRight size={18} /></Link><a className="marketing-button secondary" href="#demo">See the product tour <ArrowDownRight size={18} /></a></div>
+            <p className="hero-note">One workspace. A more connected way to work.</p>
+          </div>
+          <div className="hero-visual" aria-label="Illustration of the Tenali business workspace">
+            <div className="hero-visual-label"><span /> YOUR BUSINESS, IN VIEW</div>
+            <div className="workspace-preview" aria-hidden="true">
+              <div className="preview-sidebar"><span className="preview-brand">t.</span><span className="preview-side-active"><Layers3 size={15}/></span><Boxes size={15}/><ClipboardList size={15}/><BarChart3 size={15}/></div>
+              <div className="preview-content">
+                <div className="preview-top"><span>WORKSPACE / OVERVIEW</span><span className="preview-avatar">T</span></div>
+                <div className="preview-heading"><div><small>GOOD MORNING</small><strong>A clearer view of your business.</strong></div><span>Overview</span></div>
+                <div className="preview-metrics"><div><small>SALES</small><strong>In one place</strong><span>See activity</span></div><div><small>INVENTORY</small><strong>Stay informed</strong><span>Track stock</span></div><div><small>FOLLOW-UPS</small><strong>Know what’s next</strong><span>Take action</span></div></div>
+                <div className="preview-panel"><div><strong>Business overview</strong><small>See the details behind your day</small></div><div className="preview-chart"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div><div className="preview-chart-labels"><span>SALES</span><span>STOCK</span><span>ORDERS</span><span>ACCOUNTS</span></div></div>
+              </div>
+            </div>
+            <div className="preview-floating"><span><ShieldCheck size={18} /></span><div><strong>Built around your business</strong><small>Your team, your workspace</small></div></div>
+            <p className="preview-caption">ILLUSTRATIVE WORKSPACE PREVIEW</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="marketing-strip"><div className="marketing-container"><span>LESS FRAGMENTATION.</span><span>MORE CLARITY.</span><span>BETTER FOLLOW-THROUGH.</span><ArrowRight size={19}/></div></section>
+
+      <section className="marketing-section" id="what-we-do"><div className="marketing-container">
+        <div className="section-intro"><div><p className="marketing-kicker">01 / WHAT WE DO</p><h2>All the essentials.<br/><em>Better connected.</em></h2></div><p>Running a business means keeping track of many moving parts. Tenali brings the everyday work together, so your team can spend less time piecing it together.</p></div>
+        <div className="capability-grid">{capabilities.map(({icon: Icon, number, title, text}) => <article className="capability" key={number}><div className="capability-top"><Icon size={23} strokeWidth={1.6}/><span>{number}</span></div><h3>{title}</h3><p>{text}</p></article>)}</div>
+      </div></section>
+
+      <section className="marketing-how" id="how-it-works"><div className="marketing-container how-grid"><div><p className="marketing-kicker light">02 / HOW IT WORKS</p><h2>From the first item<br/>to the next opportunity.</h2><p>Start with the foundations, then connect the work around them. Tenali helps you move from scattered tasks to a more complete view.</p><Link className="marketing-text-link light-link" to="/register">Create your workspace <ArrowRight size={17}/></Link></div>
+        <div className="steps"><div><span>01</span><div><h3>Set up your workspace</h3><p>Add your business details, team and stores.</p></div></div><div><span>02</span><div><h3>Bring your operations together</h3><p>Organise products, manage transactions and follow activity.</p></div></div><div><span>03</span><div><h3>Stay close to what matters</h3><p>Share your catalogue and use your dashboard to follow up.</p></div></div></div>
+      </div></section>
+
+      <section className="marketing-section demo-section" id="demo"><div className="marketing-container demo-grid"><div><p className="marketing-kicker">03 / A QUICK LOOK</p><h2>See the bigger picture<br/><em>in under a minute.</em></h2><p>Take a short illustrated tour of how Tenali connects your catalogue, sales, inventory and daily overview.</p><p className="demo-disclaimer">Illustrative demonstration using sample data. Features and availability depend on your workspace configuration.</p><a className="marketing-text-link" href="#demo-transcript">Read the tour transcript <ArrowRight size={17}/></a></div>
+        <div className="demo-player"><video controls preload="metadata" playsInline aria-label="Tenali product overview, illustrated demo" poster="/tenali-demo-poster.svg"><source src="/tenali-product-tour.webm" type="video/webm"/>Your browser cannot play this video. Read the transcript below.</video><div className="demo-player-caption"><span><span className="demo-dot"/> THE TENALI PRODUCT TOUR</span><span>ILLUSTRATIVE DEMO · NO AUDIO</span></div></div>
+        <details className="demo-transcript" id="demo-transcript"><summary>Product tour transcript</summary><p>Tenali connects the day-to-day work of your business. Organise your products and stock, record purchases and sales, and share your catalogue through your storefront. Follow sales, cash flow and important actions from your dashboard. Invite your team into a workspace and keep moving, together. The screens are illustrations and use sample data.</p></details>
+      </div></section>
+
+      <section className="marketing-about" id="about"><div className="marketing-container about-grid"><div><p className="marketing-kicker">04 / WHO WE ARE</p><h2>Practical tools for<br/><em>real business.</em></h2></div><div><p className="about-lead">Tenali is a business platform by Sru Global, built to make everyday operations easier to see and manage.</p><p>We believe useful software should bring the right information together without making work feel more complicated. Whether you are managing products, serving customers or following up with your team, Tenali gives those tasks a common home.</p><div className="about-values"><span><UsersRound size={19}/> Made for teams</span><span><Globe2 size={19}/> Built for business</span></div></div></div></section>
+
+      <section className="marketing-contact" id="contact"><div className="marketing-container contact-grid"><div><p className="marketing-kicker light">05 / LET’S CONNECT</p><h2>Ready for a clearer<br/>way to work?</h2><p>Explore Tenali for your business, or get in touch to learn more.</p></div><div className="contact-actions"><Link className="marketing-button contact-button" to="/register">Create a workspace <ArrowRight size={18}/></Link>{contactEmail ? <a className="contact-link" href={`mailto:${contactEmail}`}>{contactEmail} <ArrowRight size={17}/></a> : contactUnavailable ? <p>Contact details could not be loaded. Please try the business information page.</p> : <p>Loading contact details…</p>}<Link className="contact-link" to={policyPath("platform", "contact")}>Contact & business information <ArrowRight size={17}/></Link><p>Questions about an order? Please contact the seller directly through their storefront.</p></div></div></section>
+    </main>
+    <footer className="marketing-footer"><div className="marketing-container footer-grid"><div><img src="/tenali-logo.png" alt="Tenali" /><p>A clearer way to run your business.<br/>A platform by Sru Global.</p></div><div><strong>EXPLORE</strong><a href="#what-we-do">What we do</a><a href="#demo">Product tour</a><Link to="/login">Sign in</Link></div><div><strong>INFORMATION</strong><Link to={policyPath("platform", "contact")}>Contact</Link><Link to={policyPath("platform", "privacy")}>Privacy</Link><Link to={policyPath("platform", "terms")}>Terms</Link><Link to={policyPath("platform", "data-deletion")}>Data deletion</Link></div></div><div className="marketing-container footer-bottom"><span>© {new Date().getFullYear()} Sru Global. Tenali.</span><a href="#top">BACK TO TOP ↑</a></div></footer>
+  </div>;
 }

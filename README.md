@@ -38,6 +38,13 @@ workspace selection; it does not forward arbitrary tenant/custom domain identity
 Do not treat tenant subdomains or custom storefront domains as supported by this
 configuration without separate routing verification.
 
+The platform root (`/`) presents Tenali's public marketing website, including an
+illustrated, silent product tour with a transcript. It does not replace tenant
+storefronts. The contact email is taken from the **published platform contact
+policy**; publish and maintain that policy, including its current email and
+business details, before using the website for marketing. If the policy cannot
+be loaded, the page displays a link to the business information page instead.
+
 For self-service custom tenant domains while **keeping the static site and API as
 two separate Render services**, use the optional automated onboarding described in
 [Render tenant domains](docs/MULTI_TENANT_DEPLOYMENT.md#self-service-tenant-domains-on-two-render-services).

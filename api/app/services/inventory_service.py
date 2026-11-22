@@ -15,7 +15,7 @@ from app.services.access import allowed_stores
 from app.services.inventory_pricing import resolve_catalog_price
 from app.services.period_lock_service import assert_period_open
 from app.services.posting_service import replay_posting, finish_posting, request_hash
-from app.services.object_storage import FileStore, ObjectStorage
+from app.services.object_storage import FileStore, portable_image_url
 from app.services.pagination import cursor_page, decode_cursor
 
 
@@ -350,7 +350,7 @@ class InventoryService:
         product = self._product(product_id, lock=True)
         if image_url not in images_of(product):
             raise HTTPException(409, "The product images changed while the photo was being fixed. Reload and try again.")
-        enhanced = ObjectStorage().public_url(files.save(self.company_id, display, "image/webp", public=True, kind="image"))
+        enhanced = portable_image_url(files.save(self.company_id, display, "image/webp", public=True, kind="image", portable=True))
         swap = lambda image: enhanced if image == image_url else image
         gallery = list(dict.fromkeys(swap(image) for image in (product.get("image_urls") or "").split("|") if image))
         originals = {display_url: kept for display_url, kept in (product.get("image_originals") or {}).items() if display_url != image_url}

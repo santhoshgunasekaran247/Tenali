@@ -417,26 +417,14 @@ the ignored `api\.env`):
   Storage access. Never put this in a `VITE_` variable, source control, or browser
   configuration. This is separate from the public key on Platform > Authentication.
 
-Run the following from `api` using the project's Python environment:
+Do **not** run the older `app.migrate_storage --apply` without reviewing and fixing
+its compatibility with the current document service. It clears document bytes that
+the current list/download implementation requires.
 
-```powershell
-python -m app.migrate_storage
-python -m app.migrate_storage --apply
-python -m app.migrate_storage
-```
-
-The first command reports embedded/local references without changing data.
-`--apply` creates or verifies the `tenali-public` and `tenali-private` buckets,
-uploads files, reads them back to check their size and SHA-256, then replaces
-database content with references. Run during a maintenance window, back up the
-database first, and retain original local assets. Each completed row is committed;
-failed rows retain their original content and the command can be retried safely.
-Historical invoice snapshots, configuration JSON and image-bearing audit payloads
-are included. Audit image payloads are processed last, so an apply count can exceed
-the initial scan count when updates generate new audit entries.
-
-- Product/category photos and company logos use public Storage URLs. Only upload
-  images intended to be visible to anyone.
+- New product and variant uploads use stable Tenali image URLs; external HTTP(S)
+  links stay unchanged. Existing product links are not converted and may still
+  point directly to Supabase. Category photos and company logos continue to use
+  public Supabase Storage URLs. Only upload images intended to be public.
 - Signatures and finance attachments use the **private** bucket and stable,
   authenticated Tenali API URLs. The backend checks the tenant and the relevant
   module/store permissions before returning the bytes. Do not make this bucket
@@ -444,9 +432,9 @@ the initial scan count when updates generate new audit entries.
 - Browser Supabase users do not need upload policies; uploads go through Tenali.
   Keep both buckets closed to browser writes. Uploads use immutable,
   tenant-prefixed, content-addressed paths, so repeat saves reuse the same content.
-- The database stores object metadata/references, not new file bytes or base64.
-  The existing forms still send base64 transiently in upload requests; pressing
-  Save uploads the file. Existing external public image URLs remain unchanged.
+- Uploaded images use object metadata/references in the database, not image bytes.
+  The existing forms send base64 transiently; pressing Save uploads the file.
+  Finance and AI attachment bytes may also be stored in the database.
 - Image forms accept PNG/JPEG/WebP up to 1 MB; finance attachments retain the
   5 MB/file, five-files/record and 20 MB/record limits. Storage rejects files over
   5 MB. Supabase quotas are shared across tenants and its free allowance is not
@@ -457,3 +445,49 @@ separate migration: historical invoices can still reference old images. A verifi
 upload followed by a failed parent database save can leave an unreferenced object;
 retries reuse it, but automatic orphan deletion is deliberately not enabled.
 Database backups alone do not back up Storage objects; protect both.
+
+### Moving portable product images
+
+The image URLs route through `/api/public-images/{company_id}/{file_id}`, so
+the browser's origin must route `/api` requests to Tenali. The application reads
+the image bytes from the provider selected by `TENALI_IMAGE_STORAGE` (`supabase`
+by default, or `s3`). This setting affects portable product images, not private
+files or direct external/legacy URLs. Changing a server or public domain does
+not require editing product records if this route is available at the new origin.
+
+For S3, set `TENALI_IMAGE_S3_BUCKET` and, if needed, `AWS_REGION` on the server.
+The standard AWS credential chain (preferably an IAM role) must permit `GetObject`
+and `PutObject` under `tenali-public/` in that bucket. The bucket can remain
+private: Tenali serves the public images. Never place credentials in browser
+configuration or source control. Keep the Supabase settings for other files and
+legacy URLs.
+
+To switch providers, back up the database and both stores, and run from `api`
+with a migration operator database role that can read **all tenants'**
+`stored_files` rows. The copy includes all registered public images, including
+legacy logo/category images; compare the preview count with an independent
+all-tenant count before proceeding. A role restricted by row-level security can
+otherwise produce an incomplete copy.
+
+1. Configure both providers. Preview with
+   `python -m app.migrate_product_images --source supabase --destination s3`.
+   The preview counts rows but does not check the objects or destination.
+2. During a maintenance window stop **all public image writes** across all app
+   instances, and keep them stopped until the configuration switch is complete.
+   Run `python -m app.migrate_product_images --source supabase --destination s3 --apply --confirm-maintenance`.
+   Every copied object is read and checked against its registered size and SHA-256,
+   then written and read back at the destination. A failure stops the copy; source
+   objects and application configuration are not changed. Fix the issue and
+   rerun the command before switching.
+3. Verify the count and representative original and display images, switch
+   `TENALI_IMAGE_STORAGE` on every instance, restart them, and smoke-test product
+   uploads, display, and originals before reopening writes.
+4. Retain the source and backups. To roll back after writes have resumed, first
+   stop writes and copy in the reverse direction (`--source s3 --destination
+   supabase`), verify, then switch all instances back. Legacy direct Supabase
+   URLs continue to require their original project and objects even after a
+   successful copy; external links remain dependent on their respective hosts.
+
+This procedure does not migrate private signatures, documents, database
+attachments, or existing direct image URLs. Do not delete the old storage until
+all of those dependencies have been separately addressed.

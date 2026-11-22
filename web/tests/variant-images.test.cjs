@@ -29,7 +29,7 @@ test("variant editor saves the image and offers a main-image fallback", () => {
   assert.match(page, /setVariantId\(id\); setPhotoIndex\(0\)/);
 });
 
-test("variant editor uploads a photo and can revert to its parent", async () => {
+test("variant editor accepts an external URL, uploads a photo and can revert to its parent", async () => {
   const state = {}, calls = [];
   let slot = 0;
   const hook = (key, initial) => {
@@ -62,6 +62,14 @@ test("variant editor uploads a photo and can revert to its parent", async () => 
   };
   let tree = render();
   assert.equal(all(tree, node => node.type === "img" && node.props.alt === "Main product image preview")[0].props.src, "main.jpg");
+  const externalUrl = "https://images.example.com/blue-shirt.jpg";
+  all(tree, node => node.type === "input" && node.props["aria-label"] === "Variant image URL or asset path")[0].props.onChange({
+    target: { value: externalUrl },
+  });
+  tree = render();
+  assert.equal(all(tree, node => node.type === "img" && node.props.alt === "Variant image preview")[0].props.src, externalUrl);
+  await all(tree, node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[0].image_url, externalUrl);
   all(tree, node => node.type === "input" && node.props.type === "file")[0].props.onChange({
     target: { files: [{ type: "image/png", size: 12 }], value: "image.png" },
   });
@@ -69,10 +77,51 @@ test("variant editor uploads a photo and can revert to its parent", async () => 
   tree = render();
   assert.equal(all(tree, node => node.type === "img" && node.props.alt === "Variant image preview")[0].props.src, "data:image/png;base64,photo");
   await all(tree, node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
-  assert.equal(calls[0].image_url, "data:image/png;base64,photo");
+  assert.equal(calls[1].image_url, "data:image/png;base64,photo");
   all(render(), node => node.type === "button" && node.props.children === "Use main product image")[0].props.onClick();
+  tree = render();
+  assert.equal(all(tree, node => node.type === "img" && node.props.alt === "Main product image preview")[0].props.src, "main.jpg");
+  await all(tree, node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(calls[2].image_url, null);
+});
+
+test("product editor accepts an external primary image URL and includes it in the gallery", async () => {
+  const state = {}, calls = [];
+  let slot = 0;
+  const hook = (key, initial) => {
+    if (!(key in state)) state[key] = typeof initial === "function" ? initial() : initial;
+    return [state[key], next => { state[key] = typeof next === "function" ? next(state[key]) : next; }];
+  };
+  const element = (type, props) => ({ type, props });
+  const mocks = {
+    "react/jsx-runtime": { jsx: element, jsxs: element, Fragment: "fragment" },
+    react: { useState: initial => hook(`state${slot++}`, initial) },
+    "../features/drafts": { useDraftState: hook, useClearDrafts: () => () => {} },
+    "../features/catalog/utils": { toAssetUrl: value => value },
+    "../api": { api: { inventorySaveProduct: async (payload, _id) => { calls.push(payload); return {}; } } },
+  };
+  const compiled = ts.transpileModule(source("components/InventoryForms.tsx"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(compiled, { exports, Error, require: name => mocks[name] || new Proxy({}, { get: (_, key) => String(key) }) });
+  const render = () => { slot = 0; return exports.ProductEditor({
+    product: { id: "p", name: "Product", image_url: null, image_urls: "", variants: [], offers: [] },
+    lookups: { brands: [], categories: [], vendors: [] }, hsn: [], onSaved() {}, onClose() {},
+  }); };
+  const all = (node, predicate) => {
+    if (!node || typeof node !== "object") return [];
+    if (Array.isArray(node)) return node.flatMap(child => all(child, predicate));
+    return [...(predicate(node) ? [node] : []), ...all(node.props?.children, predicate)];
+  };
+  const externalUrl = "https://images.example.com/product.jpg";
+  const tree = render();
+  all(tree, node => node.type === "input" && node.props["aria-label"] === "Primary image URL or asset path")[0].props.onChange({
+    target: { value: externalUrl },
+  });
   await all(render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
-  assert.equal(calls[1].image_url, null);
+  assert.equal(calls[0].image_url, externalUrl);
+  assert.deepEqual(Array.from(calls[0].image_urls), [externalUrl]);
 });
 
 test("choosing variants switches the main photo and resets the gallery selection", () => {

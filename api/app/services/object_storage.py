@@ -99,12 +99,71 @@ class ObjectStorage:
         return self.url + "/storage/v1/object/public/" + self.object_location(file["bucket"], file["object_path"])
 
 
+class S3ImageStorage:
+    """Storage for public product images; private files remain in their existing store."""
+
+    def __init__(self):
+        import boto3
+        self.bucket = os.getenv("TENALI_IMAGE_S3_BUCKET", "").strip()
+        if not self.bucket:
+            raise HTTPException(503, "Configure TENALI_IMAGE_S3_BUCKET on the server")
+        self.client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
+
+    def read(self, bucket, path):
+        from botocore.exceptions import BotoCoreError, ClientError
+        ObjectStorage.object_location(bucket, path)
+        if bucket != PUBLIC_BUCKET:
+            raise HTTPException(422, "Only public images can use S3 image storage")
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=f"{bucket}/{path}")
+            try:
+                content = response["Body"].read(5 * 1024 * 1024 + 1)
+            finally:
+                response["Body"].close()
+        except (BotoCoreError, ClientError) as error:
+            logger.warning("S3 image read failed (%s)", type(error).__name__)
+            raise HTTPException(503, "Image storage is unavailable.") from None
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(503, "Stored image exceeds the allowed size.")
+        return content
+
+    def put_verified(self, company_id, content, mime_type, public=False, kind="document"):
+        from botocore.exceptions import BotoCoreError, ClientError
+        if not public or kind != "image" or mime_type not in {"image/png", "image/jpeg", "image/webp"} or not content or len(content) > 5 * 1024 * 1024:
+            raise HTTPException(422, "Use a supported non-empty image no larger than 5 MB")
+        digest = hashlib.sha256(content).hexdigest()
+        path = f"{UUID(str(company_id))}/image-{digest}.{MIME_EXTENSIONS[mime_type]}"
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=f"{PUBLIC_BUCKET}/{path}", Body=content, ContentType=mime_type)
+        except (BotoCoreError, ClientError) as error:
+            logger.warning("S3 image upload failed (%s)", type(error).__name__)
+            raise HTTPException(503, "Image upload failed. The original was not removed.") from None
+        stored = self.read(PUBLIC_BUCKET, path)
+        if len(stored) != len(content) or hashlib.sha256(stored).hexdigest() != digest:
+            raise HTTPException(503, "Uploaded image verification failed. The original was not removed.")
+        return {"bucket": PUBLIC_BUCKET, "file_kind": kind, "object_path": path,
+                "mime_type": mime_type, "file_size": len(content), "sha256": digest}
+
+
+def image_storage(provider=None):
+    provider = provider or os.getenv("TENALI_IMAGE_STORAGE", "supabase").strip().lower()
+    if provider == "supabase":
+        return ObjectStorage()
+    if provider == "s3":
+        return S3ImageStorage()
+    raise HTTPException(503, "Unknown image storage provider. Configure supabase or s3.")
+
+
+def portable_image_url(file):
+    return f"/api/public-images/{file['company_id']}/{file['id']}"
+
+
 class FileStore:
     def __init__(self, db):
         self.db = db
 
-    def save(self, company_id, content, mime_type, public=False, kind="document"):
-        storage = ObjectStorage()
+    def save(self, company_id, content, mime_type, public=False, kind="document", *, portable=False):
+        storage = image_storage() if portable else ObjectStorage()
         file = storage.put_verified(company_id, content, mime_type, public, kind)
         row = self.db.execute(text("""insert into stored_files(company_id,bucket,file_kind,object_path,mime_type,file_size,sha256)
             values(:company,:bucket,:file_kind,:object_path,:mime_type,:file_size,:sha256)
@@ -119,6 +178,20 @@ class FileStore:
         if not source:
             return source
         validate_image_source(source)
+        if source.startswith("/api/public-images/"):
+            parts = source.split("/")
+            try:
+                if len(parts) != 5 or str(UUID(parts[3])) != str(UUID(str(company_id))):
+                    raise ValueError("Invalid image owner")
+                file_id = str(UUID(parts[4]))
+            except ValueError as error:
+                raise HTTPException(422, "Invalid public image reference") from error
+            row = self.db.execute(text("""select id from stored_files where id=:id and company_id=:company
+                and bucket=:bucket and file_kind='image'"""),
+                {"id": file_id, "company": company_id, "bucket": PUBLIC_BUCKET}).first()
+            if not row or private:
+                raise HTTPException(422, "Image does not belong to this workspace")
+            return source
         if source.startswith("/api/company/assets/"):
             file_id = source.rsplit("/", 1)[-1]
             try:
@@ -171,6 +244,13 @@ class FileStore:
     def stored_product_image(self, company_id, url):
         """Bytes of a public product image this workspace uploaded to Tenali storage. Other URLs are refused
         rather than fetched, so the server never downloads arbitrary addresses."""
+        if url and url.startswith("/api/public-images/"):
+            self.image(company_id, url)
+            file_id = str(UUID(url.rsplit("/", 1)[-1]))
+            row = self.db.execute(text("""select bucket,object_path from stored_files
+                where id=:id and company_id=:company and bucket=:bucket and file_kind='image'"""),
+                {"id": file_id, "company": company_id, "bucket": PUBLIC_BUCKET}).mappings().one()
+            return image_storage().read(row["bucket"], row["object_path"])
         storage = ObjectStorage()
         prefix = storage.url + "/storage/v1/object/public/" + PUBLIC_BUCKET + "/"
         path = unquote(url[len(prefix):]) if url and url.startswith(prefix) else ""
@@ -191,7 +271,6 @@ class FileStore:
         content, mime_type = photo
         from app.services.product_images import display_image
         display = display_image(content)
-        original = self.save(company_id, content, mime_type, public=True, kind="image")
-        enhanced = self.save(company_id, display, "image/webp", public=True, kind="image")
-        storage = ObjectStorage()
-        return storage.public_url(enhanced), storage.public_url(original)
+        original = self.save(company_id, content, mime_type, public=True, kind="image", portable=True)
+        enhanced = self.save(company_id, display, "image/webp", public=True, kind="image", portable=True)
+        return portable_image_url(enhanced), portable_image_url(original)

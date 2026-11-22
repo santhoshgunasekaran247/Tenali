@@ -139,9 +139,9 @@ class ProductImageTests(unittest.TestCase):
         source = "data:image/png;base64," + base64.b64encode(content).decode()
         saved = []
 
-        def save(store, company, data, mime_type, public=False, kind="document"):
+        def save(store, company, data, mime_type, public=False, kind="document", *, portable=False):
             saved.append((data, mime_type, public, kind))
-            return {"bucket": PUBLIC_BUCKET, "object_path": f"{company}/{len(saved)}"}
+            return {"company_id": company, "id": str(len(saved))}
 
         company = str(uuid4())
         with patch.dict(os.environ, {"TENALI_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
@@ -151,7 +151,8 @@ class ProductImageTests(unittest.TestCase):
             self.assertEqual(FileStore(None).product_image(company, "https://cdn.test/a.png"), ("https://cdn.test/a.png", None))
         self.assertEqual([(item[1], item[2], item[3]) for item in saved], [("image/png", True, "image"), ("image/webp", True, "image")])
         self.assertEqual(saved[0][0], content)
-        self.assertTrue(original.endswith(f"/{company}/1") and display.endswith(f"/{company}/2"))
+        self.assertEqual(original, f"/api/public-images/{company}/1")
+        self.assertEqual(display, f"/api/public-images/{company}/2")
 
     def test_bill_photo_reference_publishes_full_resolution_original_and_display(self):
         reference = f"ai-photo:{uuid4()}/100,200,300,400"
@@ -159,9 +160,9 @@ class ProductImageTests(unittest.TestCase):
         saved = []
         company = str(uuid4())
 
-        def save(store, company, data, mime_type, public=False, kind="document"):
+        def save(store, company, data, mime_type, public=False, kind="document", *, portable=False):
             saved.append((data, mime_type))
-            return {"bucket": PUBLIC_BUCKET, "object_path": f"{company}/{len(saved)}"}
+            return {"company_id": company, "id": str(len(saved))}
 
         with patch.dict(os.environ, {"TENALI_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
                                      "TENALI_SUPABASE_STORAGE_KEY": "server-fixture-secret"}), \
@@ -285,12 +286,12 @@ class ProductImageFixTests(unittest.TestCase):
                 patch.object(InventoryService, "detail", return_value={"id": "p"}), \
                 patch.object(FileStore, "stored_product_image", return_value=PNG) as stored, \
                 patch("app.services.product_images.display_image", return_value=b"webp") as render, \
-                patch.object(FileStore, "save", return_value={"bucket": PUBLIC_BUCKET, "object_path": self.company + "/image-new.webp"}) as save:
+                patch.object(FileStore, "save", return_value={"company_id": self.company, "id": "new"}) as save:
             result = service.enhance_product_image("p", old)
             with self.assertRaises(HTTPException) as error:
                 service.enhance_product_image("p", "https://cdn.example.com/not-on-product.png")
         self.assertEqual(error.exception.status_code, 422)
-        new = self.BASE + self.company + "/image-new.webp"
+        new = f"/api/public-images/{self.company}/new"
         self.assertEqual(stored.call_args.args, (self.company, original))
         render.assert_called_once_with(PNG)
         self.assertEqual(save.call_args.args[1:3], (b"webp", "image/webp"))
@@ -364,7 +365,7 @@ class StoredFileDatabaseTests(TenantDatabaseCase):
             Image.new("RGB", (60, 40), (200, 120, 40)).save(photo, format="PNG")
             source = "data:image/png;base64," + base64.b64encode(photo.getvalue()).decode()
             product = InventoryService(db, self.company).save_product(ProductInput(name="Stored product", image_url=source, image_urls=[source]))
-            self.assertIn("/storage/v1/object/public/tenali-public/", product["image_url"])
+            self.assertTrue(product["image_url"].startswith(f"/api/public-images/{self.company}/"))
             self.assertEqual(product["image_urls"], product["image_url"])
             original = product["image_originals"][product["image_url"]]
             self.assertNotEqual(original, product["image_url"])
