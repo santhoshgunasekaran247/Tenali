@@ -20,7 +20,7 @@
 .portal-shell { background: #f3f7fc; color: #172d4a; }
 .portal-shell, .portal-shell-home { grid-template-columns: 68px minmax(0, 1fr); }
 .portal-shell > aside { background: #193d67; border-right: 0; overflow: visible; z-index: 18; }
-.portal-sidebar { position: absolute; top: 0; left: 0; width: 68px; max-height: calc(100dvh - 96px); overflow-y: auto; background: #193d67; padding: 16px 10px 24px; }
+.portal-sidebar { position: absolute; top: 0; left: 0; width: 68px; height: 100%; align-content: start; overflow-y: auto; background: #193d67; padding: 16px 10px 24px; }
 .portal-sidebar-expanded { width: 232px; box-shadow: 12px 10px 24px #172d4a25; }
 .portal-rail-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 5px; background: transparent; color: #fff; font: inherit; text-align: left; cursor: pointer; }
 .portal-rail-toggle:hover { background: #426b98; }

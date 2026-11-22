@@ -175,6 +175,7 @@ test("responsive workspace shell keeps module links in the mobile menu and AI la
   assert.match(source("components/Header.tsx"), /aria-controls="header-navigation"/);
   assert.match(source("styles.css"), /\.portal-shell > aside \{ display: none; \}/);
   assert.match(source("workspace-theme.css"), /\.portal-shell, \.portal-shell-home \{ display: block; \}/);
+  assert.match(source("workspace-theme.css"), /\.portal-sidebar \{[^}]*height: 100%;[^}]*align-content: start;[^}]*overflow-y: auto;/);
 });
 
 test("groups without permitted entries are omitted and the active nested module opens its group", () => {
