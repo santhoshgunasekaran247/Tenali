@@ -1,0 +1,73 @@
+.header-portal, .portal-shell {
+  --site-primary: #193d67;
+  --site-accent: #b88959;
+  --site-background: #f3f7fc;
+  --site-surface: #fff;
+  --site-text: #172d4a;
+  --site-muted: #526b87;
+  --site-border: #dce7f3;
+  --site-on-primary: #fff;
+  --site-on-primary-muted: #dce8f5;
+  --site-tint: #f3f7fc;
+}
+.header-portal { background: #fff; border-bottom-color: #dce7f3; }
+.policy-footer-workspace { background: #fff; border-color: #dce7f3; padding: 22px clamp(24px, 4vw, 48px); font-family: Inter, Arial, sans-serif; }
+.policy-footer-workspace .policy-links { gap: 8px 18px; line-height: 1.5; }
+.policy-footer-workspace .policy-links strong { color: #526b87; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.policy-footer-workspace .policy-links a { color: #425f7d; font-size: 12px; text-decoration: none; }
+.policy-footer-workspace .policy-links a:hover { color: #193d67; text-decoration: underline; }
+.policy-footer-workspace .policy-links a:focus-visible { outline: 2px solid #193d67; outline-offset: 3px; border-radius: 2px; }
+.portal-shell { background: #f3f7fc; color: #172d4a; }
+.portal-shell, .portal-shell-home { grid-template-columns: 68px minmax(0, 1fr); }
+.portal-shell > aside { background: #193d67; border-right: 0; overflow: visible; z-index: 18; }
+.portal-sidebar { position: absolute; top: 0; left: 0; width: 68px; max-height: calc(100dvh - 96px); overflow-y: auto; background: #193d67; padding: 16px 10px 24px; }
+.portal-sidebar-expanded { width: 232px; box-shadow: 12px 10px 24px #172d4a25; }
+.portal-rail-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 5px; background: transparent; color: #fff; font: inherit; text-align: left; cursor: pointer; }
+.portal-rail-toggle:hover { background: #426b98; }
+.portal-rail-toggle:focus-visible { outline: 3px solid #e6bd8b; outline-offset: -2px; }
+.portal-sidebar > a { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.portal-sidebar-compact .portal-nav-label, .portal-sidebar-compact .portal-group-chevron { display: none; }
+.portal-sidebar-compact .portal-nav-group > summary { justify-content: flex-start; }
+.portal-sidebar-expanded .portal-nav-group > summary { justify-content: flex-start; }
+.portal-sidebar-expanded .portal-nav-group > summary .portal-nav-label { flex: 1; }
+.portal-sidebar a { color: #dce8f5; border-radius: 5px; }
+.portal-sidebar a:hover, .portal-sidebar a.portal-nav-active { color: #fff; background: #426b98; }
+.portal-sidebar .portal-nav-group { border-color: #436080; }
+.portal-sidebar .portal-nav-group > summary { color: #c1d3e8; }
+.portal-sidebar .portal-nav-group-active > summary { color: #fff; background: #426b98; border-radius: 5px; }
+.portal-sidebar a:focus-visible, .portal-sidebar .portal-nav-group > summary:focus-visible { outline: 3px solid #e6bd8b; outline-offset: -2px; }
+.portal-content .ops-page { background: #f3f7fc; min-height: calc(100dvh - 96px); }
+.portal-content :is(.ops-hero, .inventory-heading, .masters-heading, .checkout-admin-page .shop-account-heading) { background: #fff; color: #172d4a; border-bottom: 1px solid #dce7f3; padding: 32px clamp(24px, 4vw, 48px); }
+.portal-content :is(.ops-hero, .inventory-heading, .masters-heading, .checkout-admin-page .shop-account-heading) h1 { color: #172d4a; font-family: "Cormorant Garamond", Georgia, serif; font-size: clamp(30px, 3vw, 40px); font-weight: 600; line-height: 1.12; }
+.portal-content :is(.ops-hero, .checkout-admin-page .shop-account-heading) p { color: #526b87; }
+.portal-content .ops-hero .eyebrow, .portal-content .ops-hero .dashboard-eyebrow { color: #627f9e; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.portal-content :is(.ops-hero .portal-home-link, .inventory-heading .portal-home-link, .masters-heading > .ops-inline-link, .checkout-admin-page .shop-account-heading a) { color: #325f8b; }
+.portal-content :is(.inventory-heading, .masters-heading) { padding-bottom: 0; }
+.portal-content :is(.inventory-heading .inventory-tabs, .masters-heading .masters-nav) { border-bottom-color: #dce7f3; }
+.portal-content :is(.inventory-heading .inventory-tabs button, .masters-heading .masters-nav a) { color: #526b87; }
+.portal-content :is(.inventory-heading .inventory-tabs button[aria-selected="true"], .masters-heading .masters-nav a[aria-current]) { color: #172d4a; }
+.portal-content .inventory-heading .btn { background: #193d67; color: #fff; }
+.portal-content .inventory-heading .ops-link-btn { color: #325f8b; }
+.portal-content .checkout-admin-page .checkout-workspace-label { color: #526b87; }
+.portal-content .dashboard-hero { padding-top: 24px; padding-bottom: 24px; }
+.portal-content .dashboard-hero h1 { font-size: clamp(30px, 3vw, 40px); }
+.portal-content .dashboard-title-block .dashboard-eyebrow { margin: 0 0 8px; }
+.portal-content .dashboard-filters label { color: #425f7d; }
+.portal-content .dashboard-content { padding: 28px clamp(24px, 4vw, 48px); }
+.portal-content .dashboard-panel, .portal-content .portal-group-card, .portal-content .ops-card { border-color: #dce7f3; box-shadow: 0 4px 18px #17385f0a; }
+.portal-content .dashboard-activity { background: #edf4fb; }
+.portal-content .dashboard-follow-up-card { background: #f3f7fc; border-color: #e4edf7; }
+.portal-content .dashboard-follow-up-card:hover, .portal-content .dashboard-follow-up-card:focus-visible { border-color: #426e9e; }
+.portal-content .portal-groups { padding: 12px clamp(24px, 4vw, 48px); }
+.portal-content .portal-group-card { padding: 24px; }
+.portal-content .portal-tile { background: #f3f7fc; border-color: #e4edf7; }
+.portal-content .portal-tile:hover, .portal-content .portal-tile:focus-visible { border-color: #426e9e; background: #eaf2fb; }
+@media (max-width: 1280px) {
+  .portal-shell, .portal-shell-home { display: block; }
+}
+@media (max-width: 600px) {
+  .portal-content :is(.ops-hero, .inventory-heading, .masters-heading, .checkout-admin-page .shop-account-heading) { padding-top: 24px; }
+  .portal-content :is(.ops-hero, .checkout-admin-page .shop-account-heading) { padding-bottom: 24px; }
+  .portal-content .portal-group-card { padding: 18px; }
+  .portal-content .dashboard-filters label:first-child { flex-basis: 100%; }
+}

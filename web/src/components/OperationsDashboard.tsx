@@ -58,7 +58,7 @@ export function OperationsDashboard() {
     <header className="ops-hero dashboard-hero">
       <Link className="portal-home-link" to="/portal">Back to Operations Portal</Link>
       <div className="dashboard-heading">
-        <div className="dashboard-title-block"><h1 id="dashboard-title">Operations dashboard</h1><p>Live records from your accessible modules and stores.</p></div>
+        <div className="dashboard-title-block"><p className="dashboard-eyebrow">WORKSPACE / OVERVIEW</p><h1 id="dashboard-title">Operations dashboard</h1><p>Live records from your accessible modules and stores.</p></div>
       <div className="dashboard-filters"><label>Store<select value={storeId} onChange={event => setStoreId(event.target.value)}><option value="">All accessible stores</option>{stores.map(store => <option key={store.id} value={store.id}>{store.name}{!store.is_active ? " (inactive)" : ""}</option>)}</select></label>
         <label>Reporting period<select value={period} onChange={event => setPeriod(event.target.value as "month" | "day" | "range")}><option value="month">Monthly</option><option value="day">Daily</option><option value="range">Date range</option></select></label>
         {period === "month" ? <label>Reporting month<input type="month" required value={month} onChange={event => setMonth(event.target.value)} /></label> : null}

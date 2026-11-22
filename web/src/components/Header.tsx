@@ -59,7 +59,7 @@ export function Header({ menuOpen, onMenuToggle }: HeaderProps) {
     document.querySelector('meta[name="twitter:image"]')?.setAttribute("content",image);
   },[logo]);
   return (
-    <header className="header">
+    <header className={`header${inPortal ? " header-portal" : ""}`}>
       <Link className="brand" to={brandHref} aria-label={companyName||(platformBrand?'Tenali':'Workspace home')}>
         {logo ? <img src={logoSrc} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : companyName?<strong>{companyName}</strong>:<span className="brand-loading" aria-hidden="true"/>}
       </Link>

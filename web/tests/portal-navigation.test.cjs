@@ -130,17 +130,22 @@ test("desktop and mobile navigation share direct links and respect module/role a
     "../features/auth": { useAuth: () => ({ user: { role: "owner" } }) },
     "../features/portalNavigation": navigation,
     "react-router-dom": { useLocation: () => ({ pathname: "/portal/inventory" }),
-      NavLink: ({ to, children }) => React.createElement(Link, { to }, children) },
+      NavLink: ({ to, children, className, end, ...props }) => React.createElement(Link, { to, ...props }, children) },
   });
   const desktop = renderToStaticMarkup(React.createElement(PortalNavigation));
   const mobile = renderToStaticMarkup(React.createElement(PortalNavigation, { mobile: true }));
   assert.match(desktop, /portal-sidebar/);
+  assert.match(desktop, /portal-sidebar-compact/);
+  assert.match(desktop, /aria-label="Expand workspace menu" aria-expanded="false"/);
+  assert.match(desktop, /aria-label="Operations"/);
+  assert.match(desktop, /aria-label="Dashboard"/);
+  assert.match(desktop, /aria-label="Tenali AI"/);
   assert.match(mobile, /portal-mobile-links/);
   assert.equal(desktop.match(/href=/g).length, mobile.match(/href=/g).length);
   const launcher = renderToStaticMarkup(React.createElement(TenaliLauncher));
   assert.match(launcher, /href="\/portal\/ai"/);
   assert.match(launcher, /src="\/tenali-assistant.png"/);
-  const groups = [...desktop.matchAll(/<details class="portal-nav-group"( open="")?><summary>([^<]+)/g)];
+  const groups = [...mobile.matchAll(/<details class="portal-nav-group"( open="")?><summary[^>]*><span class="portal-nav-label">([^<]+)/g)];
   assert.deepEqual(groups.map(group => group[2]), ["Operations", "Admin", "My Workspace"]);
   assert.deepEqual(groups.filter(group => group[1]).map(group => group[2]), ["Operations"]);
   assert.deepEqual(Array.from(navigation.portalEntries.filter(entry => !entry.group), entry => entry.label), ["Dashboard", "Tenali AI"]);
@@ -164,11 +169,12 @@ test("AI app help links only known internal destinations; HTML and external link
 
 test("responsive workspace shell keeps module links in the mobile menu and AI launcher off the AI page", () => {
   assert.match(source("features/auth.tsx"), /portal-shell/);
-  assert.match(source("features/auth.tsx"), /!portalHome \? <aside><PortalNavigation\/><\/aside> : null/);
+  assert.match(source("features/auth.tsx"), /<aside><PortalNavigation\/><\/aside>/);
   assert.match(source("features/auth.tsx"), /location\.pathname !== "\/portal\/ai"/);
   assert.match(source("components/Header.tsx"), /<PortalNavigation mobile \/>/);
   assert.match(source("components/Header.tsx"), /aria-controls="header-navigation"/);
   assert.match(source("styles.css"), /\.portal-shell > aside \{ display: none; \}/);
+  assert.match(source("workspace-theme.css"), /\.portal-shell, \.portal-shell-home \{ display: block; \}/);
 });
 
 test("groups without permitted entries are omitted and the active nested module opens its group", () => {
@@ -179,14 +185,14 @@ test("groups without permitted entries are omitted and the active nested module 
       "react-router-dom": { useLocation: () => ({ pathname }),
         NavLink: ({ to, children }) => React.createElement(Link, { to }, children) },
     });
-    return renderToStaticMarkup(React.createElement(PortalNavigation));
+    return renderToStaticMarkup(React.createElement(PortalNavigation, { mobile: true }));
   };
   const restricted = render({ role: "staff", modules: ["billing"] }, "/portal/billing");
-  assert.doesNotMatch(restricted, /<summary>Admin/);
-  assert.match(restricted, /<details class="portal-nav-group" open=""><summary>Operations/);
+  assert.doesNotMatch(restricted, /aria-label="Admin"/);
+  assert.match(restricted, /<details class="portal-nav-group" open=""><summary[^>]*aria-label="Operations"/);
   const nested = render({ role: "owner" }, "/portal/masters/categories/");
-  assert.match(nested, /<details class="portal-nav-group" open=""><summary>Operations/);
-  assert.doesNotMatch(nested, /open=""><summary>Admin/);
+  assert.match(nested, /<details class="portal-nav-group" open=""><summary[^>]*aria-label="Operations"/);
+  assert.doesNotMatch(nested, /open=""><summary[^>]*aria-label="Admin"/);
 });
 
 test("master links show only accessible product and tax data", () => {

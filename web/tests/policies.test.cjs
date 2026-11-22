@@ -29,6 +29,29 @@ test("policy URLs distinguish platform from store and preserve all required poli
   assert.equal(policies.PLATFORM_POLICY_KINDS.length, 4);
 });
 
+test("workspace policy footer has compact scoped typography and keeps every policy link", () => {
+  const app = readFileSync(path.join(__dirname, "..", "src", "App.tsx"), "utf8");
+  const css = readFileSync(path.join(__dirname, "..", "src", "workspace-theme.css"), "utf8");
+  const shared = readFileSync(path.join(__dirname, "..", "src", "styles.css"), "utf8");
+  assert.match(app, /location\.pathname === "\/portal" \|\| location\.pathname\.startsWith\("\/portal\/"\)/);
+  assert.match(app, /location\.pathname === "\/login" \|\| location\.pathname === "\/register"/);
+  assert.match(css, /\.policy-footer-workspace \.policy-links a \{[^}]*font-size: 12px/);
+  assert.match(css, /\.policy-footer-workspace \.policy-links a:focus-visible/);
+  assert.match(shared, /\.policy-links a \{[^}]*font-size: 12px/);
+  assert.match(shared, /\.policy-links a:focus-visible/);
+  const policies = load("features/policies.ts", { "./tenantTransport": {} });
+  const { PolicyLinks } = load("components/PolicyLinks.tsx", {
+    "../features/auth": { useAuth: () => ({ storefront: { id: "store" } }) },
+    "../features/policies": policies,
+    "../features/tenantTransport": { tenantBase: () => "/c/store" },
+    "react-router-dom": { Link: ({ to, children }) => React.createElement("a", { href: to }, children) },
+  });
+  const markup = renderToStaticMarkup(React.createElement(PolicyLinks));
+  assert.equal((markup.match(/<a /g) || []).length, policies.TENANT_POLICY_KINDS.length + 1);
+  assert.match(markup, /href="\/policies\/platform"/);
+  assert.match(markup, /aria-label="Public policies"/);
+});
+
 test("policy rendering treats tenant text as text, never active HTML", () => {
   const { PolicyDocument } = load("components/PolicyDocument.tsx");
   const markup = renderToStaticMarkup(React.createElement(PolicyDocument, {

@@ -47,6 +47,8 @@ export default function App() {
   const auth = useAuth();
   const location = useLocation();
   const platformHome = location.pathname === "/" && !tenantBase() && !tenantApiOrigin() && !auth.storefront;
+  const workspaceFooter = location.pathname === "/portal" || location.pathname.startsWith("/portal/") ||
+    location.pathname === "/login" || location.pathname === "/register";
 
   return (
     <div>
@@ -101,7 +103,7 @@ export default function App() {
         <Route path="/portal/domains" element={<DomainsPage/>}/>
         </Route>
       </Routes>
-      {!platformHome && <div className="policy-footer"><PolicyLinks /></div>}
+      {!platformHome && <div className={`policy-footer${workspaceFooter ? " policy-footer-workspace" : ""}`}><PolicyLinks /></div>}
     </div>
   );
 }

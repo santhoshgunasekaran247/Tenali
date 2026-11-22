@@ -198,11 +198,10 @@ export function PortalPage() {
   return (
     <div className="ops-page">
       <section className="ops-hero">
-        <p className="eyebrow">Unified Workspace</p>
+        <p className="eyebrow">Workspace / Overview</p>
         <h1>Operations Portal</h1>
         <p>
-          Modules are grouped by business flow so teams can move faster. Admin and
-          maintenance functions are consolidated into one control area.
+          Your business, in one place. Choose a module or open your dashboard to see what needs attention.
         </p>
       </section>
 

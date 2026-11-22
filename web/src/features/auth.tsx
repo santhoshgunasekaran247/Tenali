@@ -14,9 +14,19 @@ type Session={user:Identity;workspaces:Workspace[]};
 
 export async function authRequest<T>(path:string,options?:RequestInit):Promise<T>{
   const response=await tenantFetch('/api/auth'+path,{...options,headers:{'Content-Type':'application/json',...options?.headers}});
-  const body=await response.json();
-  if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:Array.isArray(body.detail)?body.detail.map((entry:{msg?:string})=>(entry.msg||'Invalid input').replace('Value error, ','')).join(' '):'Unable to complete this request.');
-  return body;
+  let body:unknown;
+  try{body=await response.json();}catch(failure){
+    if(!(failure instanceof SyntaxError))throw failure;
+    throw new Error(response.ok?'The authentication service returned an invalid response. Please try again.':`The authentication request failed (HTTP ${response.status}). The server returned an invalid response. Please try again.`);
+  }
+  if(!response.ok){
+    const detail=body&&typeof body==='object'&&'detail' in body?body.detail:null;
+    throw new Error(typeof detail==='string'?detail:Array.isArray(detail)?detail.map((entry:unknown)=>{
+      const message=entry&&typeof entry==='object'&&'msg' in entry&&typeof entry.msg==='string'?entry.msg:'Invalid input';
+      return message.replace('Value error, ','');
+    }).join(' '):`Unable to complete this request (HTTP ${response.status}).`);
+  }
+  return body as T;
 }
 
 type AuthState={user:Identity|null;workspaces:Workspace[];storefront:PublicCompany|null;loading:boolean;error:string;refresh:()=>Promise<void>;
@@ -69,7 +79,7 @@ export function RequireWorkspace(){
   if(!auth.storefront&&!tenantBase()&&location.pathname!=="/portal/new-workspace")return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
   if(auth.storefront&&auth.storefront.id!==auth.user.company_id&&tenantBase())return <TenantRedirect to={`/c/${auth.user.tenant_slug}${location.pathname}${location.search}`}/>;
   const portalHome = location.pathname.replace(/\/+$/, "") === "/portal";
-  return <><WorkflowGuide/><div className={`portal-shell${portalHome ? " portal-shell-home" : ""}`}>{!portalHome ? <aside><PortalNavigation/></aside> : null}
+  return <><WorkflowGuide/><div className={`portal-shell${portalHome ? " portal-shell-home" : ""}`}><aside><PortalNavigation/></aside>
     <div className="portal-content"><Outlet/></div></div>{location.pathname !== "/portal/ai" ? <TenaliLauncher/> : null}</>;
 }
 

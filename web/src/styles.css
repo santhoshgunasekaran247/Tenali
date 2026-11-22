@@ -15,10 +15,14 @@
   --site-media-background: color-mix(in srgb, var(--site-background) 50%, var(--site-surface));
 }
 
-.policy-footer { border-top: 1px solid var(--site-border); padding: 24px clamp(16px, 4vw, 56px); background: var(--site-surface); }
+.policy-footer { border-top: 1px solid var(--site-border); padding: 22px clamp(24px, 4vw, 48px); background: var(--site-surface); font-family: Inter, Arial, sans-serif; }
 .policy-links, .policy-page-nav { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: baseline; }
-.policy-links strong { flex-basis: 100%; }
+.policy-links { gap: 8px 18px; line-height: 1.5; }
+.policy-links strong { flex-basis: 100%; color: var(--site-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .policy-links a, .policy-page-nav a, .policy-notice a, .policy-document a { color: var(--site-text); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.policy-links a { color: var(--site-text); font-size: 12px; text-decoration: none; }
+.policy-links a:hover { text-decoration: underline; }
+.policy-links a:focus-visible { outline: 2px solid var(--site-primary); outline-offset: 3px; border-radius: 2px; }
 .policy-notice { font-size: .9rem; color: var(--site-muted); }
 .policy-page { max-width: 1000px; margin-inline: auto; }
 .policy-page-nav { margin-bottom: 24px; }
@@ -112,7 +116,7 @@ body {
 }
 
 .portal-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); align-items: start; }
-.portal-shell-home { grid-template-columns: minmax(0, 1fr); }
+.portal-shell-home { grid-template-columns: 232px minmax(0, 1fr); }
 .portal-shell > aside { position: sticky; top: 96px; height: calc(100dvh - 96px); overflow-y: auto; border-right: 1px solid var(--site-border); background: var(--site-surface); }
 .portal-sidebar { display: grid; gap: 3px; padding: 18px 12px 32px; }
 .portal-sidebar a, .portal-mobile-links a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--site-text); text-decoration: none; font-size: 14px; }

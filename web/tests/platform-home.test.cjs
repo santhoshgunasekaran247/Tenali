@@ -49,5 +49,18 @@ test("marketing page has real routes, an accessible demo and a local video", () 
   assert.match(page, /policyRequest<PublicPolicy>\("\/legal\/platform\/contact"\)/);
   assert.match(page, /<video controls preload="metadata" playsInline/);
   assert.match(page, /id="demo-transcript"/);
+  assert.match(page, /does not show live interactions/);
+  assert.match(page, /AI responses/);
+  assert.match(page, /affordable, accessible and simple/);
+  assert.match(page, /Dashboards for clarity/);
+  assert.match(page, /Tenali AI assistance/);
+  assert.match(page, /ACTUAL WORKSPACE SCREEN · SAMPLE DATA/);
+  assert.ok(statSync(path.join(root, "public", "tenali-workspace-preview.jpg")).size > 10000);
   assert.ok(statSync(path.join(root, "public", "tenali-product-tour.webm")).size > 10000);
+});
+
+test("marketing footer headings and links have explicit contrasting colors", () => {
+  const css = read("pages/platform-home.css");
+  assert.match(css, /\.marketing \.footer-grid strong \{ color: #172d4a;/);
+  assert.match(css, /\.marketing \.footer-grid a, \.marketing \.footer-bottom a \{ color: #425f7d;/);
 });

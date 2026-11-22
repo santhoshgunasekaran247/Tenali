@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { ImageOff, MessageCircle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import type { CatalogProduct } from "../../../types";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../utils";
@@ -31,6 +31,8 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
     .map((img) => img.trim())
     .filter(Boolean);
   const image = gallery[0] || product.image_url;
+  const imageSrc = toAssetUrl(image);
+  const [failedSrc, setFailedSrc] = useState("");
   const minimum = Math.max(1, product.minimum_order_quantity || 1);
   const mode = cartMode(checkoutEnabled, phone);
   const words = cartWords(mode);
@@ -75,7 +77,8 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
       }}
     >
       <div className="product-image">
-        <img src={toAssetUrl(image)} alt={product.name} loading="lazy" />
+        {imageSrc && imageSrc !== failedSrc ? <img src={imageSrc} alt={product.name} loading="lazy" onError={() => setFailedSrc(imageSrc)} />
+          : <span className="product-image-placeholder"><ImageOff size={32} aria-hidden="true" /><span>{imageSrc ? "Image unavailable" : "No image"}</span></span>}
         <div className="product-tags">
           {product.best_seller && <span className="badge-best">{text("best_seller_badge","Best Seller")}</span>}
           {product.sru_special && <span className="badge-special">{text("special_badge","Special")}</span>}

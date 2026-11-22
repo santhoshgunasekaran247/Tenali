@@ -62,6 +62,22 @@ test("collection cards offer Add to Cart only when checkout is available, alongs
   assert.doesNotMatch(renderToStaticMarkup(h.render(false)), /Add to Cart/);
 });
 
+test("product badges do not overlap a broken image placeholder", () => {
+  const missing = cardHarness({ sru_special: true });
+  const html = renderToStaticMarkup(missing.render());
+  assert.match(html, /class="badge-special">Special/);
+  assert.match(html, /No image/);
+  assert.doesNotMatch(html, /<img/);
+  const broken = cardHarness({ sru_special: true, image_url: "broken.jpg" });
+  const image = find(broken.render(), node => node.type === "img");
+  assert.ok(image);
+  image.props.onError();
+  const failed = renderToStaticMarkup(broken.render());
+  assert.match(failed, /Image unavailable/);
+  assert.match(failed, /class="badge-special">Special/);
+  assert.doesNotMatch(failed, /<img/);
+});
+
 test("quick add uses the minimum quantity and offers a cart link without navigating", async () => {
   const h = cardHarness();
   await find(h.render(), node => node.type === "button").props.onClick();

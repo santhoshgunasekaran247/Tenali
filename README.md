@@ -38,8 +38,10 @@ workspace selection; it does not forward arbitrary tenant/custom domain identity
 Do not treat tenant subdomains or custom storefront domains as supported by this
 configuration without separate routing verification.
 
-The platform root (`/`) presents Tenali's public marketing website, including an
-illustrated, silent product tour with a transcript. It does not replace tenant
+The platform root (`/`) presents Tenali's public marketing website, including a
+silent, screen-based product tour with a transcript. The dashboard and AI
+screens use sample data; the tour does not show live interactions or AI
+responses and should be refreshed when the workspace changes. It does not replace tenant
 storefronts. The contact email is taken from the **published platform contact
 policy**; publish and maintain that policy, including its current email and
 business details, before using the website for marketing. If the policy cannot
