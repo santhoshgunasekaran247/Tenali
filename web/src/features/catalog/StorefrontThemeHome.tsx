@@ -7,6 +7,7 @@ import { toAssetUrl } from "./utils";
 import type { CatalogHomeResponse, StorefrontSection, StorefrontTemplate } from "../../types";
 import { classicSections } from "./classicStorefront";
 import { MARKETPLACE_IMAGES } from "./marketplaceImages";
+import { BOUTIQUE_IMAGES } from "./boutiqueImages";
 import { BrandCard } from "./components/BrandCard";
 import { hasStorefrontLinkOverride, storefrontLink, storefrontSectionId as sectionId } from "./storefrontLinks";
 
@@ -66,7 +67,8 @@ function ThemeHero({ template, section, sections, companyName, company, text }: 
   const target = sections.find(item => item.section_type === "products");
   const primaryHref = target ? `#${sectionId(target, sections)}` : "/brand?category=all";
   const link = (key: string, href: string, label: string) => storefrontLink(company, key, href, label, section.section_key);
-  const imageUrl = section.image_url || (template === "marketplace" ? MARKETPLACE_IMAGES.hero : undefined);
+  const imageUrl = section.image_url || (template === "marketplace" ? MARKETPLACE_IMAGES.hero
+    : template === "boutique" ? BOUTIQUE_IMAGES.hero : undefined);
   const image = imageUrl
     ? <img src={toAssetUrl(imageUrl)} alt="" loading="eager" />
     : <div className="theme-hero-art-placeholder" aria-hidden="true"><span>{companyName}</span></div>;
@@ -85,8 +87,8 @@ function ThemeHero({ template, section, sections, companyName, company, text }: 
   };
   const titleId = `storefront-hero-title-${section.section_key}`;
   const actions = <div className="actions theme-hero-actions">
-    <Link className="btn" {...link("hero.primary", primaryHref, template === "marketplace" ? text("hero_primary_action") : "Shop collections")} />
-    <Link className="link" {...link("hero.secondary", "/brand?category=all", template === "marketplace" ? text("hero_secondary_action") : "Browse catalogue")} />
+    <Link className="btn" {...link("hero.primary", primaryHref, template === "marketplace" || template === "boutique" ? text("hero_primary_action") : "Shop collections")} />
+    <Link className="link" {...link("hero.secondary", "/brand?category=all", template === "marketplace" || template === "boutique" ? text("hero_secondary_action") : "Browse catalogue")} />
   </div>;
   const eyebrow = section.eyebrow || text("hero_eyebrow");
   const description = section.description || text("hero_description");
@@ -100,8 +102,10 @@ function ThemeHero({ template, section, sections, companyName, company, text }: 
           {description ? <p className="lead">{description}</p> : null}
           {actions}
         </div>
-        <figure className="boutique-cover-art">{image}<figcaption>{companyName} · Curated for you</figcaption></figure>
+        <figure className="boutique-cover-art">{image}<figcaption>{text("hero_service_one")}</figcaption></figure>
       </div>
+      <div className="boutique-editorial">{["one", "two", "three"].map(key =>
+        <span key={key}>{text(`hero_service_${key}`)}</span>)}</div>
     </section>;
   }
 
@@ -177,11 +181,12 @@ function CategorySection({ template, section, text, company }: { template: Theme
   const categories = section.categories || [];
   const destination = (slug: string) => storefrontLink(company, "category.card", `/brand?category=${encodeURIComponent(slug)}`, "").to;
   if (template === "boutique") {
-    return <div className="boutique-lookbook-grid">{categories.map((category, index) => (
-      <Link className="boutique-lookbook-card" to={destination(category.category_slug)} key={category.id}>
+    return <div className="boutique-category-grid">{categories.map(category => (
+      <Link className="boutique-category-card" to={destination(category.category_slug)} key={category.id}>
         <SectionImage src={category.image_url} alt={category.category_title} />
-        <span className="lookbook-index">0{index + 1}</span><h3>{category.category_title}</h3>
-        <p>{category.category_description}</p>
+        <h3>{category.category_title}</h3>
+        {category.category_description ? <p>{category.category_description}</p> : null}
+        <span className="boutique-card-action">{storefrontLink(company, "category.card", "", text("category_action")).children}</span>
       </Link>
     ))}</div>;
   }
@@ -226,9 +231,8 @@ function BrandSection({ template, section, text, company }: {
   const destination = (code: string) => storefrontLink(company, "brand.card", `/brand?brand=${encodeURIComponent(code)}`, "").to;
   if (template === "boutique") {
     return <div className="boutique-brand-list">{brands.map(brand => (
-      <Link to={destination(brand.code)} key={brand.code}>
-        <span className="boutique-brand-wordmark">{brand.name}</span><span>{brand.description}</span>
-      </Link>
+      <BrandCard key={brand.id} brand={brand} template={template} caption={text("brand_catalog_label")}
+        href={destination(brand.code)} action={storefrontLink(company, "brand.card", "", text("brand_action")).children} />
     ))}</div>;
   }
   if (template === "heritage") {
@@ -281,7 +285,8 @@ function ProductSection({ template, section, phone, checkoutEnabled, checkoutErr
 export function StorefrontThemeHome({
   template, data, phone, email, checkoutEnabled, checkoutError, text, bulkNote,
 }: StorefrontThemeHomeProps) {
-  const sourceSections = template === "marketplace" && !data.sections?.length && !data.classic_sections_configured
+  const usesClassicSections = template === "marketplace" || template === "boutique";
+  const sourceSections = usesClassicSections && !data.sections?.length && !data.classic_sections_configured
     ? classicSections(data) : data.sections || [];
   const configured = sourceSections.filter(section => section.is_enabled).map(section => {
     const slot = section.configuration.classic_slot;
@@ -295,8 +300,9 @@ export function StorefrontThemeHome({
     };
   });
   const hasClassicSections = data.classic_sections_configured || sourceSections.some(section => !!section.configuration.classic_slot);
-  const sections = configured.length || (template === "marketplace" && hasClassicSections) ? configured : defaultSections(data, text);
-  if (!sections.some(section => section.section_type === "hero") && !(template === "marketplace" && hasClassicSections)) {
+  const hasConfiguredSections = hasClassicSections || (template === "boutique" && sourceSections.length > 0);
+  const sections = configured.length || (usesClassicSections && hasConfiguredSections) ? configured : defaultSections(data, text);
+  if (!sections.some(section => section.section_type === "hero") && !(usesClassicSections && hasConfiguredSections)) {
     sections.unshift(defaultSections(data, text)[0]);
   }
   const companyName = data.company.nickname || data.company.company_name;
@@ -330,7 +336,7 @@ export function StorefrontThemeHome({
           {section.description ? <p>{section.description}</p> : null}
           {section.image_url ? <img className="storefront-section-image" src={toAssetUrl(section.image_url)} alt="" loading="lazy" /> : null}
           </div>
-          {template === "marketplace" || template === "supermarket" || hasStorefrontLinkOverride(data.company, "section.view_all", section.section_key) ?
+          {template === "marketplace" || template === "boutique" || template === "supermarket" || hasStorefrontLinkOverride(data.company, "section.view_all", section.section_key) ?
             <Link {...link("section.view_all", section.section_type === "brands" ? "/brand?view=brands" : "/brand?category=all", "View all →", section.section_key)} /> : null}
         </header>
         {section.section_type === "products" ? (
@@ -347,13 +353,28 @@ export function StorefrontThemeHome({
       {hasStorefrontLinkOverride(data.company, "why.contact") ?
         <Link className="btn" {...link("why.contact", phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : "/#contact", text("contact_whatsapp_label"))} /> : null}
     </section> : null}
+    {template === "boutique" ? <section id="why" className="boutique-journal">
+      {(["why_left", "why_right"] as const).map(key => {
+        const saved = data.company.storefront_content?.images?.[key];
+        const src = saved === undefined ? BOUTIQUE_IMAGES[key] : saved;
+        return src ? <img key={key} src={toAssetUrl(src)} alt="" loading="lazy" className={`boutique-journal-${key}`} /> : null;
+      })}
+      <div className="boutique-journal-copy"><p className="eyebrow">{text("why_eyebrow")}</p>
+        <h2>{storyHeading}</h2><p>{text("why_description")}</p>
+        {hasStorefrontLinkOverride(data.company, "why.contact") ?
+          <Link className="link" {...link("why.contact", phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : "/#contact", text("contact_whatsapp_label"))} /> : null}
+      </div>
+    </section> : null}
     {template === "heritage" ? <section id="collection-special" className="heritage-closing-note">
       <p className="eyebrow">{text("collection_eyebrow")}</p><h2>{storyHeading}</h2><p>{text("why_description")}</p>
     </section> : template === "jewellery" ? <section id="collection-special" className="jewellery-closing-note">
       <span className="jewellery-divider" aria-hidden="true" /><p className="eyebrow">{text("collection_eyebrow")}</p>
       <h2>{storyHeading}</h2><p>{text("collection_description")}</p>
     </section> : template === "boutique" ? <section id="collection-special" className="boutique-closing-note">
-      <p className="eyebrow">{text("collection_eyebrow")}</p><h2>{storyHeading}</h2><p>{text("collection_description")}</p>
+      <p className="eyebrow">{text("collection_eyebrow")}</p>
+      <h2>{text("collection_heading_first")} {text("collection_heading_second")}</h2><p>{text("collection_description")}</p>
+      <div className="boutique-about-points">{["one", "two", "three"].map(key =>
+        <div key={key}><h3>{text(`collection_point_${key}_title`)}</h3><p>{text(`collection_point_${key}_body`)}</p></div>)}</div>
     </section> : <section id="contact" className={`template-contact template-contact--${template}`}>
       <div><p className="eyebrow">{text("contact_eyebrow")}</p><h2>{text("contact_heading_first")} {text("contact_heading_second")}</h2></div>
       <div><p>{text("contact_description")}</p>
@@ -371,6 +392,8 @@ export function StorefrontThemeHome({
           <Link className="btn whatsapp-btn" {...link("contact.whatsapp", `https://wa.me/${phone.replace(/\D/g, "")}`, `${text("contact_whatsapp_label")} ${phone}`)} /> : null}
         {email || data.company.storefront_content?.links?.["contact.email"]?.href ?
           <Link className="link" {...link("contact.email", `mailto:${email}`, email)} /> : null}
+        {template === "boutique" && (data.company.phone || data.company.storefront_content?.links?.["contact.phone"]?.href) ?
+          <Link className="link" {...link("contact.phone", `tel:${(data.company.phone || "").replace(/[^\d+]/g, "")}`, data.company.phone || "Phone")} /> : null}
       </div>
     </section> : null}
     {template === "marketplace" ? <section id="collection-special" className="marketplace-story marketplace-about">

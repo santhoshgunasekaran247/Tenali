@@ -131,6 +131,16 @@ class StorefrontSectionSchemaTests(unittest.TestCase):
                 ]
             })
 
+    def test_editorial_images_round_trip_and_reject_invalid_image_sources(self):
+        images = {"why_left": "https://example.com/makers.jpg", "why_right": None}
+        content = StorefrontContent.model_validate({"images": images})
+        restored = StorefrontContent.model_validate(content.model_dump())
+        self.assertEqual(restored.images, images)
+        for source in ("javascript:alert(1)", "data:text/html,test"):
+            with self.subTest(source=source):
+                with self.assertRaises(ValidationError):
+                    StorefrontContent.model_validate({"images": {"why_left": source}})
+
 
 class ProductTagInputTests(unittest.TestCase):
     def test_omitted_tags_preserve_existing_assignments_for_legacy_updates(self):

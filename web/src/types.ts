@@ -52,6 +52,7 @@ export type StorefrontMenuItem = {
 };
 
 export type StorefrontContent = {
+  images?: Record<string, string | null>;
   header_menu?: StorefrontMenuItem[] | null;
   links?: Record<string, { label?: string; href?: string }>;
   display?: StorefrontDisplay;

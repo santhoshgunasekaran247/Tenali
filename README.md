@@ -93,14 +93,19 @@ Render Environment settings, never in the static UI or the repository.
   Saved product/category/brand selections reload in their original order.
   Explicitly selected active categories remain visible even before products
   have been assigned; their catalogue page shows the normal empty state.
-- **Links & buttons** configures homepage/header/footer action labels and
-  destinations, including per-section hero and view-all overrides. The destination
+- **Homepage sections** keeps link and button controls with the content they
+  affect: Header for menus/account/cart, Hero for its actions, category/brand
+  sections for card actions, product sections for purchase-button labels, Why
+  and Contact for their actions, and Footer for footer/fallback links. There is
+  no separate Links & buttons panel. Hero and view-all overrides remain
+  section-specific; card actions and product-button labels are shared settings,
+  explicitly identified in their section panels. The destination
   picker lists enabled homepage sections (with stable anchors), store pages and
   custom HTTP(S), email or telephone links. Existing destinations and copy remain
   the defaults until overridden. Category/brand cards still use their selected
   catalogue items unless a destination is explicitly overridden.
-  Product-button labels and the My Account label are editable here too; purchase
-  controls retain their original shopping actions. Changes preview immediately
+  Purchase controls retain their original shopping actions. Existing global
+  overrides remain defaults for section controls. Changes preview immediately
   and save in the existing `storefront_content` JSON; no migration is needed.
   Marketplace's Hero panel has four independent action controls: primary and
   secondary buttons, plus the category and story large links.
@@ -120,6 +125,20 @@ takes precedence. Product images always come from the actual catalogue.
 Search, product actions, cart/enquiry mode and WhatsApp use the existing flows.
 The layout adapts to mobile without adding promotional offers, ratings, newsletter
 subscriptions or other data that the store does not maintain.
+
+Boutique uses the reference HTML's centered masthead, separate collection menu,
+split fashion hero, circular category images, editorial journal, quiet brand
+cards and rose/cream product shelves. It keeps the same editable sections,
+selections, Why, Contact and About copy as Classic. The Hero image overrides the
+reference photograph; **Why → Journal images** replaces or removes the two
+decorative reference images. These image settings save in the existing
+`storefront_content.images` JSON without a database migration. Product/category
+images remain catalogue-driven; product buttons retain cart, variant and enquiry
+behavior. Header, section, card, contact and footer links use the existing
+controls in their respective section panels. No nonfunctional wishlist or
+newsletter form is added.
+Boutique category, brand and search listings use compact, text-only headers;
+catalogue images remain on their category, brand and product cards.
 
 Catalogue/category/brand listings, search results, product details, cart, checkout
 and shopper account use the main header navigation and shared colour tokens,

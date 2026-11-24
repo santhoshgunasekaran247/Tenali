@@ -20,6 +20,6 @@ export function BrandCard({ brand, template = "current", caption, action, href }
     </div>}
     <strong>{brand.name}</strong>
     <span>{caption || brand.description}</span>
-    <em>{action}<span aria-hidden="true"> →</span></em>
+    <em>{action}{template === "boutique" ? null : <span aria-hidden="true"> →</span>}</em>
   </Link>;
 }

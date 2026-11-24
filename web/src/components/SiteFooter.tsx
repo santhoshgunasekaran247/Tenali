@@ -9,10 +9,10 @@ export function SiteFooter({ company }: { company?: Pick<Company, "company_name"
   const store = company || storefront;
   const content=store?.storefront_content?.footer?.catalogue_label||"Product Catalogue";
   const footerText = store?.storefront_content?.footer?.contact_text ?? (store?.email || content);
-  if (store?.storefront_template === "marketplace") {
+  if (store?.storefront_template === "marketplace" || store?.storefront_template === "boutique") {
     const text = (value: string) => storefrontText(value, store);
     const link = (key: string, href: string, label: string) => storefrontLink(store, `footer.${key}`, href, label);
-    return <footer className="marketplace-footer">
+    return <footer className={`marketplace-footer${store.storefront_template === "boutique" ? " boutique-footer" : ""}`}>
       <div className="marketplace-footer-main">
         <div><strong>{store.company_name}</strong><p>{text(footerText)}</p></div>
         <nav aria-label="Discover"><h3>Discover</h3><Link {...link("categories", "/brand?category=all", "All categories")} /><Link {...link("best_sellers", "/#best-sellers", store.storefront_content?.navigation?.best_sellers || "Best sellers")} /><Link {...link("brands", "/brand?view=brands", store.storefront_content?.navigation?.brands || "Brands")} /></nav>

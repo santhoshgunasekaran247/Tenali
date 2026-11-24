@@ -8,6 +8,7 @@ import { tenantBase } from "../features/tenantTransport";
 import { toAssetUrl } from "../features/catalog/utils";
 import { CLASSIC_COPY_FIELDS, classicSections } from "../features/catalog/classicStorefront";
 import { storefrontPreviewSections } from "../features/catalog/storefrontPreview";
+import { BOUTIQUE_IMAGES } from "../features/catalog/boutiqueImages";
 import { isStorefrontHref, MAX_STOREFRONT_MENU_ITEMS, storefrontHeaderMenu, storefrontLinkDefinitions, storefrontSectionTargets, type StorefrontLinkDefinition, type StorefrontLinkSetting } from "../features/catalog/storefrontLinks";
 import type { CatalogStorefrontPreviewResponse, CompanySetup, CompanyUpdateInput, StorefrontMenuItem, StorefrontSection, StorefrontTemplate } from "../types";
 
@@ -277,7 +278,7 @@ export function StorefrontDesignPage() {
         throw new Error("Header supports up to 9 menu items. Give each item a label and a valid destination.");
       }
       if (Object.values(company.storefront_content.links || {}).some(link => link.href && !isStorefrontHref(link.href))) {
-        throw new Error("Fix the invalid destination in Links & buttons before saving.");
+        throw new Error("Fix the invalid destination in its homepage section before saving.");
       }
       const payload: CompanyUpdateInput = {
         company_name: company.company_name,
@@ -371,35 +372,9 @@ export function StorefrontDesignPage() {
           </label>
         </section>
         <section className="storefront-design-control-group">
-          <h3>Links &amp; buttons</h3>
-          <p>Edit homepage navigation and button labels and destinations. Choose an enabled homepage section, a store page or a custom URL.
-            Category and brand cards keep their own catalogue links unless overridden. Product purchase controls keep their shopping behaviour.</p>
-          {["Header", "Homepage", "Footer"].map(group => <details className="storefront-design-section" key={group}>
-            <summary><strong>{group}</strong></summary>
-            <div className="storefront-design-section-fields">
-              {linkDefinitions.filter(definition => definition.group === group).map(actionField)}
-            </div>
-          </details>)}
-          <label>My Account menu text<input maxLength={80} value={company.storefront_content.navigation.account_menu || "My Account"}
-            onChange={event => updateCompany({ storefront_content: { ...company.storefront_content,
-              navigation: { ...company.storefront_content.navigation, account_menu: event.target.value } } })} /></label>
-          <details className="storefront-design-section">
-            <summary><strong>Product button labels</strong></summary>
-            <div className="storefront-design-section-fields">
-              {[
-                ["add_to_cart", "Add to Cart"], ["add_to_enquiry", "Add to enquiry"], ["choose_options", "Choose options"],
-                ["view_cart", "View cart"], ["view_enquiry_list", "View list"], ["whatsapp_enquiry", "WhatsApp enquiry"],
-              ].map(([key, fallback]) => <label key={key}>{fallback}<input maxLength={100}
-                value={company.storefront_content.product?.[key] ?? fallback} onChange={event => updateCompany({
-                  storefront_content: { ...company.storefront_content, product: { ...company.storefront_content.product, [key]: event.target.value } },
-                })} /></label>)}
-              <p>These labels change, but add-to-cart, enquiry and product selection actions retain their original behaviour.</p>
-            </div>
-          </details>
-        </section>
-        <section className="storefront-design-control-group">
           <div className="storefront-design-section-heading"><h3>Homepage sections</h3><span>{sections.length + 5}</span></div>
           <p>Reorder, hide or edit any section. Select products, categories and brands manually; these choices are separate from product tags.</p>
+          <p>Each section contains its own links and buttons. Destinations can be enabled homepage sections, store pages or custom URLs.</p>
           <details className="storefront-design-section">
             <summary><strong>Header</strong><span>Fixed at top</span></summary>
             <div className="storefront-design-section-fields">
@@ -423,7 +398,11 @@ export function StorefrontDesignPage() {
               <button type="button" className="ops-link-btn" disabled={headerMenu.length >= MAX_STOREFRONT_MENU_ITEMS}
                 onClick={addHeaderMenuItem}>
                 <Plus size={15} aria-hidden="true" />Add menu item</button>
-              <p>Account, cart, staff sign-in and Marketplace utility links are in Links &amp; buttons → Header.</p>
+              <h4>Account, cart and header links</h4>
+              {linkDefinitions.filter(definition => definition.group === "Header").map(actionField)}
+              <label>My Account menu text<input maxLength={80} value={company.storefront_content.navigation.account_menu || "My Account"}
+                onChange={event => updateCompany({ storefront_content: { ...company.storefront_content,
+                  navigation: { ...company.storefront_content.navigation, account_menu: event.target.value } } })} /></label>
             </div>
           </details>
           {sections.map((section, index) => {
@@ -452,6 +431,24 @@ export function StorefrontDesignPage() {
                 </>}
                 {linkDefinitions.filter(definition => definition.group === "Individual sections" &&
                   definition.key.startsWith(`section.${section.section_key}.`)).map(actionField)}
+                {section.section_type === "categories" || section.section_type === "brands" ? <>
+                  <p>Card action settings are shared across {section.section_type} sections. The default destination opens the selected catalogue item.</p>
+                  {linkDefinitions.filter(definition => definition.key === (section.section_type === "categories" ? "category.card" : "brand.card") ||
+                    (section.section_type === "categories" && classicSlot && (company.storefront_template || "current") === "current" && definition.key === "categories.more")).map(actionField)}
+                </> : null}
+                {section.section_type === "products" ? <details className="storefront-design-section">
+                  <summary><strong>Product button labels</strong></summary>
+                  <div className="storefront-design-section-fields">
+                    <p>These labels are shared across product sections and product pages. Purchase controls retain their original shopping actions.</p>
+                    {[
+                      ["add_to_cart", "Add to Cart"], ["add_to_enquiry", "Add to enquiry"], ["choose_options", "Choose options"],
+                      ["view_cart", "View cart"], ["view_enquiry_list", "View list"], ["whatsapp_enquiry", "WhatsApp enquiry"],
+                    ].map(([key, fallback]) => <label key={key}>{fallback}<input maxLength={100}
+                      value={company.storefront_content.product?.[key] ?? fallback} onChange={event => updateCompany({
+                        storefront_content: { ...company.storefront_content, product: { ...company.storefront_content.product, [key]: event.target.value } },
+                      })} /></label>)}
+                  </div>
+                </details> : null}
                 <ImageField label="Section image" value={section.image_url} onChange={value => updateSection(section.section_key, { image_url: value })} onError={setError} />
                 <label>Image size<select value={String(section.configuration.image_ratio || "square")} onChange={event => updateSection(section.section_key, { configuration: { ...section.configuration, image_ratio: event.target.value } })}>
                   <option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option>
@@ -497,8 +494,20 @@ export function StorefrontDesignPage() {
             <button type="button" onClick={() => addSection("brands")}><Plus size={15} />Brands</button>
           </div>
           {(["why", "contact", "about"] as const).map(slot => <details className="storefront-design-section" key={slot}>
-            <summary><strong>{slot === "why" ? "Why" : slot === "contact" ? "Contact" : "About / collection story"}</strong><span>Classic content</span></summary>
-            <div className="storefront-design-section-fields">{copyFields(slot)}</div>
+            <summary><strong>{slot === "why" ? "Why" : slot === "contact" ? "Contact" : "About / collection story"}</strong><span>Shared content</span></summary>
+            <div className="storefront-design-section-fields">
+              {copyFields(slot)}
+              {slot === "why" && company.storefront_template === "boutique" ? <>
+                <p>Boutique journal photographs are decorative. Category, brand and product images still come from your selected catalogue entries.</p>
+                {(["why_left", "why_right"] as const).map((key, index) => <ImageField key={key}
+                  label={`Journal image ${index + 1}`} value={company.storefront_content.images?.[key] === undefined
+                    ? BOUTIQUE_IMAGES[key] : company.storefront_content.images[key]}
+                  onChange={value => updateCompany({ storefront_content: { ...company.storefront_content,
+                    images: { ...company.storefront_content.images, [key]: value } } })} onError={setError} />)}
+              </> : null}
+              {linkDefinitions.filter(definition => slot === "why" ? definition.key === "why.contact"
+                : slot === "contact" ? definition.key.startsWith("contact.") : false).map(actionField)}
+            </div>
           </details>)}
           <details className="storefront-design-section">
             <summary><strong>Footer</strong><span>Fixed at bottom</span></summary>
@@ -507,6 +516,9 @@ export function StorefrontDesignPage() {
               <label>Footer text<input maxLength={240} value={company.storefront_content.footer.contact_text ?? company.email ?? company.storefront_content.footer.catalogue_label ?? ""}
                 onChange={event => updateCompany({ storefront_content: { ...company.storefront_content,
                   footer: { ...company.storefront_content.footer, contact_text: event.target.value } } })} /></label>
+              {linkDefinitions.filter(definition => definition.group === "Footer").map(actionField)}
+              <p>The fallback catalogue link appears at the end of themed homepages when no product section is shown.</p>
+              {linkDefinitions.filter(definition => definition.key === "catalog.explore").map(actionField)}
             </div>
           </details>
         </section>

@@ -28,14 +28,13 @@ function CatalogThemeBanner({ template, eyebrow, heading, description, image, im
   note?: string;
   actions?: ReactNode;
 }) {
-  const media = image ? <img src={image} alt={imageAlt || ""} loading="lazy" /> : <Package size={32} aria-hidden="true" />;
   if (template === "boutique") {
-    return <section className="theme-catalog-banner theme-catalog-banner--boutique">
-      <div><p className="eyebrow">{eyebrow}</p><h1>{heading}</h1>{description ? <p className="lead">{description}</p> : null}
-        {note ? <p className="catalog-note">{note}</p> : null}{count ? <span className="catalog-count">{count}</span> : null}{actions}</div>
-      <figure>{media}<figcaption>{imageAlt || heading}</figcaption></figure>
-    </section>;
+    return <header className="theme-catalog-banner theme-catalog-banner--boutique">
+      <p className="eyebrow">{eyebrow}</p><h1>{heading}</h1>{description ? <p className="lead">{description}</p> : null}
+      {note ? <p className="catalog-note">{note}</p> : null}{count ? <span className="catalog-count">{count}</span> : null}{actions}
+    </header>;
   }
+  const media = image ? <img src={image} alt={imageAlt || ""} loading="lazy" /> : <Package size={32} aria-hidden="true" />;
   if (template === "heritage") {
     return <header className="theme-catalog-banner theme-catalog-banner--heritage">
       <span className="heritage-catalog-rule" aria-hidden="true" />

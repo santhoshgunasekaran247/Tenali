@@ -101,6 +101,9 @@ test("Classic defaults retain the exact visible catalog selection and native her
 
 test("the editor preserves Classic edits and selections while fitting desktop and mobile previews", async () => {
   const state = [], effects = [], calls = [], refs = [];
+  const savedCompany = { ...company, storefront_template: undefined, storefront_content: { ...company.storefront_content, links: {
+    "hero.primary": { label: "Existing hero action", href: "/#contact" },
+  } } };
   let slot = 0, refSlot = 0, firstRender = true, resize, observed, disconnected = false;
   const mocks = {
     "react/jsx-runtime": jsx,
@@ -116,7 +119,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
     "react-router-dom": { Link: "Link" },
     "lucide-react": Object.fromEntries(["ChevronDown", "ChevronUp", "Monitor", "Plus", "Save", "Smartphone", "Trash2", "Upload"].map(name => [name, name])),
     "../api": { api: {
-      company: async () => company, storefrontSections: async () => [], storefrontPreview: async () => data,
+      company: async () => savedCompany, storefrontSections: async () => [], storefrontPreview: async () => data,
       inventoryProducts: async () => ({ items: [] }), inventoryMasterEntries: async () => ({ items: [] }),
       updateCompany: async payload => { calls.push(payload); return { ...company, ...payload }; },
       saveStorefrontSections: async sections => { calls.push(sections); return { sections }; },
@@ -128,6 +131,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
     "../features/catalog/utils": { toAssetUrl: value => value },
     "../features/catalog/classicStorefront": { classicSections, CLASSIC_COPY_FIELDS },
     "../features/catalog/storefrontPreview": previewHelpers,
+    "../features/catalog/boutiqueImages": load("features/catalog/boutiqueImages.ts"),
     "../features/catalog/storefrontLinks": linkHelpers,
   };
   const { StorefrontDesignPage } = load("pages/StorefrontDesignPage.tsx", mocks, {
@@ -147,6 +151,36 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   for (const name of ["Header", "Hero", "Categories", "Best sellers", "Specials", "Brands", "Why", "Contact", "About / collection story", "Footer"]) {
     assert.ok(summaries.some(summary => summary.includes(name)), `Missing ${name}`);
   }
+  assert.equal(all(tree, node => node.type === "h3" && text(node) === "Links & buttons").length, 0);
+  const panel = name => all(tree, node => node.type === "details" &&
+    all(node.props.children?.[0], child => child.type === "strong" && text(child) === name).length)[0];
+  for (const [name, keys] of [
+    ["Header", ["nav.cart", "nav.shopper_account", "nav.sign_in"]],
+    ["Hero", ["section.classic-hero.hero.primary", "section.classic-hero.hero.secondary"]],
+    ["Categories", ["category.card", "categories.more"]],
+    ["Brands", ["brand.card"]],
+    ["Why", ["why.contact"]],
+    ["Contact", ["contact.whatsapp", "contact.email", "contact.phone"]],
+    ["Footer", ["footer.categories", "footer.account", "footer.about", "catalog.explore"]],
+  ]) {
+    for (const key of keys) {
+      assert.equal(all(panel(name), node => node.props.definition?.key === key).length, 1, `${key} belongs in ${name}`);
+    }
+  }
+  for (const name of ["Best sellers", "Specials"]) {
+    assert.ok(all(panel(name), node => node.type === "input" && node.props.value === "Add to Cart").length);
+  }
+  assert.equal(all(panel("Header"), node => node.type === "input" && node.props.value === "My Account").length, 1);
+  assert.equal(all(tree, node => node.props.definition?.key === "why.contact").length, 1);
+  assert.equal(all(tree, node => node.props.definition?.key === "hero.primary").length, 0);
+  assert.equal(all(panel("Hero"), node => node.props.definition?.key === "section.classic-hero.hero.primary")[0]
+    .props.definition.label, "Existing hero action");
+  all(panel("Specials"), node => node.type === "input" && node.props.value === "Add to Cart")[0]
+    .props.onChange({ target: { value: "Add to bag" } });
+  tree = render();
+  for (const name of ["Best sellers", "Specials"]) {
+    assert.equal(all(panel(name), node => node.type === "input" && node.props.value === "Add to bag").length, 1);
+  }
   const field = (tree, value) => all(tree, node => ["input", "textarea"].includes(node.type) && node.props.value === value)[0];
   for (const key of ["hero_heading_first", "why_heading_first", "contact_heading_first", "collection_heading_first"]) {
     assert.ok(field(tree, home[key]), `Default copy not loaded: ${key}`);
@@ -161,6 +195,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls[0].storefront_content.home.hero_heading_first, "Edited Classic hero");
   assert.equal(calls[0].storefront_content.footer.contact_text, "Edited footer");
+  assert.equal(calls[0].storefront_content.product.add_to_cart, "Add to bag");
   assert.equal(calls[1].length, 5);
   assert.deepEqual(Array.from(calls[1][2].product_ids), ["p1"]);
   assert.equal(calls[1][0].configuration.classic_slot, "hero");
@@ -173,6 +208,10 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   all(render(), node => node.type === "select" && node.props.value === "current")[0].props.onChange({ target: { value: "marketplace" } });
   assert.equal(all(render(), node => node.props["aria-label"] === "Accent colour")[0].props.value, "#ffd15a");
   assert.ok(all(render(), node => node.type === "input" && node.props.value === "Edited Classic hero").length);
+  tree = render();
+  for (const key of ["hero.primary", "hero.secondary", "quick.categories", "quick.about"]) {
+    assert.equal(all(panel("Hero"), node => node.props.definition?.key === `section.classic-hero.${key}`).length, 1);
+  }
 
   const canvas = all(render(), node => node.props.className === "storefront-preview-canvas")[0];
   const canvasElement = {};
@@ -236,12 +275,13 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   assert.equal(all(notice(), node => node.type === "input")[0].props.checked, false);
   all(render(), node => node.type === "iframe")[0].props.onLoad();
   assert.equal(messages.at(-1).sections[2].products[0], data.catalog_products[1]);
-  const actionField = all(render(), node => node.props.definition?.key === "hero.primary")[0];
+  const actionField = all(render(), node => node.props.definition?.key === "section.classic-hero.hero.primary")[0];
   actionField.props.onChange({ label: "Shop new arrivals", href: "/#section-classic-specials" });
   await all(render(), node => node.type === "button" && text(node).includes("Save design"))[0].props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls.at(-2).storefront_content.links["hero.primary"].href, "/#section-classic-specials");
-  assert.equal(calls.at(-2).storefront_content.links["hero.primary"].label, "Shop new arrivals");
+  assert.equal(calls.at(-2).storefront_content.links["section.classic-hero.hero.primary"].href, "/#section-classic-specials");
+  assert.equal(calls.at(-2).storefront_content.links["section.classic-hero.hero.primary"].label, "Shop new arrivals");
+  assert.equal(calls.at(-2).storefront_content.links["hero.primary"].label, "Existing hero action");
   assert.equal(all(render(), node => node.type === "PortalHomeLink").length, 0);
   const addMenu = () => all(render(), node => node.type === "button" && text(node) === "Add menu item")[0];
   addMenu().props.onClick();
@@ -260,10 +300,24 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   all(render(), node => node.type === "button" && text(node) === "Remove menu 9")[0].props.onClick();
   assert.equal(addMenu().props.disabled, false);
   const callsBefore = calls.length;
-  all(render(), node => node.props.definition?.key === "hero.primary")[0].props.onChange({ href: "javascript:alert(1)" });
+  all(render(), node => node.type === "select" && node.props.value === "marketplace")[0].props.onChange({ target: { value: "boutique" } });
+  const journal = all(render(), node => node.props.label === "Journal image 1")[0];
+  assert.ok(journal.props.value.includes("photo-1600166898405"));
+  journal.props.onChange("https://example.com/my-journal.jpg");
+  all(render(), node => node.props.label === "Journal image 2")[0].props.onChange(null);
+  all(render(), node => node.type === "iframe")[0].props.onLoad();
+  assert.equal(messages.at(-1).company.storefront_content.images.why_left, "https://example.com/my-journal.jpg");
+  assert.equal(messages.at(-1).company.storefront_content.images.why_right, null);
   await all(render(), node => node.type === "button" && text(node).includes("Save design"))[0].props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls.length, callsBefore);
+  assert.equal(calls.at(-2).storefront_content.images.why_left, "https://example.com/my-journal.jpg");
+  assert.equal(calls.at(-2).storefront_content.images.why_right, null);
+  const callsAfterImages = calls.length;
+  all(render(), node => node.props.definition?.key === "section.classic-hero.hero.primary")[0].props.onChange({ href: "javascript:alert(1)" });
+  await all(render(), node => node.type === "button" && text(node).includes("Save design"))[0].props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(callsAfterImages, callsBefore + 2);
+  assert.equal(calls.length, callsAfterImages);
   assert.match(text(render()), /Fix the invalid destination/);
 });
 
@@ -359,6 +413,11 @@ test("footer preview uses the draft text while untouched footers keep the contac
   assert.equal(marketplaceFooter.props.className, "marketplace-footer");
   assert.match(text(marketplaceFooter), /hello@example\.test/);
   assert.ok(all(marketplaceFooter, node => node.type === "Link" && node.props.to === "/account").length);
+  const boutiqueFooter = SiteFooter({ company: { ...company, storefront_template: "boutique",
+    storefront_content: { ...company.storefront_content, links: { "footer.about": { label: "Our atelier", href: "/#why" } } } } });
+  assert.ok(boutiqueFooter.props.className.includes("boutique-footer"));
+  assert.ok(all(boutiqueFooter, node => node.type === "Link" && node.props.to === "/brand?view=brands").length);
+  assert.ok(all(boutiqueFooter, node => node.type === "Link" && node.props.to === "/#why" && text(node) === "Our atelier").length);
 });
 
 function renderMarketplace(overrides = {}, template = "marketplace") {
@@ -371,11 +430,12 @@ function renderMarketplace(overrides = {}, template = "marketplace") {
     "./components/BrandCard": { BrandCard: "BrandCard" },
     "./utils": { toAssetUrl: value => value }, "./classicStorefront": { classicSections },
     "./marketplaceImages": load("features/catalog/marketplaceImages.ts"),
+    "./boutiqueImages": load("features/catalog/boutiqueImages.ts"),
     "./storefrontLinks": linkHelpers,
   });
   return StorefrontThemeHome({
     template, data: { ...data, ...overrides }, phone: "919876543210", email: company.email,
-    checkoutEnabled: true, text: key => home[key] || key, bulkNote: "Bulk pricing",
+    checkoutEnabled: true, text: key => (overrides.company || company).storefront_content.home[key] || key, bulkNote: "Bulk pricing",
   });
 }
 
@@ -482,6 +542,71 @@ test("Marketplace preserves curated order, uploaded hero image, styles and disab
   assert.equal(all(noHero, node => node.type === "h1").length, 0);
 });
 
+test("Boutique uses the editorial reference with editable Classic content and catalogue actions", () => {
+  const sections = classicSections(data);
+  const store = { ...company, storefront_template: "boutique", storefront_content: {
+    ...company.storefront_content,
+    images: { why_left: "uploads/makers.jpg", why_right: "uploads/occasion.jpg" },
+    links: {
+      "category.card": { label: "Discover this collection" },
+      "brand.card": { label: "Meet this brand" },
+      "why.contact": { label: "Talk to our stylist", href: "/#contact" },
+      "contact.phone": { label: "Call our studio", href: "tel:+919999999999" },
+      "section.classic-brands.section.view_all": { label: "All our designers", href: "/brand?view=brands" },
+    },
+  } };
+  const tree = renderMarketplace({ company: store, sections }, "boutique");
+  assert.deepEqual(all(tree, node => node.type === "ProductCard").map(node => node.props.product.id), ["p1", "p2"]);
+  const categories = all(tree, node => node.props.className === "boutique-category-card");
+  assert.equal(categories.length, 4);
+  assert.equal(categories[0].props.to, "/brand?category=cat-0");
+  assert.ok(text(categories[0]).includes("Discover this collection"));
+  const brand = all(tree, node => node.type === "BrandCard")[0];
+  assert.equal(brand.props.template, "boutique");
+  assert.equal(brand.props.href, "/brand?brand=brand");
+  assert.equal(brand.props.action, "Meet this brand");
+  for (const id of ["why", "contact", "collection-special"]) {
+    assert.equal(all(tree, node => node.props.id === id).length, 1);
+  }
+  for (const key of ["hero_primary_action", "hero_secondary_action", "hero_service_three",
+    "why_heading_first", "why_description", "collection_heading_first", "collection_point_three_body", "contact_description"]) {
+    assert.ok(text(tree).includes(home[key]), `Missing editable Boutique content: ${key}`);
+  }
+  for (const src of ["uploads/makers.jpg", "uploads/occasion.jpg"]) {
+    assert.ok(all(tree, node => node.type === "img" && node.props.src === src).length);
+  }
+  for (const [label, href] of [["All our designers", "/brand?view=brands"], ["Call our studio", "tel:+919999999999"],
+    ["Talk to our stylist", "/#contact"]]) {
+    assert.ok(all(tree, node => node.type === "Link" && node.props.to === href && text(node) === label).length, label);
+  }
+  assert.ok(linkHelpers.storefrontSectionTargets(sections, "boutique").some(target => target.href === "/#why"));
+});
+
+test("Boutique defaults, removed sections, uploaded images and mapping order match the designer", () => {
+  const { BOUTIQUE_IMAGES } = load("features/catalog/boutiqueImages.ts");
+  const defaults = renderMarketplace({}, "boutique");
+  assert.ok(all(defaults, node => node.type === "img" && node.props.src === BOUTIQUE_IMAGES.hero).length);
+  assert.equal(all(defaults, node => node.props.className === "boutique-category-card").length, 4);
+  const sections = classicSections(data);
+  sections[0].image_url = "uploads/boutique-cover.jpg";
+  sections[0].configuration = { ...sections[0].configuration, image_ratio: "portrait", image_fit: "contain" };
+  const tree = renderMarketplace({ sections: [sections[0], sections[4], sections[2]], classic_sections_configured: true }, "boutique");
+  const hero = all(tree, node => node.props.id === "section-classic-hero")[0];
+  assert.equal(hero.props["data-image-ratio"], "portrait");
+  assert.equal(hero.props["data-image-fit"], "contain");
+  assert.ok(all(hero, node => node.type === "img" && node.props.src === "uploads/boutique-cover.jpg").length);
+  assert.deepEqual(all(tree, node => node.type === "section").slice(0, 3).map(node => node.props.id),
+    ["section-classic-hero", "brands", "best-sellers"]);
+  for (const overrides of [
+    { sections: [], classic_sections_configured: true },
+    { sections: sections.map(section => ({ ...section, is_enabled: false })) },
+    { sections: sections.slice(1), classic_sections_configured: true },
+    { sections: [{ ...sections[2], configuration: {}, section_key: "custom-edit" }] },
+  ]) {
+    assert.equal(all(renderMarketplace(overrides, "boutique"), node => node.type === "h1").length, 0);
+  }
+});
+
 test("Marketplace header retains search routing, cart quantities and enquiry mode", () => {
   const state = [], navigations = [];
   let slot = 0, mode = "buy";
@@ -530,6 +655,18 @@ test("Marketplace header retains search routing, cart quantities and enquiry mod
   const preview = render({ storefront_template: "marketplace", storefront_content: { ...company.storefront_content,
     header_menu: [{ key: "preview", label: "Preview menu", href: "/#contact", is_enabled: true }] } });
   assert.ok(all(preview, node => node.type === "Link" && text(node) === "Preview menu" && node.props.to === "/#contact").length);
+  store.storefront_template = "boutique";
+  store.storefront_content = { ...company.storefront_content };
+  const boutique = render();
+  assert.ok(boutique.props.className.includes("header-boutique"));
+  assert.equal(all(boutique, node => node.props.className === "storefront-primary-menu").length, 0);
+  assert.equal(all(boutique, node => node.props.className === "boutique-navigation").length, 1);
+  assert.ok(text(all(boutique, node => node.props.to === "/cart")[0]).includes("(3)"));
+  all(boutique, node => node.type === "input")[0].props.onChange({ target: { value: " linen kurta " } });
+  all(render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(navigations.at(-1), "/brand?q=linen%20kurta");
+  store.storefront_content = { ...company.storefront_content, header_menu: [] };
+  assert.equal(all(render(), node => node.props.className === "boutique-navigation").length, 0);
 });
 
 test("sample palettes follow the chosen design while custom colours survive theme changes", () => {
@@ -569,6 +706,9 @@ test("brand cards have distinct themes and a failed logo falls back without losi
   assert.equal(marketplace.props["data-brand-theme"], "marketplace");
   assert.equal(all(marketplace, node => node.props.className === "logo-box").length, 0);
   assert.ok(text(marketplace).includes("Our collection"));
+  const boutique = BrandCard({ ...props, template: "boutique", action: "View this studio →" });
+  assert.equal(text(all(boutique, node => node.type === "em")[0]), "View this studio →");
+  assert.equal(boutique.props.to, classic.props.to);
 });
 
 test("brand view-all actions use the brand directory and preserve explicit overrides", () => {
@@ -583,26 +723,54 @@ test("brand view-all actions use the brand directory and preserve explicit overr
   assert.equal(all(overridden, node => node.type === "Link" && text(node) === "View all")[0].props.to, "/brand?brand=featured");
 });
 
+function renderCatalogPage(catalogData, query) {
+  let state = 0;
+  const { BrandPage } = load("pages/BrandPage.tsx", {
+    "react/jsx-runtime": jsx, react: { useEffect() {}, useState: () => [state++ === 0 ? catalogData : undefined, () => {}] },
+    "react-router-dom": { Link: "Link", useSearchParams: () => [new URLSearchParams(query)] },
+    "../components/BulkPricingNote": {}, "../components/SiteFooter": { SiteFooter: "SiteFooter" },
+    "../api": {}, "../features/catalog/constants": { FALLBACK_EMAIL: "", FALLBACK_PHONE: "" },
+    "../features/catalog/components/ProductCard": { ProductCard: "ProductCard" }, "../features/catalog/components/BrandCard": { BrandCard: "BrandCard" },
+    "../features/catalog/storefrontDisplay": { storefrontDisplay: () => ({ whatsapp_enquiry_enabled: false }) },
+    "../features/catalog/productGroups": load("features/catalog/productGroups.ts"),
+    "../features/catalog/utils": { toAssetUrl: value => value }, "../features/tenantTransport": { tenantBase: () => "/c/classic-store" },
+    "../features/catalog/storefrontText": textHelpers, "../features/auth": { useAuth: () => ({ storefront: catalogData.company }) },
+    "lucide-react": { MessageCircle: "MessageCircle", Package: "Package" },
+    "../features/useCheckoutAvailability": { useCheckoutAvailability: () => ({}) },
+  }, { URLSearchParams });
+  return BrandPage();
+}
+
 test("all-brands directory renders brands rather than category cards and handles an empty catalogue", () => {
-  const render = brands => {
-    let state = 0;
-    const { BrandPage } = load("pages/BrandPage.tsx", {
-      "react/jsx-runtime": jsx, react: { useEffect() {}, useState: () => [state++ === 0 ? { ...data, brands, products: [] } : undefined, () => {}] },
-      "react-router-dom": { Link: "Link", useSearchParams: () => [new URLSearchParams("view=brands")] },
-      "../components/BulkPricingNote": {}, "../components/SiteFooter": { SiteFooter: "SiteFooter" },
-      "../api": {}, "../features/catalog/constants": { FALLBACK_EMAIL: "", FALLBACK_PHONE: "" },
-      "../features/catalog/components/ProductCard": {}, "../features/catalog/components/BrandCard": { BrandCard: "BrandCard" },
-      "../features/catalog/storefrontDisplay": { storefrontDisplay: () => ({ whatsapp_enquiry_enabled: false }) },
-      "../features/catalog/productGroups": {}, "../features/catalog/utils": {}, "../features/tenantTransport": {},
-      "../features/catalog/storefrontText": textHelpers, "../features/auth": { useAuth: () => ({ storefront: company }) },
-      "lucide-react": { MessageCircle: "MessageCircle", Package: "Package" },
-      "../features/useCheckoutAvailability": { useCheckoutAvailability: () => ({}) },
-    }, { URLSearchParams });
-    return BrandPage();
-  };
+  const render = brands => renderCatalogPage({ ...data, brands, products: [] }, "view=brands");
   const tree = render(data.brands);
   assert.equal(all(tree, node => node.type === "BrandCard")[0].props.brand.id, "b1");
   assert.equal(all(tree, node => node.props.heading === "All brands").length, 1);
   assert.equal(all(tree, node => node.props.className === "category-card").length, 0);
   assert.match(text(render([])), /No brands available yet/);
+});
+
+test("Boutique listing headers are text-only while catalogue card images and actions remain available", () => {
+  const category = { ...data.categories[0], image_url: "https://example.test/category.jpg" };
+  const product = { ...data.catalog_products[0], image_url: "https://example.test/product.jpg" };
+  const store = { ...company, storefront_template: "boutique", storefront_content: { ...company.storefront_content,
+    catalog: { all_categories_heading_first: "Shop by", all_categories_heading_second: "category", back_home: "Back to home",
+      product_count: "{count} products" },
+  } };
+  for (const query of ["category=all", `category=${category.category_slug}`, "view=brands", "q=gift"]) {
+    const tree = renderCatalogPage({ ...data, company: store, selected_category: category, categories: [category], products: [product] }, query);
+    const banner = all(tree, node => typeof node.type === "function" && node.type.name === "CatalogThemeBanner")[0];
+    const header = banner.type(banner.props);
+    assert.equal(all(header, node => ["img", "figure", "Package"].includes(node.type)).length, 0, query);
+    assert.equal(text(all(header, node => node.type === "h1")[0]), banner.props.heading);
+    assert.ok(text(header).includes(banner.props.count));
+    if (query === "category=all") {
+      assert.equal(all(header, node => node.type === "a" && text(node) === "Back to home")[0].props.href, "/c/classic-store/#categories");
+      assert.equal(all(tree, node => node.type === "img")[0].props.src, category.image_url);
+    } else if (query !== "view=brands") {
+      assert.equal(all(tree, node => node.type === "ProductCard")[0].props.product.image_url, product.image_url);
+    }
+    const marketplace = banner.type({ ...banner.props, template: "marketplace", image: category.image_url });
+    assert.equal(all(marketplace, node => node.type === "img")[0].props.src, category.image_url);
+  }
 });

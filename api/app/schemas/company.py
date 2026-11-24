@@ -279,12 +279,18 @@ class StorefrontContent(BaseModel):
 
     display: StorefrontDisplay = Field(default_factory=StorefrontDisplay)
     links: dict[str, StorefrontLink] = Field(default_factory=dict)
+    images: dict[str, str | None] = Field(default_factory=dict, max_length=20)
     header_menu: list[StorefrontMenuItem] | None = Field(default=None, max_length=9)
     navigation: StorefrontNavigation = Field(default_factory=StorefrontNavigation)
     home: StorefrontHomeCopy = Field(default_factory=StorefrontHomeCopy)
     catalog: StorefrontCatalogCopy = Field(default_factory=StorefrontCatalogCopy)
     product: StorefrontProductCopy = Field(default_factory=StorefrontProductCopy)
     footer: StorefrontFooterCopy = Field(default_factory=StorefrontFooterCopy)
+
+    @field_validator("images")
+    @classmethod
+    def valid_images(cls, value: dict[str, str | None]) -> dict[str, str | None]:
+        return {key: validate_image_source(source) for key, source in value.items()}
 
     @field_validator("header_menu")
     @classmethod

@@ -73,7 +73,7 @@ export function storefrontSectionTargets(sections: StorefrontSection[], template
   const targets = sections.filter(section => section.is_enabled).map(section => ({
     href: `/#section-${section.section_key}`, label: section.title || section.section_type,
   }));
-  if (template === "current" || template === "marketplace") targets.push({ href: "/#why", label: "Why choose us" });
+  if (template === "current" || template === "marketplace" || template === "boutique") targets.push({ href: "/#why", label: "Why choose us" });
   targets.push({ href: "/#contact", label: "Contact" });
   if (template !== "supermarket") targets.push({ href: "/#collection-special", label: "About / collection story" });
   return targets;
@@ -83,7 +83,7 @@ export function storefrontLinkDefinitions(company: Company, sections: Storefront
   const home = company.storefront_content?.home || {};
   const nav = company.storefront_content?.navigation || {};
   const classic = !company.storefront_template || company.storefront_template === "current";
-  const nativeCopy = classic || company.storefront_template === "marketplace";
+  const nativeCopy = classic || company.storefront_template === "marketplace" || company.storefront_template === "boutique";
   const firstProduct = sections.find(section => section.is_enabled && section.section_type === "products");
   const heroTarget = classic ? "/#collection-special" : firstProduct ? `/#section-${firstProduct.section_key}` : "/brand?category=all";
   const definitions: StorefrontLinkDefinition[] = [];
