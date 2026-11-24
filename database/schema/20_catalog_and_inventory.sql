@@ -77,6 +77,29 @@ create table if not exists products (
     unique(company_id, portal_product_id)
 );
 
+create unique index if not exists uq_products_company_id on products(company_id, id);
+create unique index if not exists uq_product_categories_company_id on product_categories(company_id, id);
+create unique index if not exists uq_brands_company_id on brands(company_id, id);
+
+create table if not exists product_tags (
+    id uuid primary key default gen_random_uuid(),
+    company_id uuid not null references companies(id) on delete cascade,
+    code text not null,
+    name text not null,
+    created_at timestamptz not null default now(),
+    unique(company_id, code),
+    unique(company_id, id)
+);
+
+create table if not exists product_tag_products (
+    company_id uuid not null,
+    tag_id uuid not null,
+    product_id uuid not null,
+    primary key(company_id, tag_id, product_id),
+    foreign key(company_id, tag_id) references product_tags(company_id, id) on delete cascade,
+    foreign key(company_id, product_id) references products(company_id, id) on delete cascade
+);
+
 create table if not exists product_variants (
     id uuid primary key default gen_random_uuid(),
     product_id uuid not null references products(id) on delete cascade,

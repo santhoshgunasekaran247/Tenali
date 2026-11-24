@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ImageOff, MessageCircle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import type { CatalogProduct } from "../../../types";
+import type { CatalogProduct, StorefrontTemplate } from "../../../types";
 import { moneyLabel, toAssetUrl, whatsappLink } from "../utils";
 import { useAuth } from "../../auth";
 import { storefrontText } from "../storefrontText";
@@ -14,9 +14,11 @@ type ProductCardProps = {
   product: CatalogProduct;
   phone: string;
   checkoutEnabled: boolean;
+  template?: StorefrontTemplate;
+  productCopy?: Record<string, string>;
 };
 
-export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProps) {
+export function ProductCard({ product, phone, checkoutEnabled, template, productCopy }: ProductCardProps) {
   const navigate = useNavigate();
   const cart = useCart();
   const [busy, setBusy] = useState(false);
@@ -24,7 +26,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
   const [error, setError] = useState("");
   const {storefront,user}=useAuth();
   const company=storefront||{company_name:user?.company_name||"Tenali",nickname:undefined};
-  const copy=storefront?.storefront_content?.product||{};
+  const copy=productCopy||storefront?.storefront_content?.product||{};
   const text=(key:string,fallback:string,variables:Record<string,string|number>={})=>storefrontText(copy[key]||fallback,company,variables);
   const gallery = (product.image_urls || "")
     .split("|")
@@ -69,6 +71,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
   return (
     <article
       className="product-card dynamic-card"
+      data-product-theme={template || storefront?.storefront_template || "current"}
       role="link"
       tabIndex={0}
       onClick={() => navigate(`/products/${product.id}`)}
@@ -82,6 +85,7 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
         <div className="product-tags">
           {product.best_seller && <span className="badge-best">{text("best_seller_badge","Best Seller")}</span>}
           {product.sru_special && <span className="badge-special">{text("special_badge","Special")}</span>}
+          {product.tags?.slice(0, 3).map((tag) => <span className="badge-tag" key={tag}>{tag}</span>)}
         </div>
         {gallery.length > 1 && <span className="photo-count">{text("photos_count","{count} photos",{count:gallery.length})}</span>}
       </div>
@@ -103,8 +107,8 @@ export function ProductCard({ product, phone, checkoutEnabled }: ProductCardProp
           : <QuantityStepper label={`Quantity for ${product.name}`} value={quantity} min={minimum} max={maximum} disabled={busy}
               onChange={value => { setQuantity(value); setMessage(""); setError(""); }} /> : null}
         <div className="product-card-buttons">
-          {listEnabled ? hasVariants ? <button className="btn" type="button" onClick={() => navigate(`/products/${product.id}`)}>Choose options</button>
-            : inCart ? <Link className="btn light" to="/cart">{mode === "enquiry" ? "View list" : "View cart"}</Link>
+          {listEnabled ? hasVariants ? <button className="btn" type="button" onClick={() => navigate(`/products/${product.id}`)}>{text("choose_options", "Choose options")}</button>
+            : inCart ? <Link className="btn light" to="/cart">{mode === "enquiry" ? text("view_enquiry_list", "View list") : text("view_cart", "View cart")}</Link>
             : <button className={mode === "enquiry" ? "btn enquiry-add" : "btn"} type="button" disabled={busy} onClick={() => void addToCart()}>{busy ? "Adding..." : mode === "enquiry" ? text("add_to_enquiry", words.add) : text("add_to_cart", words.add)}</button> : null}
           {phone?<a
             className={mode === "enquiry" ? "btn whatsapp-btn whatsapp-icon-only" : "btn whatsapp-btn"}

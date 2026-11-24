@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from collections import defaultdict
@@ -175,7 +176,11 @@ class InventoryService:
                 raise HTTPException(422, "Map an active vendor offer to this product/variant before selecting it as preferred")
 
     def _data(self, product_ids: list[str] | None = None) -> tuple:
-        products = [dict(row) for row in self.db.execute(text("""select p.*, b.name as brand_name, c.name as category_name
+        products = [dict(row) for row in self.db.execute(text("""select p.*, b.name as brand_name, c.name as category_name,
+            coalesce((select array_agg(tag.name order by tag.name)
+                from product_tag_products assignment join product_tags tag
+                  on tag.company_id=assignment.company_id and tag.id=assignment.tag_id
+                where assignment.company_id=p.company_id and assignment.product_id=p.id), ARRAY[]::text[]) as tags
             from products p left join brands b on b.id=p.brand_id left join product_categories c on c.id=p.category_id
             where p.company_id=:company and (cast(:ids as uuid[]) is null or p.id=any(cast(:ids as uuid[])))
             order by p.home_order,p.name,p.id"""), {"company": self.company_id, "ids": product_ids}).mappings()]
@@ -308,6 +313,7 @@ class InventoryService:
         if current and current.get("is_draft") and payload.catalog_visible:
             raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
+        tag_names = values.pop("tags", None)
         self._validate_item(values, product_id)
         files = FileStore(self.db)
         images, originals = {}, {}
@@ -324,10 +330,35 @@ class InventoryService:
         if not product_id:
             values.update(company_id=self.company_id, portal_product_id=f"PRD-{uuid4().hex[:12].upper()}")
         product_id = self._write("products", values, product_id)
+        if tag_names is not None:
+            self._save_product_tags(product_id, tag_names)
         self._check_price(product_id)
         if commit:
             self.db.commit()
         return self.detail(product_id)
+
+    def _save_product_tags(self, product_id: str, tag_names: list[str]) -> None:
+        names = list(dict.fromkeys(name.strip() for name in tag_names if name.strip()))
+        self.db.execute(text("delete from product_tag_products where company_id=:company and product_id=:product"),
+                        {"company": self.company_id, "product": product_id})
+        for name in names:
+            normalized = name.casefold()
+            slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")[:60].strip("-")
+            code = f"{slug or 'tag'}-{hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:12]}"
+            tag_id = self.db.execute(text("""
+                insert into product_tags(company_id, code, name) values (:company, :code, :name)
+                on conflict(company_id, code) do update set name=product_tags.name
+                returning id
+            """), {"company": self.company_id, "code": code, "name": name}).scalar_one()
+            self.db.execute(text("""
+                insert into product_tag_products(company_id, tag_id, product_id)
+                values (:company, :tag, :product) on conflict do nothing
+            """), {"company": self.company_id, "tag": tag_id, "product": product_id})
+        self.db.execute(text("""
+            delete from product_tags tag where tag.company_id=:company and not exists (
+                select 1 from product_tag_products assignment where assignment.company_id=tag.company_id and assignment.tag_id=tag.id
+            )
+        """), {"company": self.company_id})
 
     def enhance_product_image(self, product_id: str, image_url: str) -> dict:
         """Re-render one published product image with the product-photo pipeline (AI background removal and

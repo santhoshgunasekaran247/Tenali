@@ -92,6 +92,57 @@ create table if not exists theme_settings (
     unique(company_id, theme_key)
 );
 
+create table if not exists storefront_sections (
+    id uuid primary key default gen_random_uuid(),
+    company_id uuid not null references companies(id) on delete cascade,
+    section_key text not null,
+    section_type text not null check (section_type in ('hero', 'products', 'categories', 'brands')),
+    title text not null,
+    eyebrow text not null default '',
+    description text not null default '',
+    image_url text,
+    sort_order integer not null default 0,
+    is_enabled boolean not null default true,
+    configuration jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique(company_id, section_key),
+    unique(company_id, id)
+);
+
+create table if not exists storefront_section_products (
+    company_id uuid not null,
+    section_id uuid not null,
+    product_id uuid not null,
+    sort_order integer not null default 0,
+    primary key(section_id, product_id),
+    foreign key(company_id, section_id) references storefront_sections(company_id, id) on delete cascade,
+    foreign key(company_id, product_id) references products(company_id, id) on delete cascade
+);
+
+create table if not exists storefront_section_categories (
+    company_id uuid not null,
+    section_id uuid not null,
+    category_id uuid not null,
+    sort_order integer not null default 0,
+    primary key(section_id, category_id),
+    foreign key(company_id, section_id) references storefront_sections(company_id, id) on delete cascade,
+    foreign key(company_id, category_id) references product_categories(company_id, id) on delete cascade
+);
+
+create table if not exists storefront_section_brands (
+    company_id uuid not null,
+    section_id uuid not null,
+    brand_id uuid not null,
+    sort_order integer not null default 0,
+    primary key(section_id, brand_id),
+    foreign key(company_id, section_id) references storefront_sections(company_id, id) on delete cascade,
+    foreign key(company_id, brand_id) references brands(company_id, id) on delete cascade
+);
+
+create index if not exists idx_storefront_sections_order
+    on storefront_sections(company_id, is_enabled, sort_order);
+
 create table if not exists audit_events (
     id uuid primary key default gen_random_uuid(),
     company_id uuid references companies(id),

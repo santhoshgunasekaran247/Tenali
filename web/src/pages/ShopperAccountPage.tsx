@@ -8,6 +8,7 @@ import { accountRequest, canVerifyPayment, orderStatus, paymentLabel, payOrder, 
 import { useCart } from "../features/cart";
 import { clearSocialLogin } from "../features/shopperFederation";
 import { OrderItems } from "../components/OrderItems";
+import { SiteFooter } from "../components/SiteFooter";
 
 export function ShopperAccountPage({ register = false }: { register?: boolean }) {
   const { storefront, loading } = useAuth();
@@ -84,12 +85,15 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
   if (loading || checking) return <main className="loading">Loading shopper account...</main>;
   if (!storefront) return <main className="access-page"><section className="access-panel"><h1>Shopper Account</h1><p>Open the store&apos;s workspace address or verified domain to sign in. Shopper accounts are separate for every store.</p><Link to="/login">Workspace staff sign in</Link></section></main>;
   const initials = (shopper?.display_name || shopper?.email || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("");
-  return <main className={`shop-account-page${shopper ? " shopping-page shopper-account" : ""}`}>
+  return <><main className={`shop-account-page storefront-commerce-page${shopper ? " shopping-page shopper-account" : ""}`}>
     <header className="shop-account-heading"><Link to="/">{shopper ? "← Back to storefront" : "Back to Storefront"}</Link><h1>{shopper ? "My Account" : register ? "Create Shopper Account" : "Shopper Sign In"}</h1><p>{shopper ? `Signed in to ${storefront.company_name}` : `${storefront.company_name} · Separate from staff and other stores.`}</p></header>
     <div className="shop-account-content">
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {message ? <FloatingAlert tone="success">{message}</FloatingAlert> : null}
-      {!shopper ? <><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link to="/login">Workspace staff sign in</Link></> : <div className="shopper-account-layout">
+      {!shopper ? <div className="storefront-account-access">
+        <section className="storefront-account-welcome"><p className="eyebrow">{storefront.company_name}</p><h2>Your store.<br />Your account.</h2><p>Sign in to see your orders, manage contact details and pick up where you left off.</p><Link to="/brand?category=all">Explore the collection →</Link></section>
+        <div><FederatedShopperLogin key={storefront.id} onSignedIn={signedIn} /><Link className="storefront-staff-signin" to="/login">Workspace staff sign in</Link></div>
+      </div> : <div className="shopper-account-layout">
         <section className="ops-card shopper-profile" aria-labelledby="shopper-profile-name">
           <div className="shopper-profile-head"><span className="shopper-avatar" aria-hidden="true">{initials}</span><div><h2 id="shopper-profile-name">{shopper.display_name}</h2><p>Shopper account</p></div></div>
           <dl className="shopper-profile-facts"><div><dt>Email</dt><dd>{shopper.email}</dd></div><div><dt>Phone</dt><dd>{shopper.phone || "Not recorded"}</dd></div></dl>
@@ -133,5 +137,5 @@ export function ShopperAccountPage({ register = false }: { register?: boolean })
         </section>
       </div>}
     </div>
-  </main>;
+  </main><SiteFooter /></>;
 }

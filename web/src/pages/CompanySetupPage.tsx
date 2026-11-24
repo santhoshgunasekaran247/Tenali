@@ -2,14 +2,14 @@ import { FloatingAlert } from "../components/Notifications";
 import { useDraftState } from "../features/drafts";
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, RotateCcw, Save, Trash2, Upload } from "lucide-react";
+import { Download, Save, Trash2, Upload } from "lucide-react";
 import { PortalHomeLink } from "../components/PortalHomeLink";
 import { TransactionDeletionPanel } from "../components/TransactionDeletionPanel";
 import { TenantAISettings } from "../components/TenantAISettings";
 import { api } from "../api";
 import { toAssetUrl } from "../features/catalog/utils";
 import { DEFAULT_INVOICE_SETTINGS } from "../features/invoiceSettings";
-import { DEFAULT_SITE_THEME, SITE_THEME_FIELDS, endSiteThemePreview, normalizeSiteTheme, previewSiteTheme, setSavedSiteTheme } from "../features/siteTheme";
+import { normalizeSiteTheme, setSavedSiteTheme } from "../features/siteTheme";
 import { STOREFRONT_COPY_FIELDS, STOREFRONT_COPY_GROUP_LABELS, type StorefrontCopyGroup } from "../features/catalog/storefrontCopyFields";
 import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { tenantBase } from "../features/tenantTransport";
@@ -80,7 +80,6 @@ export function CompanySetupPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [socialLinks, setSocialLinks] = useDraftState("company.socialLinks", "");
-
   useEffect(() => {
     let active = true;
     api.company().then((result) => {
@@ -93,9 +92,6 @@ export function CompanySetupPage() {
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
-
-  useEffect(() => { if (company) previewSiteTheme(company.site_theme); }, [company?.site_theme]);
-  useEffect(() => () => endSiteThemePreview(), []);
 
   const update = (patch: Partial<CompanyUpdateInput>) => {
     setCompany((previous) => previous ? { ...previous, ...patch } : previous);
@@ -149,6 +145,7 @@ export function CompanySetupPage() {
         social_links: links as Record<string, string>,
         invoice_settings: company.invoice_settings,
         site_theme: company.site_theme,
+        storefront_template: company.storefront_template || "current",
         storefront_content: company.storefront_content,
         storefront_enabled: company.features?.storefront.platform_allowed ? company.storefront_enabled !== false : undefined,
         workflow_guidance_enabled: company.workflow_guidance_enabled !== false,
@@ -163,23 +160,6 @@ export function CompanySetupPage() {
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Unable to save company.");
     } finally { setSaving(false); }
-  };
-  const saveTheme = async () => {
-    if (!company) return;
-    setSaving(true);
-    setError("");
-    setMessage("");
-    try {
-      if (!SITE_THEME_FIELDS.every(([key]) => /^#[0-9a-f]{6}$/i.test(company.site_theme[key]))) {
-        throw new Error("Site colours must use six-digit hex values, such as #142b4a.");
-      }
-      const result = await api.updateSiteTheme(company.site_theme);
-      setSavedSiteTheme(result.site_theme);
-      update({ site_theme: result.site_theme });
-      setMessage("Site colours saved.");
-      window.dispatchEvent(new Event("company-updated"));
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to save site colours."); }
-    finally { setSaving(false); }
   };
   const preview = async () => {
     if (!company) return;
@@ -222,12 +202,12 @@ export function CompanySetupPage() {
       </section>
       <nav className="company-setup-nav" aria-label="Company settings sections">
         <Link to="/portal/policies">Store Policies</Link>
+        <Link to="/portal/storefront-design">Storefront Design</Link>
         <a href="#company-profile">Profile & Contact</a>
         <a href="#storefront-copy">Storefront Copy</a>
         <a href="#storefront-display">Storefront Display</a>
         <a href="#portal-settings">Portal Settings</a>
-        <a href="#site-colours">Site Colours</a>
-        <a href="#brand-assets">Logo & Signature</a>
+        <a href="#brand-assets">Invoice Signature</a>
         <a href="#invoice-wording">Invoice Wording</a>
         <a href="#invoice-colours">Invoice Colours</a>
       </nav>
@@ -241,6 +221,11 @@ export function CompanySetupPage() {
             <label>Company Name<input required maxLength={200} value={company.company_name} onChange={(event) => update({ company_name: event.target.value })} /></label>
             <label>Display Name<input maxLength={100} value={company.nickname || ""} onChange={(event) => update({ nickname: event.target.value })} /></label>
             <label>Storefront Address<input required minLength={3} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" value={company.tenant_slug} onChange={(event) => update({ tenant_slug: event.target.value.toLowerCase() })} /><span className="access-workspace-url">/c/{company.tenant_slug}</span></label>
+            <div className="company-field-wide company-storefront-design-link">
+              <strong>Storefront appearance</strong>
+              <span>Choose a theme, change colours and images, and arrange homepage sections with a live preview.</span>
+              <Link className="btn light" to="/portal/storefront-design">Open Storefront Design</Link>
+            </div>
             <label id="storefront-visibility" className="ops-toggle company-field-wide"><input type="checkbox" disabled={!company.features?.storefront.platform_allowed} checked={!!company.features?.storefront.platform_allowed && company.storefront_enabled !== false} aria-describedby="storefront-policy-note" onChange={(event) => update({ storefront_enabled: event.target.checked })} />Storefront open to the public</label>
             {!company.features?.storefront.platform_allowed ? <p className="ops-copy-note company-field-wide" id="storefront-policy-note"><span className="feature-contact-tag">Contact platform</span> Disabled by Tenali Platform. Contact the platform administrator.{company.features?.support_url ? <> <a href={company.features.support_url}>Contact platform administrator</a></> : null}</p> : null}
             {company.storefront_enabled === false ? <p className="ops-copy-note company-field-wide">Storefront is off: visitors see an &quot;unavailable&quot; page and cannot browse products, add to cart, check out or send enquiries. Store policies, shopper order tracking and this Operations Portal keep working. Save to apply.</p> : null}
@@ -259,7 +244,7 @@ export function CompanySetupPage() {
         </fieldset>
         <section id="storefront-copy" className="company-storefront-copy">
           <h2>Storefront Copy</h2>
-          <p>Update the customer-facing wording without changing products or company records.</p>
+          <p>Update customer-facing wording without changing products or company records. Manage product tags in <Link to="/portal/inventory">Product Inventory</Link>; use <Link to="/portal/storefront-design">Storefront Design</Link> to arrange homepage sections and see the storefront update live.</p>
           {(Object.keys(STOREFRONT_COPY_FIELDS) as StorefrontCopyGroup[]).map((group) => (
             <details className="company-copy-group" key={group}>
               <summary>{STOREFRONT_COPY_GROUP_LABELS[group]}</summary>
@@ -281,13 +266,7 @@ export function CompanySetupPage() {
           <legend>Storefront Display</legend>
           <label className="ops-toggle"><input type="checkbox" checked={storefrontDisplay(company).show_bulk_pricing} onChange={(event) => updateDisplay({ show_bulk_pricing: event.target.checked })} />Show the &quot;Better pricing on bulk orders&quot; strip</label>
           <label className="ops-toggle"><input type="checkbox" checked={storefrontDisplay(company).whatsapp_enquiry_enabled} onChange={(event) => updateDisplay({ whatsapp_enquiry_enabled: event.target.checked })} />Show WhatsApp enquiry buttons and links</label>
-          <label className="company-corner-style">Corner style for buttons, cards and boxes
-            <select value={storefrontDisplay(company).corner_style} onChange={(event) => updateDisplay({ corner_style: event.target.value === "square" ? "square" : "rounded" })}>
-              <option value="rounded">Rounded corners</option>
-              <option value="square">Square corners</option>
-            </select>
-          </label>
-          <p className="ops-copy-note">Applies to the public storefront (corner style also applies to this portal). Save to apply.</p>
+          <p className="ops-copy-note">Checkout and enquiry actions use your existing WhatsApp and payment setup. Change storefront styling in <Link to="/portal/storefront-design">Storefront Design</Link>.</p>
         </fieldset>
         <fieldset id="portal-settings" disabled={saving} className="company-setup-section">
           <legend>Operations Portal</legend>
@@ -295,30 +274,11 @@ export function CompanySetupPage() {
           <label className="ops-toggle"><input type="checkbox" checked={company.workflow_guidance_enabled !== false} onChange={(event) => update({ workflow_guidance_enabled: event.target.checked })} />Show next-step workflow messages</label>
           <p className="ops-copy-note">After a record is created, cancelled or deleted, or a save fails, a separate &quot;Next step&quot; message suggests what to do next (for example settle a refund, record a payment or reopen a closed period). Applies to everyone in this workspace. Save to apply.</p>
         </fieldset>
-        <fieldset id="site-colours" disabled={saving} className="company-setup-section">
-          <legend>Site Colours</legend>
-          <div className="site-theme-grid">
-            {SITE_THEME_FIELDS.map(([key, label]) => <div className="site-theme-field" key={key}>
-              <label htmlFor={`site-color-${key}`}>{label}</label>
-              <div className="site-theme-inputs">
-                <input id={`site-color-${key}`} type="color" aria-label={`Site ${label} colour`}
-                  value={normalizeSiteTheme(company.site_theme)[key]} onChange={(event) => update({ site_theme: { ...company.site_theme, [key]: event.target.value } })} />
-                <input aria-label={`Site ${label} hex colour`} required pattern="#[0-9a-fA-F]{6}" maxLength={7}
-                  value={company.site_theme[key]} onChange={(event) => update({ site_theme: { ...company.site_theme, [key]: event.target.value } })} />
-              </div>
-            </div>)}
-          </div>
-          <div className="company-setup-actions site-theme-actions">
-            <button className="btn" type="button" disabled={saving || previewing} onClick={() => void saveTheme()}><Save size={16} aria-hidden="true" />{saving ? "Saving..." : "Save Site Colours"}</button>
-            <button className="btn light" type="button" disabled={saving} onClick={() => update({ site_theme: { ...DEFAULT_SITE_THEME } })}><RotateCcw size={16} aria-hidden="true" />Reset Site Colours</button>
-          </div>
-        </fieldset>
         <fieldset id="brand-assets" disabled={saving} className="company-setup-section">
-          <legend>Logo & Signature</legend>
+          <legend>Invoice Signature</legend>
           <div className="company-fields">
-            <AssetInput label="Company Logo" value={company.logo_url} disabled={saving} onChange={(value) => update({ logo_url: value || undefined })} onError={setError} />
             <AssetInput label="Signature Image" privateAsset value={company.invoice_settings.signature_image} disabled={saving} onChange={(value) => updateInvoice({ signature_image: value })} onError={setError} />
-            <label>Logo Width (mm)<input type="number" min={25} max={75} required value={company.invoice_settings.logo_width_mm} onChange={(event) => updateInvoice({ logo_width_mm: Number(event.target.value) })} /></label>
+            <label>Invoice Logo Width (mm)<input type="number" min={25} max={75} required value={company.invoice_settings.logo_width_mm} onChange={(event) => updateInvoice({ logo_width_mm: Number(event.target.value) })} /></label>
             <label>Signature Width (mm)<input type="number" min={15} max={50} required value={company.invoice_settings.signature_width_mm} onChange={(event) => updateInvoice({ signature_width_mm: Number(event.target.value) })} /></label>
           </div>
         </fieldset>

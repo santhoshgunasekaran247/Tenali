@@ -142,6 +142,12 @@ test("desktop and mobile navigation share direct links and respect module/role a
   assert.match(desktop, /aria-label="Tenali AI"/);
   assert.match(mobile, /portal-mobile-links/);
   assert.equal(desktop.match(/href=/g).length, mobile.match(/href=/g).length);
+  const adminPaths = ["/portal/company", "/portal/stores", "/portal/team", "/portal/storefront-design",
+    "/portal/domains", "/portal/policies", "/portal/checkout-setup", "/portal/online-customers", "/portal/audit"];
+  for (const html of [desktop, mobile]) {
+    const adminLinks = [...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).filter(href => adminPaths.includes(href));
+    assert.deepEqual(adminLinks, adminPaths);
+  }
   const launcher = renderToStaticMarkup(React.createElement(TenaliLauncher));
   assert.match(launcher, /href="\/portal\/ai"/);
   assert.match(launcher, /src="\/tenali-assistant.png"/);

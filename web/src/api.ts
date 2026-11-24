@@ -35,7 +35,10 @@ import type {
   BorrowingListResponse,
   BorrowingSummaryResponse,
   CatalogHomeResponse,
+  CatalogStorefrontPreviewResponse,
   CatalogListResponse,
+  StorefrontSection,
+  ProductTag,
   CatalogProductResponse,
   Party,
   PartyCreateInput,
@@ -222,11 +225,36 @@ export const api = {
     method: "PUT",
     body: JSON.stringify(payload),
   }),
+  storefrontSections: async () => (await request<{ sections: StorefrontSection[] }>("/company/storefront-sections")).sections,
+  storefrontPreview: () => request<CatalogStorefrontPreviewResponse>("/company/storefront-preview"),
+  productTags: async () => (await request<{ tags: ProductTag[] }>("/company/product-tags")).tags,
+  saveProductTags: (tags: ProductTag[]) => request<{ tags: ProductTag[] }>("/company/product-tags", {
+    method: "PUT",
+    body: JSON.stringify({ tags: tags.map(({ code, name, product_ids }) => ({ code, name, product_ids })) }),
+  }),
+  saveStorefrontSections: (sections: StorefrontSection[]) => request<{ sections: StorefrontSection[] }>("/company/storefront-sections", {
+    method: "PUT",
+    body: JSON.stringify({ sections: sections.map((section) => ({
+      section_key: section.section_key,
+      section_type: section.section_type,
+      title: section.title,
+      eyebrow: section.eyebrow,
+      description: section.description,
+      image_url: section.image_url,
+      sort_order: section.sort_order,
+      is_enabled: section.is_enabled,
+      configuration: section.configuration,
+      product_ids: section.product_ids || [],
+      category_ids: section.category_ids || [],
+      brand_ids: section.brand_ids || [],
+    })) }),
+  }),
   home: () => request<CatalogHomeResponse>("/catalog/home"),
-  async list(filters?: { brand?: string; category?: string }) {
+  async list(filters?: { brand?: string; category?: string; search?: string }) {
     const params = new URLSearchParams();
     if (filters?.brand) params.set("brand", filters.brand);
     if (filters?.category) params.set("category", filters.category);
+    if (filters?.search) params.set("search", filters.search);
     const qs = params.toString();
     return request<CatalogListResponse>(`/catalog/list${qs ? `?${qs}` : ""}`);
   },

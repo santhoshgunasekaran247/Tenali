@@ -44,7 +44,7 @@ function cardHarness(current = {}, existing = []) {
   });
   return {
     added, navigated, updated, removed,
-    render(enabled = true, phone = "example") { cursor = 0; return ProductCard({ product, phone, checkoutEnabled: enabled }); },
+    render(enabled = true, phone = "example", template, productCopy) { cursor = 0; return ProductCard({ product, phone, checkoutEnabled: enabled, template, productCopy }); },
   };
 }
 
@@ -60,6 +60,35 @@ test("collection cards offer Add to Cart only when checkout is available, alongs
   assert.match(enabled, /Add to Cart/);
   assert.match(enabled, /WhatsApp enquiry/);
   assert.doesNotMatch(renderToStaticMarkup(h.render(false)), /Add to Cart/);
+});
+
+test("product card theme changes keep the actual product photo and purchase actions", () => {
+  const h = cardHarness({ image_url: "tenant-product.jpg" });
+  for (const template of ["current", "marketplace"]) {
+    const tree = h.render(true, "example", template);
+    assert.equal(tree.props["data-product-theme"], template);
+    const html = renderToStaticMarkup(tree);
+    assert.match(html, /tenant-product\.jpg/);
+    assert.match(html, /Add to Cart/);
+    assert.match(html, /WhatsApp enquiry/);
+  }
+});
+
+test("custom product button labels preserve add, variant and cart destinations", async () => {
+  const copy = { add_to_cart: "Put in basket", choose_options: "Select a size", view_cart: "Open basket" };
+  const plain = cardHarness();
+  const button = find(plain.render(true, "", "marketplace", copy), node => node.type === "button" && node.props.children === "Put in basket");
+  assert.ok(button);
+  button.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(plain.added[0].quantity, 2);
+  assert.equal(plain.navigated.length, 0);
+  const variants = cardHarness({ variants: [{ id: "size" }] });
+  find(variants.render(true, "", "current", copy), node => node.type === "button" && node.props.children === "Select a size").props.onClick();
+  assert.equal(variants.navigated[0], "/products/product");
+  const existing = cardHarness({}, [{ product_id: "product", variant_id: null, quantity: 2 }]);
+  const link = find(existing.render(true, "", "marketplace", copy), node => node.props?.children === "Open basket");
+  assert.equal(link.props.to, "/cart");
 });
 
 test("product badges do not overlap a broken image placeholder", () => {

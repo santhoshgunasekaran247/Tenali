@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Header } from "./components/Header";
 import { RequireWorkspace,StorefrontRoot,useAuth } from "./features/auth";
@@ -14,6 +14,7 @@ import { BrandPage } from "./pages/BrandPage";
 import { BusinessPaymentsPage } from "./pages/BusinessPaymentsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { CompanySetupPage } from "./pages/CompanySetupPage";
+import { StorefrontDesignPage } from "./pages/StorefrontDesignPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
 import { CartPage } from "./pages/CartPage";
 import { CheckoutAdminPage } from "./pages/CheckoutAdminPage";
@@ -41,19 +42,52 @@ import { TenantPoliciesPage } from "./pages/TenantPoliciesPage";
 import { PolicyLinks } from "./components/PolicyLinks";
 import { RouteScroll } from "./components/RouteScroll";
 import { StorefrontGate } from "./components/StorefrontGate";
+import type { Company, StorefrontSection } from "./types";
+
+type StorefrontPreviewMessage = {
+  type: "tenali-storefront-preview";
+  companyId: string;
+  company: Pick<Company, "storefront_template" | "site_theme" | "logo_url" | "storefront_content">;
+  sections: StorefrontSection[];
+};
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [previewDraft, setPreviewDraft] = useState<StorefrontPreviewMessage | null>(null);
   const auth = useAuth();
   const location = useLocation();
+  const previewId = new URLSearchParams(location.search).get("storefrontPreview");
+  useEffect(() => {
+    setPreviewDraft(null);
+    if (!previewId || !auth.user || auth.user.company_id !== previewId || auth.storefront?.id !== previewId) return;
+    const receivePreview = (event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent || !event.data || typeof event.data !== "object") return;
+      const message = event.data as StorefrontPreviewMessage;
+      if (message.type !== "tenali-storefront-preview" || message.companyId !== previewId ||
+          !message.company || !Array.isArray(message.sections)) return;
+      setPreviewDraft(message);
+    };
+    window.addEventListener("message", receivePreview);
+    return () => window.removeEventListener("message", receivePreview);
+  }, [previewId, auth.user?.company_id, auth.storefront?.id]);
   const platformHome = location.pathname === "/" && !tenantBase() && !tenantApiOrigin() && !auth.storefront;
   const workspaceFooter = location.pathname === "/portal" || location.pathname.startsWith("/portal/") ||
     location.pathname === "/login" || location.pathname === "/register";
+  const storefrontTheme = !location.pathname.startsWith("/portal") && !location.pathname.startsWith("/platform")
+    ? previewDraft?.company.storefront_template || auth.storefront?.storefront_template : undefined;
+  const preventPreviewAction = previewId ? (event: SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  } : undefined;
 
   return (
-    <div>
+    <div className="app-root" data-storefront-template={storefrontTheme} data-storefront-preview={previewId ? "true" : undefined}
+      onClickCapture={preventPreviewAction} onSubmitCapture={preventPreviewAction}
+      onKeyDownCapture={event => {
+        if (event.key === "Enter" || event.key === " ") preventPreviewAction?.(event);
+      }}>
       <RouteScroll />
-      {!platformHome && <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} />}
+      {!platformHome && <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} previewCompany={previewDraft?.company} />}
       <Routes>
         <Route path="/" element={<StorefrontRoot><StorefrontGate><HomePage /></StorefrontGate></StorefrontRoot>} />
         <Route path="/login" element={<AccessPage />} />
@@ -86,6 +120,7 @@ export default function App() {
         <Route path="/portal/purchases" element={<PurchasesPage />} />
         <Route path="/portal/billing" element={<BillingPage />} />
         <Route path="/portal/company" element={<CompanySetupPage />} />
+        <Route path="/portal/storefront-design" element={<StorefrontDesignPage />} />
         <Route path="/portal/policies" element={<TenantPoliciesPage />} />
         <Route path="/portal/stores" element={<StoresPage />} />
         <Route path="/portal/checkout" element={<CheckoutAdminPage key="orders" />} />

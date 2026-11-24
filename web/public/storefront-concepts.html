@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f4f0">
+    <meta name="description" content="Five full-length, India-ready storefront design concepts.">
+    <title>Five storefront concepts | Tenali</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root { color-scheme: light; font-family: "DM Sans", sans-serif; color: #24231f; background: #f5f4f0; font-synthesis: none; }
+      * { box-sizing: border-box; }
+      body { min-width: 320px; margin: 0; }
+      button, input, select { font: inherit; }
+      button, select { cursor: pointer; }
+      a { color: inherit; }
+      .gallery { width: min(100%, 1600px); margin: auto; padding: 22px clamp(14px, 3.2vw, 48px) 56px; }
+      .gallery-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 4px 0 18px; }
+      .gallery-kicker { margin: 0 0 6px; color: #8d5b40; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      .gallery h1 { margin: 0; font: 500 clamp(25px, 3vw, 36px)/1.08 "DM Serif Display", serif; letter-spacing: -.025em; }
+      .gallery-note { max-width: 460px; margin: 0; color: #73716b; font-size: 12px; line-height: 1.65; }
+      .concept-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 15px; border-top: 1px solid #e4e1d9; scrollbar-width: thin; }
+      .concept-tab { flex: 0 0 auto; border: 1px solid #dedbd3; border-radius: 999px; padding: 10px 15px; background: #fff; color: #68665f; font-size: 11px; font-weight: 700; transition: .2s ease; }
+      .concept-tab:hover { border-color: #9c785e; color: #483426; }
+      .concept-tab[aria-selected="true"] { border-color: #292821; background: #292821; color: #fff; }
+      .mapping { margin: 0 0 15px; border: 1px solid #e1ddd5; border-radius: 10px; background: #fff; }
+      .mapping summary { padding: 13px 16px; color: #34332e; font-size: 11px; font-weight: 700; cursor: pointer; }
+      .mapping summary span { margin-left: 8px; color: #838078; font-weight: 400; }
+      .mapping-body { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 0 16px 16px; }
+      .mapping label { display: grid; gap: 6px; color: #77736c; font-size: 10px; font-weight: 600; }
+      .mapping select { width: 100%; min-height: 36px; border: 1px solid #e4e0d9; border-radius: 6px; padding: 7px 9px; background: #fff; color: #33322e; font-size: 11px; }
+      .mapping select[multiple] { min-height: 88px; }
+      .mapping-hint { grid-column: 1 / -1; margin: -2px 0 0; color: #8a867e; font-size: 10px; }
+      .concept { overflow: hidden; border: 1px solid #e2dfd8; border-radius: 12px; background: #fff; box-shadow: 0 16px 52px #2827200b; }
+      .concept-bar { display: flex; justify-content: space-between; gap: 12px; padding: 10px 15px; border-bottom: 1px solid #e8e5de; background: #fff; color: #76736c; font-size: 10px; }
+      .concept-bar strong { color: #34332f; }
+      .shop { --accent: #244c70; --accent2: #f0bf3f; --ink: #1d2730; --muted: #707780; --soft: #edf4f8; --line: #e8edf0; --shopbg: #fff; overflow: hidden; color: var(--ink); background: var(--shopbg); }
+      .shop.market { --accent: #173c59; --accent2: #ffd15a; --soft: #edf5f9; --line: #e5ebef; font-family: "Plus Jakarta Sans", sans-serif; }
+      .shop.boutique { --accent: #7d4545; --accent2: #d7ad94; --ink: #3a302e; --muted: #887b75; --soft: #f6efeb; --line: #eee5e0; font-family: "DM Sans", sans-serif; }
+      .shop.heritage { --accent: #783c29; --accent2: #d8b36c; --ink: #372b20; --muted: #82715d; --soft: #f7f0e2; --line: #eee5d3; font-family: "DM Sans", sans-serif; }
+      .shop.grocery { --accent: #17613f; --accent2: #f0a849; --ink: #263a30; --muted: #75837a; --soft: #eff7ee; --line: #e4eee2; font-family: "Manrope", sans-serif; }
+      .shop.travel { --accent: #143f61; --accent2: #e49a58; --ink: #203144; --muted: #72808b; --soft: #edf4f7; --line: #e3eaee; font-family: "Manrope", sans-serif; }
+      .shop.jewellery { --accent: #34221d; --accent2: #b28a52; --ink: #302723; --muted: #8a7e75; --soft: #f7f2eb; --line: #e8dfd3; font-family: "Manrope", sans-serif; }
+      .announcement { padding: 9px 16px; background: var(--accent); color: #fff; text-align: center; font-size: 10px; font-weight: 600; letter-spacing: .045em; }
+      .india-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px clamp(16px, 4vw, 54px); border-bottom: 1px solid var(--line); background: #fcfcfb; color: var(--muted); font-size: 9px; }
+      .india-bar b { color: var(--ink); font-weight: 700; }
+      .india-meta { display: flex; align-items: center; gap: 17px; }
+      .shop-head { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: center; gap: 22px; padding: 17px clamp(16px, 4vw, 54px); }
+      .shop-logo { color: var(--accent); font: 800 24px/1 "Plus Jakarta Sans", sans-serif; letter-spacing: -.065em; white-space: nowrap; }
+      .boutique .shop-logo, .heritage .shop-logo { font: 600 28px/1 "Playfair Display", serif; letter-spacing: -.02em; }
+      .shop-logo small { display: block; margin-top: 5px; color: var(--muted); font: 700 8px/1 "DM Sans", sans-serif; letter-spacing: .15em; text-transform: uppercase; }
+      .searchbox { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 13px; border: 1px solid var(--line); border-radius: 7px; background: #fafbfc; color: #9299a0; font-size: 11px; }
+      .searchbox span { color: var(--accent); font-size: 17px; }
+      .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+      .head-action { border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; background: #fff; color: var(--ink); font-size: 10px; font-weight: 700; white-space: nowrap; }
+      .head-action.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+      .shop-nav { display: flex; gap: 23px; overflow-x: auto; padding: 12px clamp(16px, 4vw, 54px); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; scrollbar-width: none; white-space: nowrap; }
+      .shop-nav::-webkit-scrollbar { display: none; }
+      .shop-nav a { color: var(--muted); font-size: 10px; font-weight: 600; text-decoration: none; }
+      .shop-nav a:first-child { color: var(--accent); font-weight: 800; }
+      .store-width { width: min(100%, 1460px); margin: auto; padding-right: clamp(16px, 4vw, 58px); padding-left: clamp(16px, 4vw, 58px); }
+      .hero { display: grid; grid-template-columns: .9fr 1.1fr; min-height: 355px; margin: 18px auto 0; overflow: hidden; border-radius: 10px; background: var(--soft); }
+      .hero-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: clamp(25px, 5vw, 65px); }
+      .hero-kicker { margin: 0 0 12px; color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      .hero h2 { max-width: 490px; margin: 0 0 14px; color: var(--ink); font: 700 clamp(32px, 5vw, 58px)/1.02 "Plus Jakarta Sans", sans-serif; letter-spacing: -.06em; }
+      .boutique .hero h2, .heritage .hero h2 { font: 500 clamp(35px, 5vw, 60px)/1 "Playfair Display", serif; letter-spacing: -.035em; }
+      .hero-copy > p:not(.hero-kicker) { max-width: 410px; margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.75; }
+      .hero-cta { border: 0; border-radius: 5px; padding: 12px 16px; background: var(--accent2); color: #202827; font-size: 10px; font-weight: 800; }
+      .hero-art { position: relative; min-height: 300px; overflow: hidden; background: #d9e3e7; }
+      .hero-art img { width: 100%; height: 100%; min-height: inherit; object-fit: cover; }
+      .hero-caption { position: absolute; right: 15px; bottom: 15px; padding: 8px 11px; border-radius: 5px; background: #ffffffeb; color: #30332f; font-size: 9px; font-weight: 700; }
+      .heritage .hero { position: relative; display: block; min-height: 390px; border-radius: 0; background: #59402e; }
+      .heritage .hero-art { position: absolute; inset: 0; }
+      .heritage .hero-art img { opacity: .7; }
+      .heritage .hero-art::after { position: absolute; inset: 0; background: linear-gradient(90deg, #26190fe8 0%, #38251e8c 56%, #38251e05 100%); content: ""; }
+      .heritage .hero-copy { position: relative; z-index: 1; width: min(65%, 740px); min-height: 390px; color: #fff8e9; }
+      .heritage .hero h2, .heritage .hero-copy > p:not(.hero-kicker) { color: #fff8e9; }
+      .heritage .hero-kicker { color: var(--accent2); }
+      .boutique .hero { grid-template-columns: .82fr 1.18fr; margin-top: 10px; border-radius: 0; }
+      .boutique .hero-copy { padding-left: clamp(25px, 7vw, 96px); }
+      .boutique .hero-art { min-height: 430px; }
+      .market .hero { grid-template-columns: .88fr 1.12fr; }
+      .market .hero-art { padding: 15px; background: #e8f1f5; }
+      .market .hero-art img { border-radius: 9px; }
+      .grocery .hero { grid-template-columns: 1fr .85fr; min-height: 270px; margin-top: 14px; border-radius: 12px; }
+      .grocery .hero h2 { font-size: clamp(30px, 4vw, 45px); }
+      .grocery .hero-art { min-height: 245px; }
+      .travel .hero { grid-template-columns: .75fr 1.25fr; min-height: 400px; background: #edf3f4; }
+      .travel .hero-art { min-height: 400px; }
+      .travel .hero h2 { font-size: clamp(34px, 4.7vw, 56px); }
+      .service-row { display: grid; grid-template-columns: repeat(4, 1fr); margin: 16px auto 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+      .service-item { display: flex; align-items: center; gap: 10px; padding: 13px 15px; }
+      .service-item + .service-item { border-left: 1px solid var(--line); }
+      .service-icon { display: grid; flex: 0 0 30px; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--soft); color: var(--accent); font-size: 14px; }
+      .service-item strong { display: block; font-size: 9px; }
+      .service-item span:last-child { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+      .store-section { margin: 40px auto; }
+      .section-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 15px; margin-bottom: 17px; }
+      .section-eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 8px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+      .section-top h2 { margin: 0; color: var(--ink); font: 600 clamp(21px, 3vw, 29px)/1.12 "DM Serif Display", serif; }
+      .market .section-top h2, .grocery .section-top h2, .travel .section-top h2 { font: 800 clamp(19px, 2.5vw, 25px)/1.15 "Plus Jakarta Sans", sans-serif; letter-spacing: -.04em; }
+      .section-top p { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+      .view-all { flex: 0 0 auto; border: 0; padding: 5px 0; background: transparent; color: var(--accent); font-size: 10px; font-weight: 800; }
+      .category-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+      .category-card { display: flex; min-height: 125px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 8px; background: #fff; text-align: center; }
+      .category-art { display: grid; width: 62px; height: 62px; place-items: center; border-radius: 50%; background: var(--category-color, var(--soft)); font-size: 26px; }
+      .category-card strong { color: var(--ink); font-size: 10px; }
+      .category-card small { color: var(--muted); font-size: 8px; }
+      .boutique .category-card, .heritage .category-card { border: 0; background: transparent; }
+      .boutique .category-art, .heritage .category-art { width: 92px; height: 92px; border-radius: 50%; font-size: 35px; }
+      .grocery .category-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+      .grocery .category-art { width: 68px; height: 68px; background: #f1f7ed; }
+      .travel .category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .travel .category-card { min-height: 110px; background: var(--soft); }
+      .brand-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+      .brand-card { display: grid; min-height: 72px; place-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 12px; background: #fff; color: var(--ink); text-align: center; }
+      .brand-card b { font: 800 13px/1 "Plus Jakarta Sans", sans-serif; letter-spacing: -.04em; }
+      .brand-card small { align-self: start; color: var(--muted); font-size: 8px; }
+      .brand-card:nth-child(3n + 2) { background: var(--soft); }
+      .heritage .brand-card b, .boutique .brand-card b { font-family: "Playfair Display", serif; font-weight: 600; }
+      .product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+      .product-card { min-width: 0; }
+      .product-photo { position: relative; overflow: hidden; aspect-ratio: 1 / 1.05; border-radius: 7px; background: var(--soft); }
+      .product-photo img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
+      .product-card:hover .product-photo img { transform: scale(1.045); }
+      .product-badge { position: absolute; top: 10px; left: 10px; padding: 5px 7px; border-radius: 3px; background: #fff; color: var(--accent); font-size: 8px; font-weight: 800; letter-spacing: .03em; }
+      .product-wish { position: absolute; top: 8px; right: 8px; display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 50%; background: #ffffffdd; color: #4b4c4a; font-size: 15px; }
+      .product-info { padding: 9px 1px 0; }
+      .product-brand { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .product-info h3 { overflow: hidden; margin: 4px 0 5px; color: var(--ink); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+      .product-extra { color: var(--muted); font-size: 9px; }
+      .product-buy { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 9px; }
+      .product-price { color: var(--ink); font-size: 12px; font-weight: 800; white-space: nowrap; }
+      .product-price del { margin-left: 4px; color: #99968f; font-size: 9px; font-weight: 400; }
+      .add-button { border: 1px solid var(--accent); border-radius: 5px; padding: 6px 10px; background: #fff; color: var(--accent); font-size: 9px; font-weight: 800; white-space: nowrap; }
+      .add-button:hover { background: var(--accent); color: #fff; }
+      .feature-band { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 34px auto; }
+      .feature-card { position: relative; display: flex; min-height: 190px; overflow: hidden; align-items: flex-end; border-radius: 9px; padding: 22px; background: #d8e4e2; color: #fff; }
+      .feature-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .feature-card::after { position: absolute; inset: 0; background: linear-gradient(0deg, #16211dda, #16211d05 88%); content: ""; }
+      .feature-copy { position: relative; z-index: 1; max-width: 380px; }
+      .feature-copy small { color: #f6d59c; font-size: 8px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+      .feature-copy h3 { margin: 5px 0; font: 600 22px/1.1 "DM Serif Display", serif; }
+      .feature-copy p { margin: 0; color: #f1f1ec; font-size: 9px; line-height: 1.5; }
+      .boutique .feature-copy h3, .heritage .feature-copy h3 { font-family: "Playfair Display", serif; }
+      .newsletter { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 36px auto; padding: 22px clamp(18px, 4vw, 44px); border-radius: 8px; background: var(--soft); }
+      .newsletter h2 { margin: 0 0 4px; color: var(--ink); font: 600 19px "DM Serif Display", serif; }
+      .newsletter p { margin: 0; color: var(--muted); font-size: 9px; }
+      .newsletter-form { display: flex; width: min(100%, 380px); gap: 6px; }
+      .newsletter-form input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 5px; padding: 10px; background: #fff; font-size: 9px; }
+      .newsletter-form button { border: 0; border-radius: 5px; padding: 0 13px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; }
+      .footer-main { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 22px; padding: 27px clamp(16px, 4vw, 58px); background: #f7f7f5; }
+      .footer-main h3 { margin: 0 0 10px; color: var(--accent); font: 800 17px "Plus Jakarta Sans", sans-serif; }
+      .footer-main h4 { margin: 0 0 10px; font-size: 9px; }
+      .footer-main p, .footer-main a { display: block; margin: 0 0 7px; color: var(--muted); font-size: 8px; line-height: 1.6; text-decoration: none; }
+      .footer-bottom { display: flex; justify-content: space-between; gap: 12px; padding: 12px clamp(16px, 4vw, 58px); background: #efefec; color: #777872; font-size: 8px; }
+      .boutique .store-section { margin-top: 46px; margin-bottom: 46px; }
+      .boutique .product-photo { border-radius: 2px; }
+      .boutique .add-button { border-color: #d7c3b9; color: var(--accent); }
+      .heritage .store-section { margin-top: 42px; margin-bottom: 42px; }
+      .heritage .product-photo { border-radius: 2px; }
+      .heritage .product-badge { border-radius: 0; background: #f8efdc; color: #783c29; }
+      .grocery .product-photo { aspect-ratio: 1 / .86; border-radius: 10px; }
+      .grocery .add-button { border-radius: 7px; background: #eff7ee; }
+      .travel .product-photo { aspect-ratio: 1 / .78; border-radius: 9px; }
+      .travel .product-info h3 { font-size: 12px; }
+      .travel .add-button { background: var(--accent); color: #fff; }
+      .market-header { display: grid; grid-template-columns: auto minmax(240px, 1fr) auto; align-items: center; gap: 25px; padding: 18px clamp(18px, 4vw, 58px); background: #162f44; color: white; }
+      .market-header .shop-logo { color: white; }
+      .market-search { display: flex; height: 45px; align-items: center; gap: 10px; padding: 0 15px; border-radius: 7px; background: white; color: #737c83; font-size: 11px; }
+      .market-search b { display: grid; width: 35px; height: 35px; margin-left: auto; place-items: center; border-radius: 5px; background: #ffd15a; color: #253340; font-size: 17px; }
+      .market-actions { display: flex; align-items: center; gap: 13px; font-size: 10px; font-weight: 700; }
+      .market-actions button { border: 0; border-radius: 6px; padding: 11px 14px; background: #ffd15a; color: #263745; font-size: 10px; font-weight: 800; }
+      .market-location { display: flex; justify-content: space-between; gap: 12px; padding: 9px clamp(18px, 4vw, 58px); background: #0e2638; color: #d8e1e8; font-size: 9px; }
+      .market-location b { color: #fff; }
+      .market-main-nav { display: flex; gap: 24px; overflow: auto; padding: 12px clamp(18px, 4vw, 58px); background: #254860; color: #fff; white-space: nowrap; }
+      .market-main-nav a { font-size: 10px; text-decoration: none; }
+      .market-main-nav a:first-child { color: #ffd15a; font-weight: 800; }
+      .market-campaign { display: grid; grid-template-columns: 1.1fr 1.15fr .62fr; gap: 12px; min-height: 350px; margin-top: 16px; }
+      .market-campaign-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: clamp(24px, 4vw, 48px); border-radius: 10px; background: #e7f2f8; }
+      .market-campaign-copy h2 { margin: 0 0 12px; color: #173a56; font: 800 clamp(31px, 4.2vw, 49px)/1.02 "Plus Jakarta Sans", sans-serif; letter-spacing: -.06em; }
+      .market-campaign-copy p { margin: 0 0 17px; color: #617587; font-size: 11px; line-height: 1.65; }
+      .market-campaign-image { position: relative; overflow: hidden; border-radius: 10px; background: #e6e9e9; }
+      .market-campaign-image img { width: 100%; height: 100%; object-fit: cover; }
+      .market-campaign-image span { position: absolute; right: 12px; bottom: 12px; padding: 8px 10px; border-radius: 5px; background: #fff; color: #233848; font-size: 9px; font-weight: 800; }
+      .market-offer-stack { display: grid; gap: 12px; }
+      .market-offer { display: flex; flex-direction: column; justify-content: center; padding: 18px; border-radius: 9px; background: #fff4d8; }
+      .market-offer:nth-child(2) { background: #e9f2ee; }
+      .market-offer span { color: #856827; font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      .market-offer strong { margin-top: 8px; color: #2f3c3b; font-size: 15px; line-height: 1.3; }
+      .market-offer small { margin-top: 7px; color: #77776d; font-size: 9px; line-height: 1.5; }
+      .market .category-card { min-height: 108px; flex-direction: row; justify-content: flex-start; gap: 10px; border-radius: 6px; text-align: left; }
+      .market .category-art { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px; font-size: 20px; }
+      .market .category-card strong, .market .category-card small { display: block; }
+      .market .category-card small { margin-top: 5px; }
+      .boutique-header { position: relative; padding: 19px clamp(18px, 4vw, 58px) 0; background: #fbf8f5; }
+      .boutique-topline { display: flex; justify-content: space-between; padding-bottom: 12px; color: #8d7c73; font-size: 9px; }
+      .boutique-masthead { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 14px 0 17px; border-top: 1px solid #eee5e0; }
+      .boutique-masthead .shop-logo { justify-self: center; color: #7d4545; font: 600 32px "Playfair Display", serif; letter-spacing: .01em; }
+      .boutique-tools { display: flex; justify-content: flex-end; gap: 12px; color: #674d49; font-size: 10px; }
+      .boutique-nav { display: flex; justify-content: center; gap: clamp(15px, 3vw, 34px); padding: 13px 10px; border-top: 1px solid #eee5e0; border-bottom: 1px solid #eee5e0; }
+      .boutique-nav a { color: #776963; font-size: 9px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; }
+      .boutique-hero { position: relative; display: grid; grid-template-columns: 1.15fr .85fr; min-height: 490px; margin-top: 22px; background: #f2e9e4; }
+      .boutique-hero-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: clamp(30px, 6vw, 82px); }
+      .boutique-hero-copy small { color: #9c6f65; font-size: 9px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
+      .boutique-hero-copy h2 { max-width: 470px; margin: 15px 0; color: #50383a; font: 500 clamp(40px, 6vw, 70px)/.98 "Playfair Display", serif; letter-spacing: -.04em; }
+      .boutique-hero-copy p { max-width: 340px; margin: 0 0 22px; color: #796a64; font-size: 11px; line-height: 1.8; }
+      .boutique-hero-copy a { padding-bottom: 6px; border-bottom: 1px solid #7d4545; color: #7d4545; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; }
+      .boutique-hero-image { min-height: 490px; overflow: hidden; }
+      .boutique-hero-image img { width: 100%; height: 100%; object-fit: cover; }
+      .boutique .category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 20px; }
+      .boutique .category-card { min-height: 150px; }
+      .boutique .category-art { border: 1px solid #e8d8d0; background: #f7efeb; }
+      .boutique .brand-rail { grid-template-columns: repeat(6, 1fr); gap: 0; border-top: 1px solid #eadfd8; border-bottom: 1px solid #eadfd8; }
+      .boutique .brand-card { min-height: 80px; border: 0; border-radius: 0; background: transparent; }
+      .boutique .brand-card:nth-child(3n + 2) { background: transparent; }
+      .boutique .brand-card b { font-size: 15px; }
+      .boutique-lookbook { display: grid; grid-template-columns: 1fr .8fr 1fr; gap: 14px; margin-top: 45px; }
+      .lookbook-image { min-height: 265px; overflow: hidden; background: #f0e9e4; }
+      .lookbook-image img { width: 100%; height: 100%; object-fit: cover; }
+      .lookbook-copy { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+      .lookbook-copy small { color: #9b7368; font-size: 8px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+      .lookbook-copy h3 { margin: 12px 0; color: #50383a; font: 500 31px/1.1 "Playfair Display", serif; }
+      .lookbook-copy p { max-width: 250px; margin: 0; color: #796a64; font-size: 10px; line-height: 1.8; }
+      .heritage-ribbon { display: flex; justify-content: center; gap: 13px; overflow: auto; padding: 14px 18px; border-top: 1px solid #ddcda9; border-bottom: 1px solid #ddcda9; background: #f5eddd; color: #78452e; font: 500 12px "Playfair Display", serif; white-space: nowrap; }
+      .heritage-header { background: #f9f2e4; }
+      .heritage-topline { display: flex; justify-content: space-between; padding: 10px clamp(18px, 4vw, 58px); background: #783c29; color: #f8ebd1; font-size: 9px; }
+      .heritage-masthead { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 23px clamp(18px, 4vw, 58px); }
+      .heritage-masthead .shop-logo { color: #783c29; font: 600 38px "Playfair Display", serif; }
+      .heritage-cart { border: 1px solid #e3d3b5; padding: 9px 12px; background: transparent; color: #783c29; font-size: 9px; }
+      .heritage-mark { color: #a48248; font: 500 11px "Playfair Display", serif; letter-spacing: .08em; }
+      .heritage-nav { display: flex; justify-content: center; gap: 28px; padding: 14px 15px; border-top: 1px solid #e7d8bd; border-bottom: 1px solid #e7d8bd; }
+      .heritage-nav a { color: #654d34; font-size: 9px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; }
+      .heritage-hero { position: relative; display: flex; min-height: 475px; align-items: flex-end; overflow: hidden; margin-top: 15px; background: #523a2a; }
+      .heritage-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .76; }
+      .heritage-hero::before { position: absolute; inset: 0; background: linear-gradient(90deg, #251810d9, #37251c80 53%, transparent); content: ""; }
+      .heritage-hero::after { position: absolute; inset: 13px; border: 1px solid #dec18b88; content: ""; pointer-events: none; }
+      .heritage-hero-copy { position: relative; z-index: 1; width: min(660px, 75%); padding: 70px clamp(32px, 7vw, 94px); color: #fff4dc; }
+      .heritage-hero-copy small { color: #e4bc70; font-size: 9px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+      .heritage-hero-copy h2 { margin: 15px 0; font: 500 clamp(38px, 5.5vw, 67px)/.99 "Playfair Display", serif; }
+      .heritage-hero-copy p { max-width: 390px; margin: 0 0 20px; color: #f4e8d1; font-size: 11px; line-height: 1.8; }
+      .heritage-hero-copy button { border: 1px solid #d8b36c; padding: 12px 17px; background: #d8b36c; color: #34251b; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+      .heritage .category-card { min-height: 135px; border: 1px solid #e9dbc1; background: #fbf7ed; }
+      .heritage .category-art { border: 1px solid #e1cfad; background: #f4ead4; }
+      .heritage .brand-rail { gap: 0; border-top: 1px solid #e6d9c3; border-bottom: 1px solid #e6d9c3; }
+      .heritage .brand-card { border: 0; border-right: 1px solid #e6d9c3; border-radius: 0; background: transparent; }
+      .heritage .brand-card:nth-child(3n + 2) { background: transparent; }
+      .artisan-note { display: grid; grid-template-columns: .9fr 1.1fr; min-height: 265px; margin-top: 42px; background: #f5eddf; }
+      .artisan-note img { width: 100%; height: 100%; min-height: 265px; object-fit: cover; }
+      .artisan-note-copy { display: flex; flex-direction: column; justify-content: center; padding: clamp(25px, 5vw, 62px); }
+      .artisan-note-copy small { color: #986a40; font-size: 8px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+      .artisan-note-copy h3 { margin: 11px 0; color: #553828; font: 500 31px/1.1 "Playfair Display", serif; }
+      .artisan-note-copy p { margin: 0; color: #7b6b57; font-size: 10px; line-height: 1.8; }
+      .grocery-header { display: grid; grid-template-columns: auto auto minmax(180px, 1fr) auto; align-items: center; gap: 14px; padding: 14px clamp(16px, 3vw, 38px); background: #fff; }
+      .grocery-header .shop-logo { color: #17613f; }
+      .grocery-delivery { border: 1px solid #dfeadd; border-radius: 6px; padding: 9px 11px; background: #f4faf2; color: #44634d; font-size: 9px; font-weight: 700; }
+      .grocery-search { display: flex; align-items: center; height: 40px; gap: 9px; padding: 0 12px; border: 1px solid #dae8d8; border-radius: 6px; background: #f6faf5; color: #849186; font-size: 10px; }
+      .grocery-search span { color: #257447; font-size: 16px; }
+      .grocery-cart { border: 0; border-radius: 6px; padding: 11px 13px; background: #287348; color: #fff; font-size: 10px; font-weight: 800; white-space: nowrap; }
+      .grocery-subnav { display: flex; gap: 22px; overflow: auto; padding: 11px clamp(16px, 3vw, 38px); background: #edf6eb; color: #416448; white-space: nowrap; }
+      .grocery-subnav a { font-size: 9px; font-weight: 700; text-decoration: none; }
+      .grocery-subnav a:first-child { color: #17613f; }
+      .grocery-slot { padding: 9px clamp(16px, 3vw, 38px); background: #fff8e9; color: #6f5a31; font-size: 9px; }
+      .grocery-slot b { color: #2f6942; }
+      .grocery-hero { display: grid; grid-template-columns: 1fr .82fr; min-height: 255px; margin-top: 15px; overflow: hidden; border-radius: 12px; background: #eaf5e6; }
+      .grocery-hero-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: clamp(22px, 4vw, 48px); }
+      .grocery-hero-copy small { color: #428250; font-size: 8px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+      .grocery-hero-copy h2 { margin: 10px 0; color: #174b33; font: 800 clamp(29px, 4vw, 45px)/1.05 "Manrope", sans-serif; letter-spacing: -.06em; }
+      .grocery-hero-copy p { margin: 0 0 15px; color: #627568; font-size: 10px; line-height: 1.6; }
+      .grocery-hero-copy button { border: 0; border-radius: 6px; padding: 11px 14px; background: #267848; color: #fff; font-size: 9px; font-weight: 800; }
+      .grocery-hero-image { min-height: 255px; }
+      .grocery-hero-image img { width: 100%; height: 100%; object-fit: cover; }
+      .grocery .category-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
+      .grocery .category-card { min-height: 105px; border: 0; border-radius: 9px; background: #f5f9f2; }
+      .grocery .category-art { width: 52px; height: 52px; background: white; }
+      .grocery .brand-rail { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+      .grocery .brand-card { min-height: 58px; border-color: #e4eee2; border-radius: 22px; }
+      .grocery .brand-card:nth-child(3n + 2) { background: #f5f9f2; }
+      .grocery-deals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 28px auto; }
+      .grocery-deal { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #e5eee3; border-radius: 8px; background: #fbfdf9; }
+      .grocery-deal b { display: block; color: #236840; font-size: 10px; }
+      .grocery-deal span { display: block; margin-top: 4px; color: #798579; font-size: 8px; }
+      .grocery .store-section { margin: 28px auto; }
+      .grocery .product-grid { gap: 11px; }
+      .grocery .product-info { padding: 8px 3px; }
+      .grocery .product-buy { margin-top: 7px; }
+      .grocery .add-button { border: 1px solid #63a36d; background: #fff; color: #287348; }
+      .travel-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px clamp(18px, 4vw, 58px); background: #fff; }
+      .travel-header .shop-logo { color: #153f60; font: 700 27px "DM Serif Display", serif; letter-spacing: -.02em; }
+      .travel-header .shop-logo small { color: #738392; }
+      .travel-header-actions { display: flex; align-items: center; gap: 22px; color: #526476; font-size: 9px; }
+      .travel-header-actions button { border: 1px solid #dbe5e9; border-radius: 20px; padding: 9px 14px; background: #fff; color: #254961; font-size: 9px; font-weight: 800; }
+      .travel-nav { display: flex; justify-content: center; gap: 27px; padding: 12px 15px; border-top: 1px solid #e7edef; color: #5b6d79; }
+      .travel-nav a { font-size: 9px; font-weight: 700; text-decoration: none; }
+      .travel-hero { position: relative; min-height: 500px; overflow: hidden; margin-top: 8px; background: #294858; }
+      .travel-hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .travel-hero::after { position: absolute; inset: 0; background: linear-gradient(90deg, #092b42ad, #102d3a1c 75%); content: ""; }
+      .travel-hero-copy { position: relative; z-index: 1; padding: 67px clamp(25px, 7vw, 94px) 28px; color: #fff; }
+      .travel-hero-copy small { color: #f4c18c; font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      .travel-hero-copy h2 { max-width: 620px; margin: 13px 0; font: 700 clamp(38px, 6vw, 72px)/1 "Manrope", sans-serif; letter-spacing: -.065em; }
+      .travel-hero-copy p { margin: 0; color: #f1f5f4; font-size: 11px; }
+      .trip-search { position: relative; z-index: 2; display: grid; grid-template-columns: 1.2fr 1fr 1fr .8fr auto; gap: 7px; width: min(1100px, calc(100% - 48px)); margin: 14px auto -34px; padding: 10px; border-radius: 9px; background: white; box-shadow: 0 14px 35px #0e263433; }
+      .trip-field { padding: 8px 11px; border-right: 1px solid #e8edef; }
+      .trip-field small { display: block; margin-bottom: 5px; color: #84919a; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+      .trip-field strong { color: #253a4a; font-size: 10px; }
+      .trip-search button { border: 0; border-radius: 6px; padding: 0 17px; background: #153f60; color: #fff; font-size: 10px; font-weight: 800; }
+      .travel .category-section { padding-top: 30px; }
+      .travel .category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+      .travel .category-card { position: relative; min-height: 180px; align-items: flex-end; justify-content: flex-end; overflow: hidden; border: 0; border-radius: 8px; padding: 14px; background: #284859; text-align: left; }
+      .travel .category-card::after { position: absolute; inset: 0; background: linear-gradient(0deg, #102d3fd9, #102d3f00 80%); content: ""; }
+      .travel .category-art { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; background: transparent; font-size: 0; }
+      .travel .category-art img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
+      .travel .category-card:hover .category-art img { transform: scale(1.05); }
+      .travel .category-card strong, .travel .category-card small { position: relative; z-index: 1; color: #fff; }
+      .travel .category-card strong { font-size: 12px; }
+      .travel .category-card small { display: none; }
+      .travel .brand-rail { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+      .travel .brand-card { min-height: 60px; border-radius: 20px; }
+      .travel .brand-card:nth-child(3n + 2) { background: #f4f8f8; }
+      .travel .product-card { overflow: hidden; border: 1px solid #e7edef; border-radius: 9px; background: #fff; }
+      .travel .product-info { padding: 10px; }
+      .travel .product-photo { border-radius: 0; }
+      .travel .product-price { color: #153f60; }
+      .travel .store-section { margin-top: 45px; margin-bottom: 45px; }
+      .market .store-section { margin-top: 31px; margin-bottom: 31px; }
+      .market .brand-card { border-radius: 5px; box-shadow: 0 4px 12px #163a5210; }
+      .market .product-card { padding: 8px; border: 1px solid #e8edf0; border-radius: 8px; background: white; }
+      .market .product-photo { border-radius: 5px; }
+      .market .product-info { padding: 9px 2px 2px; }
+      .market .add-button { border-color: #ebbd43; background: #fff7dd; color: #413710; }
+      .heritage .product-card { padding: 8px; border: 1px solid #ece1cc; background: #fffcf5; }
+      .heritage .product-info h3 { font-family: "Playfair Display", serif; }
+      .heritage .add-button { border-color: #b57d49; color: #783c29; }
+      .boutique-editorial { display: flex; justify-content: center; gap: 18px; margin: 20px auto 0; color: #9a7f74; font: 500 11px "Playfair Display", serif; }
+      .boutique-editorial i { color: #b58072; font-style: normal; }
+      .grocery-recipe { display: grid; grid-template-columns: .85fr 1.15fr; min-height: 200px; margin-top: 30px; overflow: hidden; border-radius: 10px; background: #f3f7ed; }
+      .grocery-recipe img { width: 100%; height: 100%; min-height: 200px; object-fit: cover; }
+      .grocery-recipe div { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 25px clamp(22px, 4vw, 48px); }
+      .grocery-recipe small { color: #448051; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+      .grocery-recipe h3 { margin: 9px 0 7px; color: #254832; font: 800 24px "Manrope", sans-serif; letter-spacing: -.04em; }
+      .grocery-recipe p { margin: 0 0 13px; color: #6f7e71; font-size: 10px; }
+      .grocery-recipe button { border: 0; border-radius: 5px; padding: 10px 12px; background: #287348; color: white; font-size: 9px; font-weight: 800; }
+      .travel-story { display: grid; grid-template-columns: 1fr .85fr .85fr 1fr; min-height: 205px; margin: 34px auto; overflow: hidden; border-radius: 9px; background: #edf4f5; }
+      .travel-story > div { display: flex; flex-direction: column; justify-content: center; padding: 20px; }
+      .travel-story > div:nth-child(4) { background: #f5f2ea; }
+      .travel-story img { width: 100%; height: 100%; min-height: 205px; object-fit: cover; }
+      .travel-story small { color: #557789; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+      .travel-story h3 { margin: 9px 0 6px; color: #21465e; font: 600 22px/1.1 "DM Serif Display", serif; }
+      .travel-story p { margin: 0; color: #6d7f89; font-size: 9px; line-height: 1.6; }
+      .jewellery-utility { display: flex; justify-content: space-between; gap: 14px; padding: 8px clamp(18px, 5vw, 72px); background: #38241d; color: #f8efe2; font-size: 8px; letter-spacing: .04em; }
+      .jewellery-main-header { display: grid; grid-template-columns: 1fr minmax(200px, 1.1fr) 1fr; align-items: center; gap: 22px; padding: 18px clamp(18px, 5vw, 72px); background: #fffdf9; }
+      .jewellery-header .shop-logo { justify-self: start; color: #38241d; font: 600 27px "Cormorant Garamond", Georgia, serif; letter-spacing: .02em; }
+      .jewellery-header .shop-logo small { color: #9a8063; }
+      .jewellery-search { padding: 10px 14px; border-bottom: 1px solid #cbbba7; color: #8a7e75; font-size: 9px; }
+      .jewellery-actions { display: flex; justify-content: flex-end; align-items: center; gap: 18px; color: #604d40; font-size: 9px; }
+      .jewellery-actions button { padding: 9px 14px; border: 1px solid #9a8063; background: transparent; color: #38241d; font-size: 9px; }
+      .jewellery-nav { display: flex; justify-content: center; gap: 28px; padding: 12px; border-top: 1px solid #eee6dc; background: #fffdf9; }
+      .jewellery-nav a { color: #5a4940; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; }
+      .jewellery-hero { position: relative; display: grid; grid-template-columns: 1fr 1fr; min-height: 490px; margin-top: 8px; overflow: hidden; background: #37231f; }
+      .jewellery-hero > img { grid-column: 2; grid-row: 1; width: 100%; height: 100%; min-height: 490px; object-fit: cover; }
+      .jewellery-hero-copy { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: 55px clamp(26px, 7vw, 94px); color: #fffaf1; }
+      .jewellery-hero-copy small { color: #d7bd91; font-size: 8px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+      .jewellery-hero-copy h2 { margin: 14px 0; font: 500 clamp(38px, 5vw, 64px)/1.02 "Cormorant Garamond", Georgia, serif; }
+      .jewellery-hero-copy p { max-width: 430px; color: #e7d9c8; font-size: 10px; line-height: 1.8; }
+      .jewellery-hero-copy button { margin-top: 14px; padding: 12px 18px; border: 1px solid #c9ab7a; background: #c9ab7a; color: #35251e; font-size: 9px; font-weight: 800; }
+      .jewellery-hero-copy span { margin-top: 20px; color: #ddcdbb; font-size: 8px; }
+      .jewellery-assurances { display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px auto 30px; border-block: 1px solid #eadfce; }
+      .jewellery-assurances > div { padding: 14px 12px; text-align: center; border-right: 1px solid #eadfce; }
+      .jewellery-assurances > div:last-child { border-right: 0; }
+      .jewellery-assurances b, .jewellery-assurances span { display: block; }
+      .jewellery-assurances b { color: #614636; font-size: 9px; }
+      .jewellery-assurances span { margin-top: 4px; color: #8b7b6e; font-size: 8px; }
+      .jewellery .category-section { padding-top: 22px; }
+      .jewellery .category-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+      .jewellery .category-card { min-height: 130px; border: 1px solid #eadfce; background: #fffdf9; }
+      .jewellery .category-art { color: #a17b49; background: #f7f0e5; }
+      .jewellery .category-card strong { color: #49362b; }
+      .jewellery .product-card { border: 1px solid #e8dfd3; background: #fffdf9; }
+      .jewellery .product-photo { aspect-ratio: 1 / 1; background: #f7f2eb; }
+      .jewellery .product-info h3 { font-family: "Cormorant Garamond", Georgia, serif; font-size: 16px; }
+      .jewellery .product-price { color: #754d2e; }
+      .jewellery .add-button { border-color: #9b784b; background: #38241d; color: #fff9ee; }
+      .jewellery-story { display: grid; grid-template-columns: 1fr .85fr .85fr 1fr; min-height: 205px; margin: 34px auto; overflow: hidden; background: #f4ede2; }
+      .jewellery-story > div { display: flex; flex-direction: column; justify-content: center; padding: 22px; }
+      .jewellery-story > div:nth-child(4) { background: #eee2d1; }
+      .jewellery-story img { width: 100%; height: 100%; min-height: 205px; object-fit: cover; }
+      .jewellery-story small { color: #9a7448; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+      .jewellery-story h3 { margin: 9px 0 6px; color: #4a3024; font: 500 23px/1.1 "Cormorant Garamond", Georgia, serif; }
+      .jewellery-story p { margin: 0; color: #807166; font-size: 9px; line-height: 1.6; }
+      .jewellery-footer .footer-main { background: #f5efe5; }
+      .jewellery-footer .footer-bottom { background: #38241d; color: #f8efe2; }
+      .market-footer .footer-main { background: #f1f5f7; }
+      .boutique-footer .footer-main { background: #fbf7f4; }
+      .boutique-footer .footer-bottom { background: #f2ebe6; }
+      .heritage-footer .footer-main { background: #f6efdf; }
+      .heritage-footer .footer-bottom { background: #783c29; color: #f7e9d1; }
+      .grocery-footer .footer-main { background: #f1f7ee; }
+      .grocery-footer .footer-bottom { background: #e7f0e4; }
+      .travel-footer .footer-main { background: #edf3f5; }
+      .travel-footer .footer-bottom { background: #153f60; color: #e7f0f3; }
+      @media (max-width: 900px) {
+        .gallery { padding-right: 20px; padding-left: 20px; }
+        .shop-head { grid-template-columns: auto 1fr auto; gap: 12px; }
+        .header-actions .head-action:first-child { display: none; }
+        .category-grid, .travel .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .grocery .category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .brand-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .service-row { grid-template-columns: repeat(2, 1fr); }
+        .service-item:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
+        .service-item:nth-child(4) { border-top: 1px solid var(--line); }
+        .mapping-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .market-campaign { grid-template-columns: 1fr 1fr; }
+        .market-offer-stack { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+        .boutique .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .travel .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .grocery .category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .travel-story { grid-template-columns: 1fr 1fr; }
+      }
+      @media (max-width: 600px) {
+        .gallery { padding: 15px 10px 32px; }
+        .gallery-head { align-items: flex-start; flex-direction: column; gap: 8px; }
+        .gallery-note { font-size: 11px; }
+        .concept-tab { padding: 9px 12px; }
+        .mapping-body { grid-template-columns: 1fr; }
+        .mapping-hint { grid-column: auto; }
+        .concept-bar { font-size: 9px; }
+        .india-bar { align-items: flex-start; flex-direction: column; gap: 7px; }
+        .shop-head { grid-template-columns: 1fr auto; gap: 10px; padding-top: 13px; padding-bottom: 13px; }
+        .shop-logo { font-size: 21px; }
+        .searchbox { grid-column: 1 / -1; grid-row: 2; height: 38px; }
+        .header-actions { grid-column: 2; grid-row: 1; }
+        .shop-nav { gap: 18px; }
+        .market-location { align-items: flex-start; flex-direction: column; gap: 5px; }
+        .market-header { grid-template-columns: 1fr auto; gap: 10px; padding-top: 13px; padding-bottom: 13px; }
+        .market-search { grid-column: 1 / -1; grid-row: 2; height: 38px; }
+        .market-actions { grid-column: 2; grid-row: 1; gap: 8px; }
+        .market-actions > span { display: none; }
+        .market-campaign { grid-template-columns: 1fr; margin-top: 10px; }
+        .market-campaign-image { min-height: 220px; }
+        .market-offer-stack { grid-column: auto; }
+        .market-offer { min-height: 105px; padding: 12px; }
+        .boutique-header { padding-top: 12px; }
+        .boutique-topline { font-size: 8px; }
+        .boutique-masthead { padding: 12px 0; }
+        .boutique-masthead .shop-logo { font-size: 24px; }
+        .boutique-tools { gap: 8px; font-size: 9px; }
+        .boutique-nav, .heritage-nav, .travel-nav { justify-content: flex-start; overflow: auto; white-space: nowrap; }
+        .boutique-hero { grid-template-columns: 1fr; margin-top: 10px; }
+        .boutique-hero-copy { padding: 28px 22px; }
+        .boutique-hero-copy h2 { font-size: 43px; }
+        .boutique-hero-image { min-height: 270px; max-height: 330px; }
+        .boutique-editorial { gap: 8px; font-size: 9px; }
+        .boutique-lookbook { grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 28px; }
+        .lookbook-copy { grid-column: 1 / -1; grid-row: 1; min-height: 145px; }
+        .lookbook-image { min-height: 190px; }
+        .heritage-topline { gap: 10px; font-size: 8px; }
+        .heritage-masthead { gap: 8px; padding: 15px 12px; }
+        .heritage-masthead .shop-logo { font-size: 29px; }
+        .heritage-mark { font-size: 8px; }
+        .heritage-hero { min-height: 400px; margin-top: 8px; }
+        .heritage-hero-copy { width: 90%; padding: 42px 28px; }
+        .artisan-note { grid-template-columns: 1fr; margin-top: 25px; }
+        .artisan-note img { min-height: 190px; max-height: 220px; }
+        .artisan-note-copy { padding: 22px; }
+        .grocery-header { grid-template-columns: 1fr auto; gap: 9px; padding: 12px; }
+        .grocery-delivery { justify-self: end; padding: 8px; font-size: 8px; }
+        .grocery-search { grid-column: 1 / -1; grid-row: 2; }
+        .grocery-cart { grid-column: 2; grid-row: 1; }
+        .grocery-hero { grid-template-columns: 1fr; margin-top: 10px; }
+        .grocery-hero-copy { padding: 22px; }
+        .grocery-hero-image { min-height: 190px; max-height: 220px; }
+        .grocery-deals { grid-template-columns: 1fr; gap: 7px; margin: 15px auto; }
+        .grocery-deal { padding: 10px; }
+        .grocery-recipe { grid-template-columns: 1fr; }
+        .grocery-recipe img { max-height: 160px; }
+        .travel-header { align-items: flex-start; flex-direction: column; gap: 11px; padding: 14px 16px; }
+        .travel-header-actions { flex-wrap: wrap; gap: 9px; font-size: 8px; }
+        .travel-hero { min-height: 420px; }
+        .travel-hero-copy { padding: 45px 22px 22px; }
+        .trip-search { grid-template-columns: 1fr 1fr; width: calc(100% - 24px); margin-top: 10px; padding: 7px; }
+        .trip-field { padding: 7px; }
+        .trip-field:nth-child(2n) { border-right: 0; }
+        .trip-search button { grid-column: 1 / -1; min-height: 40px; }
+        .travel .category-card { min-height: 140px; }
+        .travel-story { grid-template-columns: 1fr 1fr; }
+        .travel-story > div { min-height: 165px; padding: 14px; }
+        .travel-story img { min-height: 165px; }
+        .hero, .market .hero, .boutique .hero, .grocery .hero, .travel .hero { grid-template-columns: 1fr; }
+        .hero { margin-top: 10px; }
+        .hero-copy { padding: 25px 22px; }
+        .hero-art, .market .hero-art, .boutique .hero-art, .grocery .hero-art, .travel .hero-art { min-height: 210px; max-height: 245px; }
+        .hero-art img { min-height: 210px; max-height: 245px; }
+        .heritage .hero { min-height: 410px; }
+        .heritage .hero-copy { width: 100%; min-height: 410px; padding: 26px 22px; }
+        .heritage .hero-art { position: absolute; inset: 0; max-height: none; }
+        .heritage .hero-art img { min-height: 410px; max-height: none; }
+        .service-item { padding: 10px; }
+        .category-grid, .travel .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+        .jewellery-main-header { grid-template-columns: 1fr auto; gap: 10px; padding: 14px; }
+        .jewellery-header .shop-logo { font-size: 23px; }
+        .jewellery-search { grid-column: 1 / -1; grid-row: 2; }
+        .jewellery-actions { grid-column: 2; grid-row: 1; gap: 9px; font-size: 8px; }
+        .jewellery-nav { justify-content: flex-start; overflow-x: auto; white-space: nowrap; gap: 20px; }
+        .jewellery-hero { grid-template-columns: 1fr; min-height: 0; }
+        .jewellery-hero > img { grid-column: 1; grid-row: 1; min-height: 250px; max-height: 290px; }
+        .jewellery-hero-copy { grid-column: 1; grid-row: 2; padding: 26px 22px; }
+        .jewellery-hero-copy h2 { font-size: 40px; }
+        .jewellery-assurances { grid-template-columns: 1fr 1fr; }
+        .jewellery-assurances > div:nth-child(2) { border-right: 0; }
+        .jewellery-story { grid-template-columns: 1fr 1fr; }
+        .jewellery-story > div { min-height: 155px; padding: 14px; }
+        .jewellery-story img { min-height: 155px; }
+        .category-card { min-height: 105px; padding: 8px 5px; }
+        .category-art { width: 50px; height: 50px; font-size: 22px; }
+        .boutique .category-art, .heritage .category-art { width: 63px; height: 63px; font-size: 27px; }
+        .grocery .category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .grocery .category-art { width: 49px; height: 49px; }
+        .brand-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+        .brand-card { min-height: 62px; padding: 8px; }
+        .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 19px 10px; }
+        .product-info h3 { font-size: 10px; }
+        .product-price { font-size: 11px; }
+        .add-button { padding: 6px 8px; }
+        .feature-band { grid-template-columns: 1fr; gap: 9px; }
+        .feature-card { min-height: 170px; }
+        .newsletter { align-items: flex-start; flex-direction: column; }
+        .newsletter-form { width: 100%; }
+        .footer-main { grid-template-columns: repeat(2, 1fr); gap: 17px; }
+        .footer-main > div:first-child { grid-column: 1 / -1; }
+        .footer-bottom { flex-direction: column; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="gallery">
+      <header class="gallery-head">
+        <div>
+          <p class="gallery-kicker">Tenali · storefront design studio</p>
+          <h1>Choose a direction. Make it yours.</h1>
+        </div>
+        <p class="gallery-note">Five genuinely different storefront themes: marketplace, boutique editorial, heritage craft, grocery market, and Indian jewellery. Choose one to compare its full page.</p>
+      </header>
+      <nav class="concept-tabs" aria-label="Storefront designs" role="tablist">
+        <button class="concept-tab" id="tab-market" role="tab" aria-controls="store-preview" aria-selected="true" data-design="market">01&nbsp; Marketplace</button>
+        <button class="concept-tab" id="tab-boutique" role="tab" aria-controls="store-preview" aria-selected="false" data-design="boutique">02&nbsp; Boutique</button>
+        <button class="concept-tab" id="tab-heritage" role="tab" aria-controls="store-preview" aria-selected="false" data-design="heritage">03&nbsp; Heritage India</button>
+        <button class="concept-tab" id="tab-grocery" role="tab" aria-controls="store-preview" aria-selected="false" data-design="grocery">04&nbsp; Supermarket</button>
+        <button class="concept-tab" id="tab-jewellery" role="tab" aria-controls="store-preview" aria-selected="false" data-design="jewellery">05&nbsp; Jewellery</button>
+      </nav>
+      <details class="mapping">
+        <summary>Preview section mapping <span>Sample-only controls · nothing is saved or sent to a database</span></summary>
+        <div class="mapping-body">
+          <label>Categories to feature<select id="map-categories" multiple></select></label>
+          <label>Brands to feature<select id="map-brands" multiple></select></label>
+          <label>Product shelf source<select id="map-products"></select></label>
+          <label>Merchandising section<select id="map-section"></select></label>
+          <p class="mapping-hint">Choose one or more categories and brands to update the preview rails. All selections are temporary in this browser; no schema or database has been changed.</p>
+        </div>
+      </details>
+      <section class="concept" id="store-preview" role="tabpanel" aria-labelledby="tab-market"></section>
+    </main>
+    <script>
+      const photo = (id, width = 700) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${width}&q=82`;
+      const designs = {
+        market: {
+          theme: "market", label: "Marketplace · all-in-one retail", logo: "MART.", tagline: "Everything, every day",
+          announcement: "Republic week offers · Extra savings with UPI · Free delivery over ₹499",
+          nav: ["All departments", "Mobiles", "Fashion", "Home & kitchen", "Beauty", "Appliances", "Today's deals"],
+          location: "Bengaluru 560001", heroTitle: "The big Indian<br>shopping festival.", heroKicker: "Up to 60% off · Limited-time deals",
+          heroCopy: "Shop trusted brands, everyday essentials and new finds. Great prices, clear delivery dates, easy returns.",
+          heroButton: "Shop festival deals", heroImage: photo("photo-1490481651871-ab68de25d43d", 1100), heroAlt: "Summer fashion collection",
+          heroCaption: "Fresh picks · Starts at ₹299", services: [["↗", "Fast delivery", "Across 19,000+ pin codes"], ["✓", "Easy returns", "Simple, transparent policy"], ["▣", "Pay your way", "UPI · cards · COD"], ["♧", "Trusted sellers", "Verified brands & stores"]],
+          categories: [["📱","Mobiles","#e8f3fa"],["👗","Fashion","#f8edeb"],["🏠","Home","#f5f0e7"],["💄","Beauty","#f7eaf0"],["🎧","Electronics","#e9eef8"],["🍳","Kitchen","#f5ede1"],["🧸","Toys","#edf4e9"],["👟","Footwear","#f0eef8"]],
+          brands: ["Samsung","boAt","Noise","Puma","Prestige","Havells"],
+          shelves: [["Trending across India","FAST SELLING","All departments"],["New arrivals","JUST LANDED","New collection"],["Great finds under ₹999","SMART SAVINGS","Value picks"]],
+          features: [["Editor's picks", "A little something for every home", photo("photo-1490312278390-ab64016e0aa9", 900)], ["Style for the season", "Easy outfits, better prices", photo("photo-1539109136881-3be0616acf4b", 900)]],
+          products: [
+            ["boAt","Airdopes 141 Bluetooth earbuds","₹1,099","₹2,990","4.4 ★ · 18k ratings","BESTSELLER",photo("photo-1505740420928-5e560c06d30e")],
+            ["Samsung","Galaxy Fit smart watch","₹2,499","₹3,999","4.5 ★ · 8k ratings","TOP RATED",photo("photo-1523275335684-37898b6baf30")],
+            ["Puma","Unisex running shoes","₹2,299","₹4,999","4.3 ★ · 2k ratings","−54%",photo("photo-1542291026-7eec264c27ff")],
+            ["Home Studio","Everyday ceramic planter","₹549","₹899","4.6 ★ · 470 ratings","NEW",photo("photo-1490312278390-ab64016e0aa9")],
+            ["Noise","ColorFit smart watch","₹1,799","₹3,999","4.2 ★ · 4k ratings","TRENDING",photo("photo-1523275335684-37898b6baf30")],
+            ["Prestige","Svachh aluminium pressure cooker","₹1,699","₹2,295","4.5 ★ · 980 ratings","DEAL",photo("photo-1556911220-e15b29be8c8f")],
+            ["Samsung","20W fast charger","₹799","₹1,499","4.4 ★ · 3k ratings","NEW",photo("photo-1609091839311-d5365f9ff1c5")],
+            ["Puma","Everyday cotton polo","₹999","₹1,799","4.2 ★ · 680 ratings","−44%",photo("photo-1521572163474-6864f9cf17ab")],
+            ["Havells","Stella table fan","₹2,249","₹3,490","4.5 ★ · 520 ratings","SUMMER PICK",photo("photo-1586023492125-27b2c045efd7")],
+            ["boAt","Rockerz wireless headphones","₹1,499","₹3,490","4.3 ★ · 5k ratings","POPULAR",photo("photo-1505740420928-5e560c06d30e")],
+            ["Home Studio","Cotton cushion cover set","₹699","₹1,199","4.6 ★ · 290 ratings","VALUE PICK",photo("photo-1600210492486-724fe5c67fb0")],
+            ["Prestige","Electric kettle 1.5 litre","₹1,099","₹1,695","4.4 ★ · 870 ratings","DEAL",photo("photo-1574269909862-7e1d70bb8078")]
+          ]
+        },
+        boutique: {
+          theme: "boutique", label: "Boutique · considered fashion", logo: "Mysa Studio", tagline: "Made for your everyday",
+          announcement: "Complimentary shipping over ₹2,500 · Made in India, made to be loved",
+          nav: ["New in", "Clothing", "Sarees", "Jewellery", "The occasion edit", "Our story"],
+          location: "Ships across India", heroTitle: "A softer kind<br>of statement.", heroKicker: "The festive edit · 2025",
+          heroCopy: "Modern heirlooms and considered essentials. Thoughtful silhouettes, artisan details and pieces made to stay.",
+          heroButton: "Discover the collection", heroImage: photo("photo-1539109136881-3be0616acf4b", 1100), heroAlt: "Contemporary Indian fashion editorial",
+          heroCaption: "Hand-finished · Small batches", services: [["✳","Made with care","Small-batch collections"],["⌂","Made in India","Designed close to home"],["↺","Easy exchanges","A fit that feels right"],["▣","Secure checkout","UPI · cards · COD"]],
+          categories: [["🥻","Sarees","#f3dfd8"],["👚","Kurtas","#efe5d7"],["👗","Dresses","#efdee2"],["💍","Jewellery","#f2ead8"],["👜","Bags","#e9e4dc"],["🧣","Dupattas","#e8e1eb"]],
+          brands: ["Mysa Studio","Okhai","Suta","Taneira","House of Masaba","Jaypore"],
+          shelves: [["New season, new stories","JUST ARRIVED","New collection"],["The festive edit","MOST LOVED","Festive wear"],["Made to accessorise","HANDPICKED","Jewellery & bags"]],
+          features: [["Meet the makers", "Craft, community and a little bit of magic", photo("photo-1600166898405-da9535204843", 900)], ["Wear it your way", "Looks for celebrations, and everything after", photo("photo-1551232864-3f0890e580d9", 900)]],
+          products: [
+            ["Mysa Studio","Chanderi handwoven kurta set","₹4,250","₹5,600","Handwoven · 3 colours","NEW",photo("photo-1594633312681-425c7b97ccd1")],
+            ["Suta","Gulabi cotton-silk saree","₹3,490","₹4,200","Handloom · 5.0 ★","HANDLOOM",photo("photo-1610030469983-98e550d6193c")],
+            ["Okhai","Genda embroidered potli","₹1,250","₹1,650","Handcrafted · 4.8 ★","ARTISAN MADE",photo("photo-1548036328-c9fa89d128fa")],
+            ["Taneira","Everyday linen saree","₹2,990","₹3,800","Pure linen · 4.7 ★","BESTSELLER",photo("photo-1539109136881-3be0616acf4b")],
+            ["House of Masaba","Printed festive co-ord","₹5,499","₹6,999","Limited edition · 4.6 ★","FESTIVE EDIT",photo("photo-1551232864-3f0890e580d9")],
+            ["Jaypore","Meenakari statement earrings","₹1,890","₹2,400","Hand-painted · 4.9 ★","HANDCRAFTED",photo("photo-1611652022419-a9419f74343d")],
+            ["Mysa Studio","Linen blend relaxed shirt","₹1,950","₹2,450","Breathable · 4.7 ★","NEW",photo("photo-1521572163474-6864f9cf17ab")],
+            ["Suta","Phool cotton dupatta","₹1,499","₹1,850","Hand block-printed","MADE IN INDIA",photo("photo-1600166898405-da9535204843")],
+            ["Okhai","Hand-embroidered tote","₹1,750","₹2,100","Artisan made · 4.8 ★","BESTSELLER",photo("photo-1548036328-c9fa89d128fa")],
+            ["Taneira","Tussar silk occasion saree","₹7,990","₹9,500","Pure silk · 4.9 ★","OCCASION",photo("photo-1610030469983-98e550d6193c")],
+            ["Jaypore","Polki-inspired choker set","₹3,250","₹4,100","Gold-tone · 4.7 ★","JUST IN",photo("photo-1611652022419-a9419f74343d")],
+            ["Mysa Studio","Everyday leather sling","₹2,890","₹3,600","Crafted in India · 4.6 ★","SMALL BATCH",photo("photo-1548036328-c9fa89d128fa")]
+          ]
+        },
+        heritage: {
+          theme: "heritage", label: "Heritage India · craft & culture", logo: "Aangan", tagline: "India, made by hand",
+          announcement: "Every order supports independent Indian artisans · Free shipping over ₹1,999",
+          nav: ["Shop all", "Textiles", "Home & living", "Tableware", "Jewellery", "By region", "Our craft"],
+          location: "Made across India", heroTitle: "A living heritage.<br>For your home.", heroKicker: "Craft stories · From Kutch to Kashmir",
+          heroCopy: "Objects with a soul, shaped by generations of skill. Meet the makers and bring home a piece of India's living craft.",
+          heroButton: "Explore craft stories", heroImage: photo("photo-1600210492486-724fe5c67fb0", 1200), heroAlt: "Handcrafted Indian home and decor",
+          heroCaption: "Made by hand · Sourced with care", services: [["✳","Meet every maker","Stories from the source"],["⌂","Made across India","Craft from 18 states"],["♧","Fairly sourced","Supporting artisan groups"],["▣","Secure checkout","UPI · cards · COD"]],
+          categories: [["🧵","Handloom","#e9ddca"],["🏺","Pottery","#e8d6c6"],["🪔","Decor","#efe5cc"],["💎","Jewellery","#e8d9cf"],["🧺","Baskets","#e4e5d5"],["🖼️","Art","#eadfd3"]],
+          brands: ["Kutch Kala","Dastkar","Avani","Sasha","Mura Collective","Gaatha"],
+          shelves: [["Crafts with a story","ARTISAN FAVOURITES","By artisan"],["New from the ateliers","NEW ARRIVALS","New collection"],["The home edit","REGION: RAJASTHAN","Home & living"]],
+          features: [["A Kutch story", "Meet the ajrakh printers carrying craft forward", photo("photo-1600166898405-da9535204843", 900)], ["The colour of Jaipur", "Blue pottery, made slowly and beautifully", photo("photo-1578749556568-bc2c40e68b61", 900)]],
+          products: [
+            ["Kutch Kala","Ajrakh block-print table runner","₹2,450","₹2,950","Kutch, Gujarat · 2 makers","HAND BLOCK PRINT",photo("photo-1600166898405-da9535204843")],
+            ["Avani","Blue pottery serving bowl","₹1,850","₹2,200","Jaipur, Rajasthan · 4.9 ★","HAND PAINTED",photo("photo-1578749556568-bc2c40e68b61")],
+            ["Sasha","Handwoven cotton cushion","₹1,250","₹1,650","Assam · Natural dyes","HANDLOOM",photo("photo-1600210492486-724fe5c67fb0")],
+            ["Dastkar","Bidri-inspired keepsake box","₹2,950","₹3,500","Bidar, Karnataka · 1 maker","ARTISAN MADE",photo("photo-1578500494198-246f612d3b3d")],
+            ["Mura Collective","Kashmiri kani cushion cover","₹2,650","₹3,200","Srinagar · Handwoven","REGIONAL CRAFT",photo("photo-1604881991720-f91add269bed")],
+            ["Gaatha","Hand-thrown terracotta diya set","₹790","₹990","Gujarat · Set of 4","MADE BY HAND",photo("photo-1578749556568-bc2c40e68b61")],
+            ["Kutch Kala","Natural-dye cotton stole","₹1,950","₹2,400","Gujarat · Handloom","NATURAL DYE",photo("photo-1600166898405-da9535204843")],
+            ["Avani","Blue pottery pendant light","₹4,850","₹5,500","Jaipur · Hand-painted","SMALL BATCH",photo("photo-1578749556568-bc2c40e68b61")],
+            ["Dastkar","Carved mango wood serving board","₹1,490","₹1,850","Saharanpur, UP · 4.8 ★","WOOD CRAFT",photo("photo-1556911220-e15b29be8c8f")],
+            ["Sasha","Hand-braided grass basket","₹1,150","₹1,490","Bengal · Natural fibre","SUSTAINABLE",photo("photo-1600210492486-724fe5c67fb0")],
+            ["Mura Collective","Brass inlay table accent","₹2,290","₹2,750","Moradabad, UP · 4.9 ★","METAL CRAFT",photo("photo-1578500494198-246f612d3b3d")],
+            ["Gaatha","Handwoven dhurrie rug","₹5,950","₹7,200","Rajasthan · 3 artisan family","HANDWOVEN",photo("photo-1600166898405-da9535204843")]
+          ]
+        },
+        grocery: {
+          theme: "grocery", label: "Supermarket · fresh & daily", logo: "dailybasket", tagline: "Freshness for every home",
+          announcement: "Fresh picks delivered today · Free delivery over ₹499 · Order by 7 PM",
+          nav: ["Shop all", "Fruits & vegetables", "Dairy & eggs", "Atta, rice & dal", "Snacks", "Personal care", "Household"],
+          location: "Delivering to Bengaluru 560001", heroTitle: "Good food.<br>Good day.", heroKicker: "Fresh from farms & neighbourhood favourites",
+          heroCopy: "Daily essentials, locally sourced produce and pantry staples. Pick your slot and we will bring the good stuff home.",
+          heroButton: "Shop fresh today", heroImage: photo("photo-1542838132-92c53300491e", 1100), heroAlt: "Fresh fruits and vegetables in a market",
+          heroCaption: "Order by 7 PM · Delivery slots today", services: [["♧","Freshness promise","Carefully picked daily"],["⌂","Local favourites","From nearby producers"],["↗","Choose a time","Slots that suit your day"],["▣","Easy payments","UPI · cards · COD"]],
+          categories: [["🥬","Vegetables","#e1f0dd"],["🍎","Fruits","#f9e6d9"],["🥛","Dairy & eggs","#e7eff5"],["🌾","Rice & dal","#f2ebd6"],["🍞","Bakery","#f3e8d9"],["🍪","Snacks","#f6e5dc"],["🧴","Personal care","#e9e7f1"],["🧹","Household","#e5eee7"]],
+          brands: ["Amul","Aashirvaad","Tata Sampann","MTR","Dabur","iD Fresh"],
+          shelves: [["Fresh arrivals today","PICKED THIS MORNING","Fruits & vegetables"],["Everyday pantry staples","MOST ORDERED","Pantry"],["Snacks for chai time","WEEKEND FAVOURITES","Snacks"]],
+          features: [["Plan your week", "Build your list of everyday essentials", photo("photo-1547592180-85f173990554", 900)], ["Straight from the farm", "Seasonal produce from local growers", photo("photo-1542838132-92c53300491e", 900)]],
+          products: [
+            ["Local Farm","Alphonso mangoes","₹349","₹399","1 dozen · Ratnagiri","SEASONAL",photo("photo-1553279768-865429fa0078")],
+            ["Amul","Taaza toned milk","₹29","","500 ml · Chilled","DAILY ESSENTIAL",photo("photo-1563636619-e9143da7973b")],
+            ["Tata Sampann","Unpolished toor dal","₹169","₹195","1 kg · 4.7 ★","BESTSELLER",photo("photo-1515543904379-3d757afe72e4")],
+            ["Aashirvaad","Shudh chakki atta","₹265","","5 kg · Whole wheat","PANTRY PICK",photo("photo-1509440159596-0249088772ff")],
+            ["Local Farm","Robusta bananas","₹49","","6 pcs · Naturally ripened","FRESH TODAY",photo("photo-1571771894821-ce9b6c11b08e")],
+            ["MTR","Ready-to-eat masala dosa","₹120","₹140","500 g · 4.5 ★","QUICK MEAL",photo("photo-1630384060421-cb20d0e0649d")],
+            ["iD Fresh","Whole wheat parota","₹85","","400 g · No preservatives","LOCAL FAVOURITE",photo("photo-1601050690597-df0568f70950")],
+            ["Dabur","Real fruit juice mango","₹110","₹125","1 litre · Family pack","VALUE PACK",photo("photo-1546173159-315724a31696")],
+            ["Local Farm","Fresh spinach bunch","₹25","","1 bunch · Locally grown","PICKED TODAY",photo("photo-1597362925123-77861d3fbac7")],
+            ["Amul","Masti spiced buttermilk","₹15","","200 ml · Chilled","COOL & REFRESH",photo("photo-1550583724-b2692b85b150")],
+            ["Tata Sampann","Premium basmati rice","₹199","₹230","1 kg · Aged grains","PANTRY PICK",photo("photo-1586201375761-83865001e31c")],
+            ["Local Bakery","Multigrain sandwich bread","₹55","","400 g · Baked today","BAKERY FRESH",photo("photo-1509440159596-0249088772ff")]
+          ]
+        },
+        jewellery: {
+          theme: "jewellery", label: "Jewellery · heirlooms made across India", logo: "Aabha Jewels", tagline: "Made to become yours",
+          announcement: "Complimentary insured delivery · BIS hallmarked gold · Easy exchanges",
+          nav: ["New Arrivals", "Gold", "Diamond", "Bridal", "Silver", "Our Craft"],
+          location: "Made in India · Ships across India", heroTitle: "A little gold.<br>A lifetime of stories.", heroKicker: "The modern heirloom collection",
+          heroCopy: "Meet handcrafted gold, diamond and silver jewellery shaped by Indian artistry and made for the moments you keep.",
+          heroButton: "Explore the collection", heroImage: photo("photo-1611652022419-a9419f74343d", 1200), heroAlt: "Fine Indian gold jewellery collection",
+          heroCaption: "BIS hallmarked · Crafted with care", services: [["✧","Hallmarked","Quality you can trust"],["◇","Made to order","Crafted for your moment"],["↺","Easy exchanges","A simpler way to shop"],["▣","Pay your way","UPI · cards · net banking"]],
+          categories: [["✧","Gold jewellery","#f5ead1"],["◇","Diamond jewellery","#f2efeb"],["❀","Bridal sets","#ead9c5"],["◌","Silver jewellery","#e9e9e7"],["♡","Everyday pieces","#f2e5e3"],["✦","Gifts under ₹10,000","#efe7d8"]],
+          brands: ["Aabha Atelier","The Gold Room","House of Heera","Mitti Silver","Kundan Stories","Everyday by Aabha"],
+          shelves: [["New heirlooms, just arrived","FRESH FROM THE ATELIER","New Arrivals"],["Made for the main moment","BRIDAL EDIT","Bridal"],["A little something, every day","EVERYDAY FAVOURITES","Everyday pieces"]],
+          features: [["The art of the heirloom", "Made slowly, finished by hand, and designed to be worn for years.", photo("photo-1617038220319-276d3cfab638", 900)], ["A detail worth keeping", "Thoughtful craft and timeless forms, made by Indian artisans.", photo("photo-1611591437281-460bfbe1220a", 900)]],
+          products: [
+            ["Aabha Atelier","22K gold floral jhumkas","₹28,500","₹31,900","22K gold · BIS hallmarked","HANDCRAFTED",photo("photo-1611652022419-a9419f74343d")],
+            ["The Gold Room","Temple gold necklace","₹46,800","₹52,000","22K gold · 18.4 g","CRAFT PICK",photo("photo-1617038220319-276d3cfab638")],
+            ["House of Heera","Diamond halo studs","₹18,250","₹21,000","18K gold · IGI certified","NEW ARRIVAL",photo("photo-1611591437281-460bfbe1220a")],
+            ["Kundan Stories","Kundan bridal choker set","₹64,900","₹72,500","Hand-set stones · 4.8 ★","BRIDAL EDIT",photo("photo-1630019852942-f89202989a59")],
+            ["Mitti Silver","Silver lotus pendant","₹2,450","₹2,900","925 sterling silver","EVERYDAY",photo("photo-1611652022419-a9419f74343d")],
+            ["Aabha Atelier","Gold-plated pearl drops","₹3,850","₹4,500","Freshwater pearls · 4.7 ★","GIFT FAVOURITE",photo("photo-1617038220319-276d3cfab638")],
+            ["The Gold Room","22K gold bangle pair","₹39,500","₹43,900","22K gold · Set of 2","BESTSELLER",photo("photo-1611591437281-460bfbe1220a")],
+            ["House of Heera","Diamond line bracelet","₹32,800","₹37,500","18K gold · IGI certified","ATELIER PICK",photo("photo-1630019852942-f89202989a59")],
+            ["Kundan Stories","Polki chandbali earrings","₹24,900","₹28,000","Hand-finished · 4.9 ★","FESTIVE EDIT",photo("photo-1611652022419-a9419f74343d")],
+            ["Mitti Silver","Silver anklet pair","₹1,950","₹2,300","925 sterling silver · Pair","UNDER ₹2,500",photo("photo-1617038220319-276d3cfab638")],
+            ["Aabha Atelier","Gold and enamel ring","₹12,600","₹14,500","22K gold · Adjustable","JUST IN",photo("photo-1611591437281-460bfbe1220a")],
+            ["The Gold Room","Pearl and gold haram","₹58,900","₹66,000","22K gold · Made to order","LIMITED CRAFT",photo("photo-1630019852942-f89202989a59")]
+          ]
+        }
+      };
+
+      const money = (value) => value.startsWith("₹") ? value : `₹${value}`;
+      const optionMarkup = (values, selectedCount = 0) => values.map((value, index) => `<option value="${value}"${index < selectedCount ? " selected" : ""}>${value}</option>`).join("");
+      const fillMapper = (design) => {
+        document.querySelector("#map-categories").innerHTML = optionMarkup(design.categories.map((category) => category[1]), 3);
+        document.querySelector("#map-brands").innerHTML = optionMarkup(design.brands, 3);
+        document.querySelector("#map-products").innerHTML = optionMarkup(["New arrivals", "Best sellers", "Fast selling", "Hand-picked products"]);
+        document.querySelector("#map-section").innerHTML = optionMarkup(["New collection", "Fast selling", "Popular this week", "Seasonal picks", "Featured brands"]);
+      };
+      const renderProducts = (products) => `<div class="product-grid">${products.map((item) => `
+        <article class="product-card">
+          <div class="product-photo"><img loading="lazy" src="${item[6]}" alt="${item[1]}"><span class="product-badge">${item[5]}</span><button class="product-wish" type="button" aria-label="Save ${item[1]}">♡</button></div>
+          <div class="product-info"><span class="product-brand">${item[0]}</span><h3>${item[1]}</h3><div class="product-extra">${item[4]}</div>
+            <div class="product-buy"><span class="product-price">${money(item[2])} ${item[3] ? `<del>${money(item[3])}</del>` : ""}</span><button class="add-button" type="button" data-add>Add</button></div>
+          </div>
+        </article>`).join("")}</div>`;
+      const renderSection = (design, shelf, index) => `
+        <section class="store-section store-width">
+          <div class="section-top"><div><p class="section-eyebrow">${shelf[1]}</p><h2>${shelf[0]}</h2><p>Curated for you · ${shelf[2]}</p></div><button class="view-all" type="button">View all&nbsp; →</button></div>
+          ${renderProducts(design.products.slice(index * 4, index * 4 + 4))}
+        </section>`;
+      const renderCategorySection = (design, key) => {
+        const cards = design.categories.map((category, index) => {
+          const art = `<span class="category-art">${category[0]}</span>`;
+          return `<a class="category-card" data-category="${category[1]}" href="#" style="--category-color:${category[2]}">${art}<strong>${category[1]}</strong><small>${key === "jewellery" ? "Explore jewellery" : index % 2 ? "Explore collection" : "Shop now"} →</small></a>`;
+        }).join("");
+        const title = key === "jewellery" ? "Find the piece that feels like you" : key === "heritage" ? "Explore India's living crafts" : key === "grocery" ? "Shop the aisles" : key === "boutique" ? "The collection, by mood" : "Shop by category";
+        const eyebrow = key === "jewellery" ? "Made for your moments" : key === "heritage" ? "From every corner of India" : key === "grocery" ? "Your everyday essentials" : key === "boutique" ? "Find your feeling" : "Explore the store";
+        return `<section class="store-section store-width category-section ${key}-categories"><div class="section-top"><div><p class="section-eyebrow">${eyebrow}</p><h2>${title}</h2><p>${key === "jewellery" ? "Discover gold, diamond and silver jewellery for every occasion." : "Choose a department to discover more."}</p></div><button class="view-all" type="button">View all&nbsp; →</button></div><div class="category-grid">${cards}</div></section>`;
+      };
+      const renderBrandsSection = (design, key) => {
+        const items = design.brands.map((brand, index) => `<div class="brand-card" data-brand="${brand}"><b>${brand}</b><small>${key === "jewellery" ? "Jewellery house" : key === "heritage" ? "Maker collective" : index % 2 ? "Explore range" : "Official store"}</small></div>`).join("");
+        const title = key === "jewellery" ? "Meet the jewellery houses" : key === "heritage" ? "Meet the craft collectives" : "Shop the brands you love";
+        return `<section class="store-section store-width brand-section ${key}-brands"><div class="section-top"><div><p class="section-eyebrow">${key === "jewellery" ? "Crafted across India" : "Names you know & love"}</p><h2>${title}</h2></div><button class="view-all" type="button">See all&nbsp; →</button></div><div class="brand-rail">${items}</div></section>`;
+      };
+      const renderTrust = (design, key) => `<div class="service-row store-width ${key}-trust">${design.services.map((item) => `<div class="service-item"><span class="service-icon">${item[0]}</span><div><strong>${item[1]}</strong><span>${item[2]}</span></div></div>`).join("")}</div>`;
+      const renderNewsletter = (key) => key === "grocery"
+        ? `<section class="grocery-recipe store-width"><img loading="lazy" src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=900&q=82" alt="Freshly prepared meal"><div><small>FROM OUR KITCHEN</small><h3>What's cooking this week?</h3><p>Simple recipes and everything you need to make them.</p><button type="button">See this week's recipes&nbsp; →</button></div></section>`
+        : `<section class="newsletter store-width"><div><h2>${key === "boutique" ? "A note from Mysa." : key === "heritage" ? "Stories from the makers." : key === "jewellery" ? "A note from the atelier." : "The best of the week, delivered."}</h2><p>New collections, local favourites and offers picked for you.</p></div><form class="newsletter-form"><input type="email" placeholder="Your email address" aria-label="Your email address"><button type="button">Sign me up</button></form></section>`;
+      const renderFooter = (design, key) => `<footer class="${key}-footer"><div class="footer-main"><div><h3>${design.logo}</h3><p>${design.tagline}. Thoughtfully selected for customers across India, with easy ways to discover, shop and get support.</p><p>UPI · Cards · Netbanking · Cash on delivery</p></div><div><h4>Discover</h4><a href="#">All categories</a><a href="#">New collections</a><a href="#">Bestsellers</a><a href="#">Brands</a></div><div><h4>Customer care</h4><a href="#">Track your order</a><a href="#">Shipping & delivery</a><a href="#">Returns & exchanges</a><a href="#">Contact support</a></div><div><h4>Our store</h4><a href="#">About us</a><a href="#">Store policies</a><a href="#">Privacy</a><a href="#">Terms & conditions</a></div></div><div class="footer-bottom"><span>© ${design.logo} · All prices shown in INR, inclusive of applicable taxes.</span><span>Made for shoppers across India · English | हिंदी</span></div></footer>`;
+      const renderMarket = (design) => `
+        <div class="market-location"><span>⌖ &nbsp; Delivering to <b>${design.location}</b> &nbsp; · &nbsp; Change</span><span>Prices in ₹ INR &nbsp; · &nbsp; EN &nbsp; हिंदी &nbsp; · &nbsp; Help</span></div>
+        <header class="market-header"><div class="shop-logo">${design.logo}<small>${design.tagline}</small></div><div class="market-search">⌕ &nbsp; Search millions of products, brands and more <b>⌕</b></div><div class="market-actions"><span>Account</span><span>Orders</span><button type="button">Cart&nbsp; <span data-cart-count>0</span></button></div></header>
+        <nav class="market-main-nav">${design.nav.map((item) => `<a href="#">${item}</a>`).join("")}</nav>
+        <div class="market-campaign store-width"><div class="market-campaign-copy"><p class="hero-kicker">${design.heroKicker}</p><h2>${design.heroTitle}</h2><p>${design.heroCopy}</p><button class="hero-cta" type="button">${design.heroButton}&nbsp; →</button></div><div class="market-campaign-image"><img fetchpriority="high" src="${design.heroImage}" alt="${design.heroAlt}"><span>${design.heroCaption}</span></div><div class="market-offer-stack"><div class="market-offer"><span>Member bonus</span><strong>Extra 10% off</strong><small>On select brands with UPI</small></div><div class="market-offer"><span>Easy shopping</span><strong>Delivered to your door</strong><small>Track every order, every step</small></div></div></div>
+        ${renderTrust(design, "market")}
+        ${renderCategorySection(design, "market")}
+        ${renderBrandsSection(design, "market")}
+        ${renderSection(design, design.shelves[0], 0)}
+        <section class="feature-band store-width">${design.features.map((item) => `<article class="feature-card"><img loading="lazy" src="${item[2]}" alt=""><div class="feature-copy"><small>THE DAILY EDIT</small><h3>${item[0]}</h3><p>${item[1]}</p></div></article>`).join("")}</section>
+        ${renderSection(design, design.shelves[1], 1)}
+        ${renderSection(design, design.shelves[2], 2)}
+        ${renderNewsletter("market")}${renderFooter(design, "market")}`;
+      const renderBoutique = (design) => `
+        <div class="announcement">${design.announcement}</div>
+        <header class="boutique-header"><div class="boutique-topline"><span>Made in India · Ships across India</span><span>EN &nbsp; हिंदी &nbsp; · &nbsp; Help</span></div><div class="boutique-masthead"><span>⌕ &nbsp; Search</span><div class="shop-logo">${design.logo}<small>${design.tagline}</small></div><div class="boutique-tools"><span>Account</span><span>♡</span><span>Bag&nbsp; <b data-cart-count>0</b></span></div></div></header>
+        <nav class="boutique-nav">${design.nav.map((item) => `<a href="#">${item}</a>`).join("")}</nav>
+        <section class="boutique-hero store-width"><div class="boutique-hero-copy"><small>${design.heroKicker}</small><h2>${design.heroTitle.replace("<br>", " ")}</h2><p>${design.heroCopy}</p><a href="#">${design.heroButton}&nbsp; ↗</a></div><div class="boutique-hero-image"><img fetchpriority="high" src="${design.heroImage}" alt="${design.heroAlt}"></div></section>
+        <div class="boutique-editorial store-width"><span>Small batch</span><i>✳</i><span>Thoughtful design</span><i>✳</i><span>Made to be worn your way</span></div>
+        ${renderCategorySection(design, "boutique")}
+        <section class="boutique-lookbook store-width"><div class="lookbook-image"><img loading="lazy" src="${design.features[0][2]}" alt="${design.features[0][0]}"></div><div class="lookbook-copy"><small>THE MYSA JOURNAL</small><h3>${design.features[0][0]}</h3><p>${design.features[0][1]}</p></div><div class="lookbook-image"><img loading="lazy" src="${design.features[1][2]}" alt="${design.features[1][0]}"></div></section>
+        ${renderBrandsSection(design, "boutique")}
+        ${renderSection(design, design.shelves[0], 0)}
+        ${renderSection(design, design.shelves[1], 1)}
+        ${renderSection(design, design.shelves[2], 2)}
+        ${renderNewsletter("boutique")}${renderFooter(design, "boutique")}`;
+      const renderHeritage = (design) => `
+        <div class="heritage-topline"><span>⟡ &nbsp; ${design.announcement}</span><span>ENGLISH &nbsp; | &nbsp; हिंदी</span></div>
+        <header class="heritage-header"><div class="heritage-masthead"><span class="heritage-mark">CRAFTED<br>WITH CARE</span><div class="shop-logo">${design.logo}<small>${design.tagline}</small></div><span class="heritage-mark">A STORY<br>IN EVERY PIECE</span><button class="heritage-cart" type="button">Bag · <span data-cart-count>0</span></button></div><nav class="heritage-nav">${design.nav.map((item) => `<a href="#">${item}</a>`).join("")}</nav></header>
+        <div class="heritage-ribbon">✳ &nbsp; Kutch &nbsp; ✳ &nbsp; Jaipur &nbsp; ✳ &nbsp; Kashmir &nbsp; ✳ &nbsp; Bidar &nbsp; ✳ &nbsp; Bengal &nbsp; ✳ &nbsp; Channapatna &nbsp; ✳</div>
+        <section class="heritage-hero store-width"><img fetchpriority="high" src="${design.heroImage}" alt="${design.heroAlt}"><div class="heritage-hero-copy"><small>${design.heroKicker}</small><h2>${design.heroTitle.replace("<br>", " ")}</h2><p>${design.heroCopy}</p><button type="button">${design.heroButton}&nbsp; →</button></div></section>
+        <section class="artisan-note store-width"><img loading="lazy" src="${design.features[0][2]}" alt="${design.features[0][0]}"><div class="artisan-note-copy"><small>THE MAKER'S STORY</small><h3>${design.features[0][0]}</h3><p>${design.features[0][1]} Every piece carries the hands, patience and knowledge of its maker.</p></div></section>
+        ${renderCategorySection(design, "heritage")}
+        ${renderBrandsSection(design, "heritage")}
+        ${renderSection(design, design.shelves[0], 0)}
+        ${renderSection(design, design.shelves[1], 1)}
+        <div class="heritage-ribbon">Made by hand · Fairly sourced · Rooted in India</div>
+        ${renderSection(design, design.shelves[2], 2)}
+        ${renderNewsletter("heritage")}${renderFooter(design, "heritage")}`;
+      const renderGrocery = (design) => `
+        <header class="grocery-header"><div class="shop-logo">${design.logo}<small>${design.tagline}</small></div><button class="grocery-delivery" type="button">⌖ &nbsp; ${design.location} &nbsp; ⌄</button><div class="grocery-search"><span>⌕</span> Search fruits, pantry, household…</div><button class="grocery-cart" type="button">Basket&nbsp; <span data-cart-count>0</span></button></header>
+        <nav class="grocery-subnav">${design.nav.map((item) => `<a href="#">${item}</a>`).join("")}</nav>
+        <div class="grocery-slot"><b>Delivery slots today:</b> 4–6 PM &nbsp; · &nbsp; 6–8 PM &nbsp; &nbsp; Freshly picked until 7 PM</div>
+        <section class="grocery-hero store-width"><div class="grocery-hero-copy"><small>${design.heroKicker}</small><h2>${design.heroTitle.replace("<br>", " ")}</h2><p>${design.heroCopy}</p><button type="button">${design.heroButton}&nbsp; →</button></div><div class="grocery-hero-image"><img fetchpriority="high" src="${design.heroImage}" alt="${design.heroAlt}"></div></section>
+        <div class="grocery-deals store-width"><div class="grocery-deal"><span>🥬</span><div><b>Farm fresh</b><span>Picked this morning</span></div></div><div class="grocery-deal"><span>🏷️</span><div><b>Weekly savings</b><span>Up to 30% off</span></div></div><div class="grocery-deal"><span>🚲</span><div><b>Fast delivery</b><span>Choose your time slot</span></div></div></div>
+        ${renderCategorySection(design, "grocery")}
+        ${renderSection(design, design.shelves[0], 0)}
+        ${renderBrandsSection(design, "grocery")}
+        ${renderSection(design, design.shelves[1], 1)}
+        ${renderNewsletter("grocery")}
+        ${renderSection(design, design.shelves[2], 2)}
+        ${renderFooter(design, "grocery")}`;
+      const renderJewellery = (design) => `
+        <header class="jewellery-header"><div class="jewellery-utility"><span>${design.announcement}</span><span>${design.location}</span></div><div class="jewellery-main-header"><div class="shop-logo">${design.logo}<small>${design.tagline}</small></div><div class="jewellery-search">⌕ &nbsp; Search necklaces, earrings, rings…</div><div class="jewellery-actions"><span>Account</span><button type="button">Bag · <span data-cart-count>0</span></button></div></div></header>
+        <nav class="jewellery-nav">${design.nav.map((item) => `<a href="#">${item}</a>`).join("")}</nav>
+        <section class="jewellery-hero"><img fetchpriority="high" src="${design.heroImage}" alt="${design.heroAlt}"><div class="jewellery-hero-copy"><small>${design.heroKicker}</small><h2>${design.heroTitle.replace("<br>", " ")}</h2><p>${design.heroCopy}</p><button type="button">${design.heroButton}&nbsp; →</button><span>${design.heroCaption}</span></div></section>
+        <div class="jewellery-assurances store-width">${design.services.map((service) => `<div><b>${service[0]} &nbsp; ${service[1]}</b><span>${service[2]}</span></div>`).join("")}</div>
+        ${renderCategorySection(design, "jewellery")}
+        ${renderBrandsSection(design, "jewellery")}
+        ${renderSection(design, design.shelves[0], 0)}
+        <section class="jewellery-story store-width"><div><small>CRAFTED TO BE KEPT</small><h3>${design.features[0][0]}</h3><p>${design.features[0][1]}</p></div><img loading="lazy" src="${design.features[0][2]}" alt="${design.features[0][0]}"><img loading="lazy" src="${design.features[1][2]}" alt="${design.features[1][0]}"><div><small>MADE IN INDIA</small><h3>${design.features[1][0]}</h3><p>${design.features[1][1]}</p></div></section>
+        ${renderSection(design, design.shelves[1], 1)}
+        ${renderSection(design, design.shelves[2], 2)}
+        ${renderNewsletter("jewellery")}${renderFooter(design, "jewellery")}`;
+      const renderStore = (design, key) => {
+        const renderers = { market: renderMarket, boutique: renderBoutique, heritage: renderHeritage, grocery: renderGrocery, jewellery: renderJewellery };
+        return `<div class="shop ${design.theme}">${renderers[key](design)}</div>`;
+      };
+      const tabs = Array.from(document.querySelectorAll(".concept-tab"));
+      const preview = document.querySelector("#store-preview");
+      const chooseDesign = (key, selectedTab) => {
+        const design = designs[key];
+        tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab === selectedTab)));
+        preview.setAttribute("aria-labelledby", selectedTab.id);
+        preview.innerHTML = `<div class="concept-bar"><span><strong>${design.label}</strong> · full-page preview</span><span>Responsive · INR · India-ready patterns</span></div>${renderStore(design, key)}`;
+        fillMapper(design);
+        const categoryPicker = document.querySelector("#map-categories");
+        const brandPicker = document.querySelector("#map-brands");
+        const applyMappings = () => {
+          const categories = new Set(Array.from(categoryPicker.selectedOptions, (option) => option.value));
+          const brands = new Set(Array.from(brandPicker.selectedOptions, (option) => option.value));
+          preview.querySelectorAll("[data-category]").forEach((item) => { item.hidden = !categories.has(item.dataset.category); });
+          preview.querySelectorAll("[data-brand]").forEach((item) => { item.hidden = !brands.has(item.dataset.brand); });
+        };
+        categoryPicker.addEventListener("change", applyMappings);
+        brandPicker.addEventListener("change", applyMappings);
+        applyMappings();
+        preview.querySelectorAll("[data-add]").forEach((button) => button.addEventListener("click", () => {
+          const count = preview.querySelector("[data-cart-count]");
+          count.textContent = String(Number(count.textContent) + 1);
+          button.textContent = "Added ✓";
+          window.setTimeout(() => { button.textContent = "Add"; }, 900);
+        }));
+      };
+      tabs.forEach((tab, index) => tab.addEventListener("click", () => chooseDesign(tab.dataset.design, tab)));
+      document.querySelector(".concept-tabs").addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+        const current = tabs.indexOf(document.activeElement);
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        const next = tabs[(current + direction + tabs.length) % tabs.length];
+        next.focus();
+        chooseDesign(next.dataset.design, next);
+      });
+      chooseDesign("market", tabs[0]);
+    </script>
+  </body>
+</html>

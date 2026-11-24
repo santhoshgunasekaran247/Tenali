@@ -6,6 +6,7 @@ import { accountRequest, loadRazorpay, payOrder, rupees, shopperSession, type Av
 import { useCart } from "../features/cart";
 import { policyPath } from "../features/policies";
 import { OrderItems } from "../components/OrderItems";
+import { SiteFooter } from "../components/SiteFooter";
 
 export function CheckoutPage() {
   const { storefront, loading } = useAuth();
@@ -78,9 +79,10 @@ export function CheckoutPage() {
     } catch (failure) { if (!controller.signal.aborted) setError(`${failure instanceof Error ? failure.message : String(failure)} Check My Orders before creating another checkout.`); }
     finally { setBusy(false); }
   };
+  const template = storefront?.storefront_template || "current";
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront || !cart.items.length) return <main className="loading">Your cart is empty. <Link to="/">Browse products</Link></main>;
-  return <main className="shop-account-page shopping-page checkout-page"><header className="shop-account-heading"><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
+  return <><main className={`shop-account-page shopping-page checkout-page storefront-commerce-page storefront-order-page storefront-checkout-page--${template}`}><header className={`shop-account-heading storefront-order-heading storefront-order-heading--${template}`}><Link to="/cart">Back to Cart</Link><h1>Secure Checkout</h1><p>{storefront.company_name} · {fulfilment === "pickup" ? "Store pickup" : "India delivery"}</p><Link to="/account">My Orders</Link></header><div className="shop-account-content">
     <p className="policy-notice">Review this seller&apos;s <Link to={policyPath("tenant", "terms")}>terms</Link>, <Link to={policyPath("tenant", "privacy")}>privacy</Link>, <Link to={policyPath("tenant", "shipping")}>shipping and delivery</Link>, <Link to={policyPath("tenant", "payment")}>payment</Link> and <Link to={policyPath("tenant", "returns")}>cancellation, refund, return and exchange policies</Link>. <Link to={policyPath("tenant", "contact")}>Contact the seller</Link> for missing or unclear terms.</p>
     {error ? <FloatingAlert>{error}</FloatingAlert> : null}
     {order ? <p className="checkout-notice" role="status">Your order is saved. Waiting for verified payment confirmation. If you have already paid, do not pay again. <Link to="/account">View or verify payment in My Orders</Link></p> : null}
@@ -104,5 +106,5 @@ export function CheckoutPage() {
       {effectivePayment === "cod" ? <p>The store reviews cash-on-delivery requests before confirming. You pay the courier {rupees(quote.total_paise)} on delivery.</p> : null}
       {effectivePayment === "pay_at_pickup" ? <p>Your items are held at the store for a limited time. Pay {rupees(quote.total_paise)} at the counter when you collect.</p> : null}
       <button className="btn" type="button" disabled={busy || !shopper} onClick={() => void pay()}>{busy ? order && effectivePayment === "prepaid" ? "Waiting for payment confirmation..." : "Please wait..." : effectivePayment === "prepaid" ? `Pay ${rupees(quote.total_paise)} with Razorpay` : effectivePayment === "cod" ? "Request cash on delivery" : "Reserve for pickup"}</button></section> : <section className="ops-card purchase-summary"><h2>Order summary</h2><p className="purchase-fine-print">Complete your {fulfilment === "pickup" ? "buyer" : "delivery"} details and select Review Order to confirm prices and the final total.</p><Link to="/cart">View your cart ({cart.items.length})</Link></section>}
-  </div></div></main>;
+  </div></div></main><SiteFooter /></>;
 }

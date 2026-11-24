@@ -1,19 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BulkPricingNote } from "../components/BulkPricingNote";
 import { Link, useLocation } from "react-router-dom";
 import { SiteFooter } from "../components/SiteFooter";
 import { scrollToSection } from "../components/sectionScroll";
 import { api } from "../api";
-import type { CatalogHomeResponse } from "../types";
+import type { CatalogHomeResponse, Company, StorefrontSection } from "../types";
 import { FALLBACK_EMAIL, FALLBACK_PHONE } from "../features/catalog/constants";
 import { ProductCard } from "../features/catalog/components/ProductCard";
+import { BrandCard } from "../features/catalog/components/BrandCard";
 import { ProductRail } from "../components/ProductRail";
 import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
+import { StorefrontThemeHome } from "../features/catalog/StorefrontThemeHome";
 import { toAssetUrl } from "../features/catalog/utils";
 import { storefrontText } from "../features/catalog/storefrontText";
 import { Package } from "lucide-react";
 import { useAuth } from "../features/auth";
 import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
+import { hasStorefrontLinkOverride, storefrontLink, storefrontSectionId } from "../features/catalog/storefrontLinks";
+
+type StorefrontPreviewMessage = {
+  type: "tenali-storefront-preview";
+  companyId: string;
+  company: Pick<Company, "storefront_template" | "site_theme" | "logo_url" | "storefront_content">;
+  sections: StorefrontSection[];
+};
+
+function applyPreview(data: CatalogHomeResponse, draft: StorefrontPreviewMessage): CatalogHomeResponse {
+  return {
+    ...data,
+    company: { ...data.company, ...draft.company },
+    sections: draft.sections.filter(section => section.is_enabled),
+    classic_sections_configured: draft.sections.some(section => !!section.configuration.classic_slot),
+  };
+}
 
 export function HomePage() {
   const {storefront}=useAuth();
@@ -21,10 +40,39 @@ export function HomePage() {
   const location = useLocation();
   const [data, setData] = useState<CatalogHomeResponse>();
   const [error, setError] = useState<string>();
+  const previewDraft = useRef<StorefrontPreviewMessage | null>(null);
+  const previewId = new URLSearchParams(location.search).get("storefrontPreview");
 
   useEffect(() => {
-    api.home().then(setData).catch((e: Error) => setError(e.message));
-  }, []);
+    let active = true;
+    previewDraft.current = null;
+    (previewId ? api.storefrontPreview() : api.home())
+      .then(result => {
+        if (!active) return;
+        const home: CatalogHomeResponse = result;
+        setData(previewDraft.current ? applyPreview(home, previewDraft.current) : home);
+      })
+      .catch((e: Error) => { if (active) setError(e.message); });
+    const receivePreview = (event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent ||
+          !event.data || typeof event.data !== "object") return;
+      const message = event.data as StorefrontPreviewMessage;
+      if (message.type !== "tenali-storefront-preview" || message.companyId !== previewId ||
+          !message.company || !Array.isArray(message.sections)) return;
+      previewDraft.current = message;
+      setData(previous => previous ? applyPreview(previous, message) : previous);
+    };
+    if (previewId) {
+      window.addEventListener("message", receivePreview);
+      window.setTimeout(() => window.parent.postMessage({
+        type: "tenali-storefront-preview-ready", companyId: previewId,
+      }, window.location.origin), 0);
+    }
+    return () => {
+      active = false;
+      window.removeEventListener("message", receivePreview);
+    };
+  }, [previewId]);
   useEffect(() => {
     if (!data || !location.hash) return;
     let stop: (() => void) | undefined;
@@ -51,14 +99,33 @@ export function HomePage() {
   const email = data.company.email || FALLBACK_EMAIL;
   const copy = data.company.storefront_content?.home || {};
   const text = (key: string) => storefrontText(copy[key], data.company);
+  const link = (key: string, href: string, label: string, sectionKey?: string) => storefrontLink(data.company, key, href, label, sectionKey);
   const bulkStrip = display.show_bulk_pricing ? (
     <BulkPricingNote heading={text("bulk_title")} description={text("bulk_description")} />
   ) : null;
+  const configuredSections = data.sections || [];
+  const template = data.company.storefront_template || "current";
+
+  if (template !== "current") {
+    return <>
+      <StorefrontThemeHome
+        template={template}
+        data={data}
+        phone={phone}
+        email={email}
+        checkoutEnabled={!!availability?.enabled}
+        checkoutError={checkoutError}
+        text={text}
+        bulkNote={bulkStrip}
+      />
+      <SiteFooter company={data.company} />
+    </>;
+  }
 
   return (
     <>
       <main>
-        <section className="hero">
+        {!data.classic_sections_configured && !data.sections?.some((section) => section.section_type === "hero") ? <section className="hero">
           <div className="hero-copy">
             <p className="eyebrow">{text("hero_eyebrow")}</p>
             <h1>
@@ -66,8 +133,8 @@ export function HomePage() {
             </h1>
             <p className="lead">{text("hero_description")}</p>
             <div className="actions">
-              <a className="btn" href="#collection-special">{text("hero_primary_action")}</a>
-              <a className="link" href="#categories">{text("hero_secondary_action")}</a>
+              <Link className="btn" {...link("hero.primary", "/#collection-special", text("hero_primary_action"))} />
+              <Link className="link" {...link("hero.secondary", "/#categories", text("hero_secondary_action"))} />
             </div>
           </div>
           <div className="hero-panel">
@@ -77,8 +144,127 @@ export function HomePage() {
             <i />
             <p>{text("hero_service_three")}</p>
           </div>
-        </section>
+        </section> : null}
 
+        {data.sections?.length || data.classic_sections_configured ? data.sections.map((section) => {
+          const slot = section.configuration.classic_slot;
+          const prefix = slot === "best-sellers" ? "best_sellers" : typeof slot === "string" ? slot : "";
+          const nativeTitle = (heading: string) => <>
+            {text(`${heading}_heading_first`)}<br /><span>{text(`${heading}_heading_second`)}</span>
+          </>;
+          const presentation = {
+            "data-image-ratio": String(section.configuration.image_ratio || "square"),
+            "data-image-fit": String(section.configuration.image_fit || "cover"),
+            "data-font-family": String(section.configuration.font_family || "default"),
+            "data-border-style": String(section.configuration.border_style || "theme"),
+            style: {
+              backgroundColor: typeof section.configuration.background_color === "string" ? section.configuration.background_color : undefined,
+              color: typeof section.configuration.text_color === "string" ? section.configuration.text_color : undefined,
+              borderColor: typeof section.configuration.accent_color === "string" ? section.configuration.accent_color : undefined,
+            },
+          };
+          if (slot === "hero") return <section key={section.section_key} id={`section-${section.section_key}`}
+            className={`hero storefront-section storefront-section-hero${section.image_url ? " hero-configured" : ""}`} {...presentation}>
+            <div className="hero-copy">
+              <p className="eyebrow">{text("hero_eyebrow")}</p>
+              <h1>{nativeTitle("hero")}</h1>
+              <p className="lead">{text("hero_description")}</p>
+              <div className="actions">
+                <Link className="btn" {...link("hero.primary", "/#collection-special", text("hero_primary_action"), section.section_key)} />
+                <Link className="link" {...link("hero.secondary", "/#categories", text("hero_secondary_action"), section.section_key)} />
+              </div>
+            </div>
+            {section.image_url ? <div className="hero-panel hero-image-panel"><img src={toAssetUrl(section.image_url)} alt="" /></div>
+              : <div className="hero-panel"><p>{text("hero_service_one")}</p><i /><p>{text("hero_service_two")}</p><i /><p>{text("hero_service_three")}</p></div>}
+          </section>;
+          return section.section_type === "hero" ? (
+          <section key={section.id || section.section_key} id={`section-${section.section_key}`}
+            className="hero hero-configured storefront-section storefront-section-hero"
+            data-image-ratio={String(section.configuration.image_ratio || "square")}
+            data-image-fit={String(section.configuration.image_fit || "cover")}
+            data-font-family={String(section.configuration.font_family || "default")}
+            data-border-style={String(section.configuration.border_style || "theme")}
+            style={{
+              backgroundColor: typeof section.configuration.background_color === "string" ? section.configuration.background_color : undefined,
+              color: typeof section.configuration.text_color === "string" ? section.configuration.text_color : undefined,
+              borderColor: typeof section.configuration.accent_color === "string" ? section.configuration.accent_color : undefined,
+            }}>
+            <div className="hero-copy">
+              {section.eyebrow ? <p className="eyebrow">{section.eyebrow}</p> : null}
+              <h1>{section.title}</h1>
+              {section.description ? <p className="lead">{section.description}</p> : null}
+              <div className="actions">
+                <Link className="btn" {...link("hero.primary",
+                  data.sections.find(candidate => candidate.section_type === "products")
+                    ? `/#section-${data.sections.find(candidate => candidate.section_type === "products")?.section_key}` : "/brand?category=all",
+                  "Shop collections", section.section_key)} />
+                <Link className="link" {...link("hero.secondary", "/brand?category=all", "Browse catalogue", section.section_key)} />
+              </div>
+            </div>
+            <div className="hero-panel hero-image-panel">
+              {section.image_url ? <img src={toAssetUrl(section.image_url)} alt="" loading="lazy" /> : <p>{data.company.nickname || data.company.company_name}</p>}
+            </div>
+          </section>
+        ) : (
+          <section key={section.id || section.section_key}
+            id={storefrontSectionId(section, configuredSections)}
+            className={`${slot === "brands" ? "brands-section" : "home-section"} storefront-section storefront-section-${section.section_type}${slot === "categories" ? " categories-section" : slot === "best-sellers" ? " featured-section" : slot === "specials" ? " specials-section" : ""}`}
+            data-image-ratio={String(section.configuration.image_ratio || "square")}
+            data-image-fit={String(section.configuration.image_fit || "cover")}
+            data-font-family={String(section.configuration.font_family || "default")}
+            data-border-style={String(section.configuration.border_style || "theme")}
+            style={{
+              backgroundColor: typeof section.configuration.background_color === "string" ? section.configuration.background_color : undefined,
+              color: typeof section.configuration.text_color === "string" ? section.configuration.text_color : undefined,
+              borderColor: typeof section.configuration.accent_color === "string" ? section.configuration.accent_color : undefined,
+            }}>
+            {storefrontSectionId(section, configuredSections) !== `section-${section.section_key}` ?
+              <span id={`section-${section.section_key}`} className="storefront-section-anchor" aria-hidden="true" /> : null}
+            <div className="section-heading">
+              {slot ? <p className="eyebrow">{text(`${prefix}_eyebrow`)}</p> : section.eyebrow ? <p className="eyebrow">{section.eyebrow}</p> : null}
+              <h2>{slot ? nativeTitle(prefix) : section.title}</h2>
+              {slot ? <p>{text(`${prefix}_description`)}</p> : section.description ? <p>{section.description}</p> : null}
+              {section.image_url ? <img className="storefront-section-image" src={toAssetUrl(section.image_url)} alt="" loading="lazy" /> : null}
+              {hasStorefrontLinkOverride(data.company, "section.view_all", section.section_key) ?
+                <Link className="link" {...link("section.view_all", section.section_type === "brands" ? "/brand?view=brands" : "/brand?category=all", "View all", section.section_key)} /> : null}
+            </div>
+            {section.section_type === "products" ? (
+              <>
+                {checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null}
+                {slot ? bulkStrip : null}
+                <ProductRail label={slot ? text(`${prefix}_eyebrow`) : section.title}>
+                  {(section.products || []).map((product) => (
+                    <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} productCopy={data.company.storefront_content?.product} />
+                  ))}
+                </ProductRail>
+              </>
+            ) : section.section_type === "categories" ? (
+              <><div className="category-grid">
+                {(section.categories || []).map((category) => (
+                  <Link className="category-card" to={link("category.card", `/brand?category=${encodeURIComponent(category.category_slug)}`, "").to} key={category.id}>
+                    <div className="category-image">
+                      {category.image_url ? <img src={toAssetUrl(category.image_url)} alt={category.category_title} loading="lazy" /> : <Package size={36} aria-hidden="true" />}
+                    </div>
+                    <div className="category-body">
+                      {slot ? <p className="eyebrow">{text("category_card_eyebrow")}</p> : null}
+                      <h3>{category.category_title}</h3>
+                      <p>{category.category_description}</p>
+                      {slot ? <span>{link("category.card", "", text("category_action")).children}</span> : null}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              {slot ? <div className="category-more"><Link className="link" {...link("categories.more", "/brand?category=all", text("categories_more_action"))} /></div> : null}</>
+            ) : (
+              <ProductRail label={section.title} className="brand-rail">
+                {(section.brands || []).map((brand) => (
+                  <BrandCard key={brand.id} brand={brand} caption={slot ? text("brand_catalog_label") : brand.description}
+                    href={link("brand.card", `/brand?brand=${encodeURIComponent(brand.code)}`, "").to} action={link("brand.card", "", text("brand_action")).children} />
+                ))}
+              </ProductRail>
+            )}
+          </section>
+        ); }) : <>
         <section id="categories" className="home-section categories-section">
           <div className="section-heading">
             <p className="eyebrow">{text("categories_eyebrow")}</p>
@@ -93,7 +279,7 @@ export function HomePage() {
             {data.categories.slice(0, 4).map((category) => (
               <Link
                 className="category-card"
-                to={`/brand?category=${encodeURIComponent(category.category_slug)}`}
+                to={link("category.card", `/brand?category=${encodeURIComponent(category.category_slug)}`, "").to}
                 key={category.category_slug}
               >
                 <div className="category-image">
@@ -103,15 +289,13 @@ export function HomePage() {
                   <p className="eyebrow">{text("category_card_eyebrow")}</p>
                   <h3>{category.category_title}</h3>
                   <p>{category.category_description}</p>
-                  <span>{text("category_action")}</span>
+                  <span>{link("category.card", "", text("category_action")).children}</span>
                 </div>
               </Link>
             ))}
           </div>
           <div className="category-more">
-            <Link className="link" to="/brand?category=all">
-              {text("categories_more_action")}
-            </Link>
+            <Link className="link" {...link("categories.more", "/brand?category=all", text("categories_more_action"))} />
           </div>
         </section>
 
@@ -129,7 +313,7 @@ export function HomePage() {
           {bulkStrip}
           <ProductRail label={text("best_sellers_eyebrow") || "Best sellers"}>
             {data.best_sellers.map((product) => (
-              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
+              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} productCopy={data.company.storefront_content?.product} />
             ))}
           </ProductRail>
         </section>
@@ -147,7 +331,7 @@ export function HomePage() {
           {bulkStrip}
           <ProductRail label={text("specials_eyebrow") || "Specials"}>
             {data.sru_specials.map((product) => (
-              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} />
+              <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} productCopy={data.company.storefront_content?.product} />
             ))}
           </ProductRail>
         </section>
@@ -164,19 +348,14 @@ export function HomePage() {
           </div>
           <ProductRail label={text("brands_eyebrow") || "Brands"} className="brand-rail">
             {data.brands.map((brand) => (
-              <Link className="brand-card" to={`/brand?brand=${encodeURIComponent(brand.code)}`} key={brand.code}>
-                <div className="logo-box">
-                  <img src={toAssetUrl(`brand-logos/${brand.code}.png`)} alt={brand.name} loading="lazy" />
-                </div>
-                <strong>{brand.name}</strong>
-                <span>{text("brand_catalog_label")}</span>
-                <em>{text("brand_action")}</em>
-              </Link>
+              <BrandCard key={brand.id} brand={brand} caption={text("brand_catalog_label")}
+                href={link("brand.card", `/brand?brand=${encodeURIComponent(brand.code)}`, "").to} action={link("brand.card", "", text("brand_action")).children} />
             ))}
           </ProductRail>
         </section>
+        </>}
 
-        <section className="corporate">
+        <section id="why" className="corporate">
           <div>
             <p className="eyebrow">{text("why_eyebrow")}</p>
             <h2>
@@ -187,9 +366,8 @@ export function HomePage() {
           </div>
           <div>
             <p>{text("why_description")}</p>
-            {phone?<a className="btn light" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
-              {text("contact_whatsapp_label")}
-            </a>:null}
+            {phone || data.company.storefront_content?.links?.["why.contact"]?.href ?
+              <Link className="btn light" {...link("why.contact", `https://wa.me/${phone.replace(/\D/g, "")}`, text("contact_whatsapp_label"))} /> : null}
           </div>
         </section>
 
@@ -202,15 +380,11 @@ export function HomePage() {
           </h2>
           <p>{text("contact_description")}</p>
           <div className="contact-actions">
-            {phone?<a className="btn whatsapp-btn" href={`https://wa.me/${phone.replace(/\D/g, "")}`}>
-              {text("contact_whatsapp_label")} {phone}
-            </a>:null}
-            {!phone && contactPhone?<a className="btn light" href={`tel:${contactPhone.replace(/[^\d+]/g, "")}`}>
-              {contactPhone}
-            </a>:null}
-            {email?<a className="link" href={`mailto:${email}`}>
-              {email}
-            </a>:null}
+            {phone || data.company.storefront_content?.links?.["contact.whatsapp"]?.href ?
+              <Link className="btn whatsapp-btn" {...link("contact.whatsapp", `https://wa.me/${phone.replace(/\D/g, "")}`, `${text("contact_whatsapp_label")} ${phone}`)} /> : null}
+            {!phone && contactPhone ? <Link className="btn light" {...link("contact.phone", `tel:${contactPhone.replace(/[^\d+]/g, "")}`, contactPhone)} /> : null}
+            {email || data.company.storefront_content?.links?.["contact.email"]?.href ?
+              <Link className="link" {...link("contact.email", `mailto:${email}`, email)} /> : null}
           </div>
         </section>
 
@@ -238,7 +412,7 @@ export function HomePage() {
           </div>
         </section>
       </main>
-      <SiteFooter />
+      <SiteFooter company={data.company} />
     </>
   );
 }

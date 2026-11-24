@@ -64,6 +64,78 @@ redeploying. Health alone does not establish database or login readiness.
 Keep database, encryption and Supabase storage secrets in the API service's
 Render Environment settings, never in the static UI or the repository.
 
+## Classic storefront editor
+
+- Open **Storefront Design** in the workspace. A store without saved sections
+  starts with editable Hero, Categories, Best sellers, Specials and Brands,
+  populated from its existing Classic content and visible catalogue selections.
+  Opening or editing these sections preserves the Classic layout and hero service
+  panel; adding a section no longer replaces the rest of the homepage.
+- Header and Footer have fixed-position editor panels. Header controls include
+  the logo and navigation labels. Footer text defaults to the existing contact
+  email until an override is saved. Why, Contact and About / collection story
+  expose the existing homepage copy, including the three About points.
+- Changes preview before saving. Save design persists the company copy and
+  curated section mappings. These settings use the existing company JSON and
+  storefront tables; no additional database migration is needed for this editor.
+- Desktop preview renders at 1440px and automatically zooms out to fit the panel,
+  retaining desktop layouts instead of wrapping to the editor's width. Mobile
+  preview uses 390px. Both resize with the panel, show the zoom percentage and
+  scroll inside the preview.
+- Unmapped product sections show theme-specific sample products and photographs
+  only in the designer. Selecting real products replaces that shelf's samples,
+  without filling gaps or missing images in real selections. Samples are not added
+  to inventory, saved in sections or rendered on the live storefront. Preview
+  shopping/navigation actions are disabled for pointer and keyboard input.
+  **Use sample products for all product sections** also lets an established store
+  preview a theme's examples without changing its mappings. Selecting products
+  switches back to actual selections; this preview switch is never saved.
+  Saved product/category/brand selections reload in their original order.
+  Explicitly selected active categories remain visible even before products
+  have been assigned; their catalogue page shows the normal empty state.
+- **Links & buttons** configures homepage/header/footer action labels and
+  destinations, including per-section hero and view-all overrides. The destination
+  picker lists enabled homepage sections (with stable anchors), store pages and
+  custom HTTP(S), email or telephone links. Existing destinations and copy remain
+  the defaults until overridden. Category/brand cards still use their selected
+  catalogue items unless a destination is explicitly overridden.
+  Product-button labels and the My Account label are editable here too; purchase
+  controls retain their original shopping actions. Changes preview immediately
+  and save in the existing `storefront_content` JSON; no migration is needed.
+  Marketplace's Hero panel has four independent action controls: primary and
+  secondary buttons, plus the category and story large links.
+- **Homepage sections → Header** manages up to nine primary menu items. Add an
+  item, edit its label/destination, hide it temporarily or remove it. Cart,
+  shopper account and workspace controls remain separate. Existing menus are
+  retained until edited; an empty menu intentionally hides the primary links.
+  Settings preview live and save in `storefront_content.header_menu` without a
+  database migration.
+
+The Marketplace theme uses the same Classic sections and saved selections with a
+retail header, full-width search, department navigation, a three-column campaign
+hero, compact category/brand tiles and four-column product shelves. Why, Contact,
+About and footer copy are shared with Classic. Marketplace uses the sample HTML's
+fashion hero and decorative story/collection photographs; an uploaded hero image
+takes precedence. Product images always come from the actual catalogue.
+Search, product actions, cart/enquiry mode and WhatsApp use the existing flows.
+The layout adapts to mobile without adding promotional offers, ratings, newsletter
+subscriptions or other data that the store does not maintain.
+
+Catalogue/category/brand listings, search results, product details, cart, checkout
+and shopper account use the main header navigation and shared colour tokens,
+without an extra duplicate navigation row. The all-brands directory is available
+at `/brand?view=brands`; brand shelves and brand back-links use this destination
+unless explicitly overridden. Classic uses
+navy, warm white and gold; Marketplace uses the sample's navy, white and yellow.
+The other designs also have palettes drawn from their sample HTML. Existing default
+palettes follow the selected design; custom colours are preserved. **Reset colours**
+in Storefront Design restores the selected design's palette, not the generic one.
+Product cards have separate Classic and Marketplace treatments, and shared brand
+cards use a logo/monogram for Classic and a wordmark tile for Marketplace. These
+are presentation changes only; no database migration or catalogue reseeding is needed.
+Product image frames follow the theme/section size rather than the photograph's
+intrinsic dimensions, keeping portrait and landscape images aligned in each shelf.
+
 ## Inventory and customers
 
 - Variants can have their own uploaded photo. If no variant photo is set, the

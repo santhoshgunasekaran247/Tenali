@@ -196,6 +196,10 @@ class StorefrontProductCopy(BaseModel):
     request_quote: str = Field(default="Request a quote", max_length=100)
     buy_online: str = Field(default="Buy Online", max_length=100)
     add_to_cart: str = Field(default="Add to Cart", max_length=100)
+    add_to_enquiry: str = Field(default="Add to enquiry", max_length=100)
+    choose_options: str = Field(default="Choose options", max_length=100)
+    view_cart: str = Field(default="View cart", max_length=100)
+    view_enquiry_list: str = Field(default="View list", max_length=100)
     checkout_variant_required: str = Field(default="Select a size / colour to add to your cart.", max_length=140)
     online_purchase_help: str = Field(default="Add products to your cart, change quantities and pay for them together. Sign in at checkout; delivery charges are shown before payment.", max_length=400)
     whatsapp_purchase_help: str = Field(default="Use WhatsApp for bulk pricing, customisation or availability questions. An enquiry does not place an order or take payment.", max_length=400)
@@ -227,6 +231,7 @@ class StorefrontFooterCopy(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     catalogue_label: str = Field(default="Product Catalogue", max_length=120)
+    contact_text: str | None = Field(default=None, max_length=240)
 
 
 class StorefrontDisplay(BaseModel):
@@ -237,15 +242,56 @@ class StorefrontDisplay(BaseModel):
     corner_style: Literal["rounded", "square"] = "rounded"
 
 
+class StorefrontLink(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    label: str = Field(default="", max_length=120)
+    href: str = Field(default="", max_length=2048)
+
+    @field_validator("href")
+    @classmethod
+    def safe_destination(cls, value: str) -> str:
+        if not value:
+            return value
+        if any(ord(char) <= 32 or ord(char) == 127 or char == "\\" for char in value):
+            raise ValueError("Use a section, store path, HTTP(S), mailto or tel link")
+        if value.startswith("#") and len(value) > 1:
+            return value
+        if value.startswith("/") and not value.startswith("//"):
+            return value
+        parsed = urlparse(value)
+        if parsed.scheme in {"http", "https"} and parsed.hostname:
+            return value
+        if parsed.scheme in {"mailto", "tel"} and parsed.path:
+            return value
+        raise ValueError("Use a section, store path, HTTP(S), mailto or tel link")
+
+
+class StorefrontMenuItem(StorefrontLink):
+    key: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
+    label: str = Field(min_length=1, max_length=120)
+    href: str = Field(min_length=1, max_length=2048)
+    is_enabled: bool = True
+
+
 class StorefrontContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     display: StorefrontDisplay = Field(default_factory=StorefrontDisplay)
+    links: dict[str, StorefrontLink] = Field(default_factory=dict)
+    header_menu: list[StorefrontMenuItem] | None = Field(default=None, max_length=9)
     navigation: StorefrontNavigation = Field(default_factory=StorefrontNavigation)
     home: StorefrontHomeCopy = Field(default_factory=StorefrontHomeCopy)
     catalog: StorefrontCatalogCopy = Field(default_factory=StorefrontCatalogCopy)
     product: StorefrontProductCopy = Field(default_factory=StorefrontProductCopy)
     footer: StorefrontFooterCopy = Field(default_factory=StorefrontFooterCopy)
+
+    @field_validator("header_menu")
+    @classmethod
+    def unique_menu_keys(cls, value: list[StorefrontMenuItem] | None) -> list[StorefrontMenuItem] | None:
+        if value and len({item.key for item in value}) != len(value):
+            raise ValueError("Header menu item keys must be unique")
+        return value
 
 
 class CompanyUpdate(BaseModel):
@@ -267,6 +313,7 @@ class CompanyUpdate(BaseModel):
     social_links: dict[str, str] = Field(default_factory=dict, max_length=20)
     invoice_settings: InvoiceSettings = Field(default_factory=InvoiceSettings)
     site_theme: SiteTheme | None = None
+    storefront_template: Literal["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"] | None = None
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
     # None keeps the current setting so callers that omit it never reopen or close the storefront by accident.
     storefront_enabled: bool | None = None
@@ -287,6 +334,7 @@ class CompanySetupOut(CompanyUpdate):
 
     gst_number: str | None = None
     site_theme: SiteTheme = Field(default_factory=SiteTheme)
+    storefront_template: Literal["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"] = "current"
     tenant_slug: str | None = None
     storefront_enabled: bool = True
     workflow_guidance_enabled: bool = True

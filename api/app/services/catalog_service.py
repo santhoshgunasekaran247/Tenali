@@ -31,6 +31,12 @@ def _catalog_base_query() -> str:
             p.home_order,
             p.is_active,
             p.item_name, p.size, p.colour, p.weight, p.height, p.width, p.length, p.attributes,
+            coalesce((
+                select array_agg(tag.name order by tag.name)
+                from product_tag_products assignment
+                join product_tags tag on tag.company_id = assignment.company_id and tag.id = assignment.tag_id
+                where assignment.company_id = p.company_id and assignment.product_id = p.id
+            ), ARRAY[]::text[]) as tags,
             p.selling_price, p.pricing_mode, p.discount_percent, p.preferred_vendor_id,
             case when p.preferred_vendor_id is null then p.mrp else preferred.mrp end as reference_mrp,
             b.code as brand_code,
@@ -77,6 +83,30 @@ def _public_product(row) -> dict:
     return product
 
 
+def _catalog_categories_query() -> str:
+    return """
+        select id, code as category_slug, name,
+               coalesce(display_title, name) as category_title,
+               coalesce(description, '') as category_description,
+               image_url, home_order
+        from product_categories
+        where company_id = :company_id and is_active = true
+          and (
+              exists(select 1 from products product
+                  where product.company_id = product_categories.company_id
+                    and product.category_id = product_categories.id
+                    and product.is_active = true and product.catalog_visible = true)
+              or exists(select 1 from storefront_section_categories selection
+                  join storefront_sections section
+                    on section.id = selection.section_id and section.company_id = selection.company_id
+                  where selection.company_id = product_categories.company_id
+                    and selection.category_id = product_categories.id
+                    and section.section_type = 'categories' and section.is_enabled = true)
+          )
+        order by home_order asc, name asc
+    """
+
+
 class CatalogService:
     def __init__(self, db: Session):
         self.db = db
@@ -98,7 +128,7 @@ class CatalogService:
         company_row = self.db.execute(
             text(
                 """
-                select id, company_name, nickname, logo_url, phone, email, storefront_content
+                select id, company_name, nickname, logo_url, phone, email, storefront_content, storefront_template
                 from companies
                 where id = :company_id and is_active = true
                 """
@@ -109,22 +139,7 @@ class CatalogService:
             raise HTTPException(status_code=404, detail="Company not found")
 
         categories = self.db.execute(
-            text(
-                """
-                select
-                    code as category_slug,
-                    name,
-                    coalesce(display_title, name) as category_title,
-                    coalesce(description, '') as category_description,
-                    image_url,
-                    home_order
-                from product_categories
-                where company_id = :company_id and is_active = true
-                  and exists(select 1 from products product where product.company_id=product_categories.company_id
-                      and product.category_id=product_categories.id and product.is_active=true and product.catalog_visible=true)
-                order by home_order asc, name asc
-                """
-            ),
+            text(_catalog_categories_query()),
             {"company_id": resolved_company_id},
         ).mappings().all()
 
@@ -136,7 +151,7 @@ class CatalogService:
         brands = self.db.execute(
             text(
                 """
-                select code, name, coalesce(description, '') as description
+                select id, code, name, coalesce(description, '') as description
                 from brands
                 where company_id = :company_id and is_active = true
                 order by name asc
@@ -148,6 +163,37 @@ class CatalogService:
         all_products = [_public_product(row) for row in products]
         best_sellers = [row for row in all_products if row.get("best_seller")]
         sru_specials = [row for row in all_products if row.get("sru_special")]
+        product_by_id = {str(product["id"]): product for product in all_products}
+        category_by_id = {str(category["id"]): _to_dict(category) for category in categories}
+        brand_by_id = {str(brand["id"]): _to_dict(brand) for brand in brands}
+        sections = []
+        section_rows = self.db.execute(text("""
+            select id, section_key, section_type, title, eyebrow, description, image_url,
+                   sort_order, is_enabled, configuration
+            from storefront_sections
+            where company_id = :company_id
+            order by sort_order, id
+        """), {"company_id": resolved_company_id}).mappings().all()
+        item_tables = {
+            "products": ("storefront_section_products", "product_id", product_by_id, "products"),
+            "categories": ("storefront_section_categories", "category_id", category_by_id, "categories"),
+            "brands": ("storefront_section_brands", "brand_id", brand_by_id, "brands"),
+        }
+        for section in section_rows:
+            if not section["is_enabled"]:
+                continue
+            row = _to_dict(section)
+            if row["section_type"] == "hero":
+                sections.append(row)
+                continue
+            table, entity_column, items_by_id, response_key = item_tables[row["section_type"]]
+            item_ids = self.db.execute(text(f"""
+                select {entity_column} from {table}
+                where company_id = :company_id and section_id = :section_id
+                order by sort_order, {entity_column}
+            """), {"company_id": resolved_company_id, "section_id": str(row["id"])}).scalars().all()
+            row[response_key] = [items_by_id[str(item_id)] for item_id in item_ids if str(item_id) in items_by_id]
+            sections.append(row)
 
         return {
             "company": _to_dict(company_row),
@@ -155,15 +201,24 @@ class CatalogService:
             "categories": [_to_dict(row) for row in categories],
             "best_sellers": best_sellers[:8],
             "sru_specials": sru_specials[:8],
+            "sections": sections,
+            "classic_sections_configured": any(section["configuration"].get("classic_slot") for section in section_rows),
+            "catalog_products": all_products,
         }
 
-    def list(self, company_id: str | None = None, brand: str | None = None, category: str | None = None) -> dict:
+    def list(
+        self,
+        company_id: str | None = None,
+        brand: str | None = None,
+        category: str | None = None,
+        search: str | None = None,
+    ) -> dict:
         resolved_company_id = self._resolve_company_id(company_id)
 
         company_row = self.db.execute(
             text(
                 """
-                select id, company_name, nickname, logo_url, phone, email, storefront_content
+                select id, company_name, nickname, logo_url, phone, email, storefront_content, storefront_template
                 from companies
                 where id = :company_id and is_active = true
                 """
@@ -176,7 +231,7 @@ class CatalogService:
         brands = self.db.execute(
             text(
                 """
-                select code, name, coalesce(description, '') as description
+                select id, code, name, coalesce(description, '') as description
                 from brands
                 where company_id = :company_id and is_active = true
                 order by name asc
@@ -186,22 +241,7 @@ class CatalogService:
         ).mappings().all()
 
         categories = self.db.execute(
-            text(
-                """
-                select
-                    code as category_slug,
-                    name,
-                    coalesce(display_title, name) as category_title,
-                    coalesce(description, '') as category_description,
-                    image_url,
-                    home_order
-                from product_categories
-                where company_id = :company_id and is_active = true
-                  and exists(select 1 from products product where product.company_id=product_categories.company_id
-                      and product.category_id=product_categories.id and product.is_active=true and product.catalog_visible=true)
-                order by home_order asc, name asc
-                """
-            ),
+            text(_catalog_categories_query()),
             {"company_id": resolved_company_id},
         ).mappings().all()
 
@@ -215,6 +255,19 @@ class CatalogService:
         if category and category != "all":
             query += " and c.code = :category_slug"
             params["category_slug"] = category
+        if search and search.strip():
+            query += """ and (
+                p.name ilike :search or coalesce(p.description, '') ilike :search
+                or coalesce(b.name, '') ilike :search or coalesce(c.display_title, c.name, '') ilike :search
+                or exists (
+                    select 1
+                    from product_tag_products assignment
+                    join product_tags tag on tag.company_id = assignment.company_id and tag.id = assignment.tag_id
+                    where assignment.company_id = p.company_id and assignment.product_id = p.id
+                      and tag.name ilike :search
+                )
+            )"""
+            params["search"] = f"%{search.strip()}%"
 
         query += " order by p.home_order asc, p.name asc"
 
@@ -275,5 +328,5 @@ class CatalogService:
             where p.id=:product_id and p.company_id=:company_id and variant.is_active=true order by variant.created_at,variant.id
         """), {"product_id": product_id, "company_id": resolved_company_id}).mappings().all()
         product["variants"] = [_public_product(variant) for variant in variants]
-        company=self.db.execute(text("select id,company_name,nickname,logo_url,phone,email,storefront_content from companies where id=:company"),{"company":resolved_company_id}).mappings().one()
+        company=self.db.execute(text("select id,company_name,nickname,logo_url,phone,email,storefront_content,storefront_template from companies where id=:company"),{"company":resolved_company_id}).mappings().one()
         return {"product": product,"company":dict(company)}

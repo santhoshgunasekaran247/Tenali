@@ -21,6 +21,7 @@ export type Company = {
   tenant_slug?: string;
   logo_url?: string;
   site_theme?: SiteTheme;
+  storefront_template?: StorefrontTemplate;
   storefront_content?: StorefrontContent;
   storefront_enabled?: boolean;
   workflow_guidance_enabled?: boolean;
@@ -43,13 +44,22 @@ export type StorefrontDisplay = {
   corner_style: "rounded" | "square";
 };
 
+export type StorefrontMenuItem = {
+  key: string;
+  label: string;
+  href: string;
+  is_enabled: boolean;
+};
+
 export type StorefrontContent = {
+  header_menu?: StorefrontMenuItem[] | null;
+  links?: Record<string, { label?: string; href?: string }>;
   display?: StorefrontDisplay;
   navigation: Record<string, string>;
   home: Record<string, string>;
   catalog: Record<string, string>;
   product: Record<string, string>;
-  footer: Record<string, string>;
+  footer: Record<string, string | null>;
 };
 
 export type InvoiceSettings = {
@@ -80,7 +90,8 @@ export type SiteTheme = {
   border_color: string;
 };
 
-export type CompanySetup = Company & { tenant_slug: string; storefront_content: StorefrontContent; invoice_settings: InvoiceSettings; site_theme: SiteTheme };
+export type StorefrontTemplate = "current" | "marketplace" | "boutique" | "heritage" | "supermarket" | "jewellery";
+export type CompanySetup = Company & { tenant_slug: string; storefront_content: StorefrontContent; invoice_settings: InvoiceSettings; site_theme: SiteTheme; storefront_template: StorefrontTemplate };
 export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active" | "features">;
 
 export type AttachmentEntity = "purchase" | "business_payment";
@@ -150,6 +161,7 @@ export type InventoryItemInput = {
 };
 export type InventoryProductInput = InventoryItemInput & {
   name: string; brand_id: string | null; category_id: string | null; hsn_code: string | null;
+  tags: string[];
   minimum_order_quantity: number;
   image_url: string | null; image_urls: string[]; catalog_visible: boolean;
   best_seller: boolean; sru_special: boolean; home_order: number;
@@ -231,12 +243,14 @@ export type InventoryMissingSource = {
 };
 
 export type Brand = {
+  id: string;
   code: string;
   name: string;
   description?: string;
 };
 
 export type CatalogCategory = {
+  id: string;
   category_slug: string;
   name: string;
   category_title: string;
@@ -257,6 +271,7 @@ export type CatalogProduct = {
   selling_price_display: string;
   best_seller: boolean;
   sru_special: boolean;
+  tags?: string[];
   home_order: number;
   is_active: boolean;
   brand_code: string;
@@ -280,7 +295,35 @@ export type CatalogHomeResponse = {
   categories: CatalogCategory[];
   best_sellers: CatalogProduct[];
   sru_specials: CatalogProduct[];
+  sections: StorefrontSection[];
+  classic_sections_configured?: boolean;
 };
+
+export type CatalogStorefrontPreviewResponse = CatalogHomeResponse & {
+  catalog_products: CatalogProduct[];
+};
+
+export type StorefrontSection = {
+  id?: string;
+  section_key: string;
+  section_type: "hero" | "products" | "categories" | "brands";
+  title: string;
+  eyebrow: string;
+  description: string;
+  image_url?: string | null;
+  sort_order: number;
+  is_enabled: boolean;
+  configuration: Record<string, string | number | boolean | null>;
+  product_ids?: string[];
+  category_ids?: string[];
+  brand_ids?: string[];
+  products?: CatalogProduct[];
+  categories?: CatalogCategory[];
+  brands?: Brand[];
+};
+
+export type StorefrontSectionsUpdate = { sections: StorefrontSection[] };
+export type ProductTag = { id?: string; code: string; name: string; product_ids: string[] };
 
 export type CatalogProductResponse = {
   product: CatalogProduct;

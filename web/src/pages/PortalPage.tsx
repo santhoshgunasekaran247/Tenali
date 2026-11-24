@@ -36,14 +36,15 @@ const operationsLinks: (PortalLink & { module: string })[] = [
 ];
 
 const adminMaintenanceLinks: PortalLink[] = [
-  { label: "Online Customers", path: "/portal/online-customers", status: "live" },
   { label: "Company Setup", path: "/portal/company", status: "live" },
-  { label: "Store Policies", path: "/portal/policies", status: "live" },
   { label: "Stores & Warehouses", path: "/portal/stores", status: "live" },
   { label: "Users & Roles",path:"/portal/team",status:"live" },
+  { label: "Storefront Design", path: "/portal/storefront-design", status: "live" },
   { label: "Storefront Domains",path:"/portal/domains",status:"live" },
-  { label: "Audit Events", path:"/portal/audit",status:"live" },
+  { label: "Store Policies", path: "/portal/policies", status: "live" },
   { label: "Payments & Delivery Setup", path: "/portal/checkout-setup", status: "live" },
+  { label: "Online Customers", path: "/portal/online-customers", status: "live" },
+  { label: "Audit Events", path:"/portal/audit",status:"live" },
 ];
 
 const workflowSections: WorkflowSection[] = [

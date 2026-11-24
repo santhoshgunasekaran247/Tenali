@@ -1,4 +1,4 @@
-import type { SiteTheme } from "../types";
+import type { SiteTheme, StorefrontTemplate } from "../types";
 
 export const DEFAULT_SITE_THEME: SiteTheme = {
   primary_color: "#142b4a",
@@ -8,6 +8,30 @@ export const DEFAULT_SITE_THEME: SiteTheme = {
   text_color: "#142b4a",
   muted_text_color: "#59677a",
   border_color: "#ded9cf",
+};
+
+export const STOREFRONT_THEME_PALETTES: Record<StorefrontTemplate, SiteTheme> = {
+  current: DEFAULT_SITE_THEME,
+  marketplace: {
+    primary_color: "#173c59", accent_color: "#ffd15a", background_color: "#ffffff",
+    surface_color: "#ffffff", text_color: "#1d2730", muted_text_color: "#707780", border_color: "#e5ebef",
+  },
+  boutique: {
+    primary_color: "#7d4545", accent_color: "#d7ad94", background_color: "#fffdfb",
+    surface_color: "#ffffff", text_color: "#3a302e", muted_text_color: "#887b75", border_color: "#eee5e0",
+  },
+  heritage: {
+    primary_color: "#783c29", accent_color: "#d8b36c", background_color: "#f7f0e2",
+    surface_color: "#fffdf7", text_color: "#372b20", muted_text_color: "#82715d", border_color: "#eee5d3",
+  },
+  supermarket: {
+    primary_color: "#17613f", accent_color: "#f0a849", background_color: "#ffffff",
+    surface_color: "#ffffff", text_color: "#263a30", muted_text_color: "#75837a", border_color: "#e4eee2",
+  },
+  jewellery: {
+    primary_color: "#34221d", accent_color: "#b28a52", background_color: "#f7f2eb",
+    surface_color: "#ffffff", text_color: "#302723", muted_text_color: "#8a7e75", border_color: "#e8dfd3",
+  },
 };
 
 export const SITE_THEME_FIELDS = [
@@ -26,6 +50,13 @@ export function normalizeSiteTheme(theme?: Partial<SiteTheme> | null): SiteTheme
     if (/^#[0-9a-f]{6}$/i.test(theme?.[key] || "")) result[key] = theme![key]!;
   }
   return result;
+}
+
+export function storefrontSiteTheme(theme?: Partial<SiteTheme> | null, template: StorefrontTemplate = "current"): SiteTheme {
+  const normalized = normalizeSiteTheme(theme);
+  const isPreset = Object.values(STOREFRONT_THEME_PALETTES).some(palette =>
+    SITE_THEME_FIELDS.every(([key]) => normalized[key].toLowerCase() === palette[key].toLowerCase()));
+  return isPreset ? { ...STOREFRONT_THEME_PALETTES[template] } : normalized;
 }
 
 export function contrastingText(color: string): string {
@@ -47,8 +78,8 @@ function paintTheme(theme: SiteTheme) {
   document.documentElement.style.colorScheme = contrastingText(theme.surface_color) === "#ffffff" ? "dark" : "light";
 }
 
-export function setSavedSiteTheme(theme?: Partial<SiteTheme> | null) {
-  savedTheme = normalizeSiteTheme(theme);
+export function setSavedSiteTheme(theme?: Partial<SiteTheme> | null, template?: StorefrontTemplate) {
+  savedTheme = template ? storefrontSiteTheme(theme, template) : normalizeSiteTheme(theme);
   paintTheme(previewTheme || savedTheme);
 }
 

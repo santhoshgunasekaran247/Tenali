@@ -43,6 +43,7 @@ class ItemDetails(BaseModel):
 
 class ProductInput(ItemDetails):
     name: str = Field(min_length=1, max_length=200)
+    tags: list[Annotated[str, Field(min_length=1, max_length=80)]] | None = Field(default=None, max_length=30)
     minimum_order_quantity: int = Field(default=1, ge=1, le=100, strict=True)
     brand_id: UUID | None = None
     category_id: UUID | None = None

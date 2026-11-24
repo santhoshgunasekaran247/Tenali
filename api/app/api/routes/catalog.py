@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -17,7 +17,7 @@ def open_storefront(company_id: str | None = None, db: Session = Depends(get_db)
 
 @router.get("/company", response_model=CompanyOut)
 def public_company(company_id: str | None=None,db:Session=Depends(get_db)):
-    row=db.execute(text("select id,company_name,nickname,logo_url,phone,email,website,address,site_theme,tenant_slug,storefront_content,storefront_enabled from companies where id=:company and is_active=true"),{"company":company_id}).mappings().one()
+    row=db.execute(text("select id,company_name,nickname,logo_url,phone,email,website,address,site_theme,storefront_template,tenant_slug,storefront_content,storefront_enabled from companies where id=:company and is_active=true"),{"company":company_id}).mappings().one()
     status = company_features(db, company_id)
     return {**dict(row), "storefront_enabled": status["storefront"]["effective_enabled"],
             "storefront_platform_allowed": status["storefront"]["platform_allowed"]}
@@ -34,10 +34,11 @@ def catalog_list(
     company_id: str | None = None,
     brand: str | None = None,
     category: str | None = None,
+    search: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
 ):
     service = CatalogService(db)
-    return service.list(company_id=company_id, brand=brand, category=category)
+    return service.list(company_id=company_id, brand=brand, category=category, search=search)
 
 
 @router.get("/products/{product_id}", response_model=CatalogProductResponse, dependencies=[Depends(open_storefront)])

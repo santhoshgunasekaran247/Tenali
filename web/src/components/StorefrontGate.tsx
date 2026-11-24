@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../features/auth";
 
 export function StorefrontGate({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const location = useLocation();
   if (auth.loading) return <main className="loading">Loading...</main>;
   const store = auth.storefront;
   if (!store || store.storefront_enabled !== false) return <>{children}</>;
   const owner = auth.user?.company_id === store.id;
+  const designPreview = owner && new URLSearchParams(location.search).get("storefrontPreview") === store.id;
+  if (designPreview) return <>{children}</>;
   return (
     <main className="ops-page storefront-closed">
       <section className="ops-card" role="status">

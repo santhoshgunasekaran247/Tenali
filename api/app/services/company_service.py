@@ -56,6 +56,7 @@ class CompanyService:
         values["social_links"] = json.dumps(values["social_links"])
         values["invoice_settings"] = json.dumps(values["invoice_settings"])
         values["site_theme"] = json.dumps(values["site_theme"]) if values["site_theme"] is not None else None
+        values["storefront_template"] = payload.storefront_template or company.get("storefront_template") or "current"
         copy = payload.storefront_content if "storefront_content" in payload.model_fields_set else StorefrontContent.model_validate(company.get("storefront_content") or {})
         values["storefront_content"] = json.dumps(copy.model_dump())
         try:
@@ -68,6 +69,7 @@ class CompanyService:
                     social_links = cast(:social_links as jsonb),
                     invoice_settings = cast(:invoice_settings as jsonb),
                     storefront_content = cast(:storefront_content as jsonb),
+                    storefront_template = :storefront_template,
                     storefront_enabled = coalesce(cast(:storefront_enabled as boolean), storefront_enabled),
                     workflow_guidance_enabled = coalesce(cast(:workflow_guidance_enabled as boolean), workflow_guidance_enabled),
                     site_theme = coalesce(cast(:site_theme as jsonb), site_theme), updated_at = now()

@@ -15,6 +15,7 @@ class CompanyOut(BaseModel):
     phone: str | None = None
     email: str | None = None
     site_theme: SiteTheme = Field(default_factory=SiteTheme)
+    storefront_template: str = "current"
     tenant_slug: str | None = None
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
     storefront_enabled: bool = True
@@ -22,12 +23,14 @@ class CompanyOut(BaseModel):
 
 
 class BrandOut(BaseModel):
+    id: UUID
     code: str
     name: str
     description: str = ""
 
 
 class CategoryOut(BaseModel):
+    id: UUID
     category_slug: str
     name: str
     category_title: str
@@ -68,6 +71,7 @@ class ProductOut(BaseModel):
     selling_price_display: str | None = None
     best_seller: bool = False
     sru_special: bool = False
+    tags: list[str] = Field(default_factory=list)
     home_order: int | None = None
     is_active: bool = True
     brand_code: str | None = None
@@ -89,12 +93,34 @@ class ProductOut(BaseModel):
     variants: list[CatalogVariantOut] = Field(default_factory=list)
 
 
+class StorefrontSectionOut(BaseModel):
+    id: UUID
+    section_key: str
+    section_type: str
+    title: str
+    eyebrow: str = ""
+    description: str = ""
+    image_url: str | None = None
+    sort_order: int
+    is_enabled: bool
+    configuration: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    products: list[ProductOut] = Field(default_factory=list)
+    categories: list[CategoryOut] = Field(default_factory=list)
+    brands: list[BrandOut] = Field(default_factory=list)
+
+
 class CatalogHomeResponse(BaseModel):
     company: CompanyOut
     brands: list[BrandOut]
     categories: list[CategoryOut]
     best_sellers: list[ProductOut]
     sru_specials: list[ProductOut]
+    sections: list[StorefrontSectionOut] = Field(default_factory=list)
+    classic_sections_configured: bool = False
+
+
+class CatalogStorefrontPreviewResponse(CatalogHomeResponse):
+    catalog_products: list[ProductOut] = Field(default_factory=list)
 
 
 class CatalogListResponse(BaseModel):

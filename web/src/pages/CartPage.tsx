@@ -11,6 +11,7 @@ import { useCartMode } from "../features/useCheckoutAvailability";
 import { cartWords, enquiryMessage, enquiryWhatsappLink } from "../features/cartMode";
 import { ProductImageLink, productImage, productPagePath } from "../components/OrderItems";
 import { QuantityStepper } from "../components/QuantityStepper";
+import { SiteFooter } from "../components/SiteFooter";
 
 export function CartPage() {
   const { storefront, loading } = useAuth();
@@ -69,9 +70,10 @@ export function CartPage() {
     if (!ready || !enabled || rows.some(row => row.problem)) { setError("Resolve the cart messages before checkout."); return; }
     navigate(search.get("pickup") ? `/checkout?pickup=${encodeURIComponent(search.get("pickup")!)}` : "/checkout");
   };
+  const template = storefront?.storefront_template || "current";
   if (loading) return <main className="loading">Loading store...</main>;
   if (!storefront) return <main className="loading">Open a workspace storefront to view its cart.</main>;
-  return <main className="shop-account-page shopping-page"><header className="shop-account-heading"><Link to="/">Continue shopping</Link><h1>{words.title}</h1><p>{storefront.company_name} · {cart.items.length} {cart.items.length === 1 ? "item" : "items"}{enquiring ? " · Enquiry, not an order" : ""}</p>{!enquiring ? <p>Availability is checked for your chosen fulfilment method at checkout.</p> : null}</header>
+  return <><main className={`shop-account-page shopping-page storefront-commerce-page storefront-order-page storefront-cart-page--${template}`}><header className={`shop-account-heading storefront-order-heading storefront-order-heading--${template}`}><Link to="/">Continue shopping</Link><h1>{words.title}</h1><p>{storefront.company_name} · {cart.items.length} {cart.items.length === 1 ? "item" : "items"}{enquiring ? " · Enquiry, not an order" : ""}</p>{!enquiring ? <p>Availability is checked for your chosen fulfilment method at checkout.</p> : null}</header>
     <div className="shop-account-content">
       {error ? <FloatingAlert>{error}</FloatingAlert> : null}
       {!cart.items.length ? <section className="ops-card"><h2>Your {enquiring ? "enquiry list" : "cart"} is empty</h2><p>{enquiring ? "Add products and quantities, then send the whole list to the store in one WhatsApp message." : "Add products, choose quantities and pay for them together."}</p><Link className="btn" to="/">Browse products</Link></section>
@@ -98,5 +100,5 @@ export function CartPage() {
           </section>}
         </form>}
     </div>
-  </main>;
+  </main><SiteFooter /></>;
 }

@@ -54,6 +54,7 @@ export function ProductPage() {
 
   const displayCompany=company||storefront;
   const display=storefrontDisplay(displayCompany);
+  const template=displayCompany?.storefront_template||"current";
   const whatsappPhone=display.whatsapp_enquiry_enabled?company?.phone:undefined;
   const mode = availability || checkoutError ? cartMode(checkoutEnabled, whatsappPhone) : null;
   const words = cartWords(mode);
@@ -101,7 +102,7 @@ export function ProductPage() {
   };
   return (
     <>
-      <main id="product-page">
+      <main id="product-page" className={`storefront-product-page storefront-commerce-page storefront-product-page--${template}`}>
         <div className="product-detail-crumb">
           <Link to="/">{text("home_breadcrumb","Home")}</Link>
           <span>/</span>
@@ -109,7 +110,7 @@ export function ProductPage() {
           <span>/</span>
           <span>{product.name}</span>
         </div>
-        <section className="product-detail">
+        <section className={`product-detail product-detail--${template}`}>
           <div className="detail-gallery">
             <div className="detail-image-wrap">
               {mainPhoto?<img src={toAssetUrl(mainPhoto)} alt={product.name} />:<ImageOff size={48} aria-label="No product image"/>}
@@ -131,10 +132,26 @@ export function ProductPage() {
             )}
           </div>
           <div className="detail-copy">
-            <p className="eyebrow">
-              {product.brand_name || text("fallback_brand","{nickname}")} · {product.category_title}
-            </p>
-            <h1>{product.name}</h1>
+            {template === "boutique" ? <header className="product-theme-title product-theme-title--boutique">
+              <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")}</p><h1>{product.name}</h1>
+              <span>{product.category_title}</span>
+            </header> : template === "heritage" ? <header className="product-theme-title product-theme-title--heritage">
+              <span className="heritage-catalog-rule" aria-hidden="true" /><p className="eyebrow">{product.category_title}</p>
+              <h1>{product.name}</h1><p>{product.brand_name || text("fallback_brand","{nickname}")}</p>
+            </header> : template === "supermarket" ? <header className="product-theme-title product-theme-title--supermarket">
+              <span>{product.category_title}</span><h1>{product.name}</h1>
+              <p>{product.brand_name || text("fallback_brand","{nickname}")}</p>
+            </header> : template === "jewellery" ? <header className="product-theme-title product-theme-title--jewellery">
+              <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")}</p>
+              <span className="jewellery-divider" aria-hidden="true" /><h1>{product.name}</h1>
+              <span className="jewellery-product-collection">{product.category_title}</span>
+            </header> : template === "marketplace" ? <header className="product-theme-title product-theme-title--marketplace">
+              <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")}</p>
+              <h1>{product.name}</h1><span>{product.category_title}</span>
+            </header> : <>
+              <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")} · {product.category_title}</p>
+              <h1>{product.name}</h1>
+            </>}
             {options.length?<div className="variant-options" role="group" aria-label={text("variant_label","Size / Colour")}>
               {layout.kind === "dimensions" ? layout.dimensions.map(dimension => <div className="variant-option-row" key={dimension.key}>
                 <span className="variant-option-label">{dimensionLabel(dimension.key)}: <strong>{selectedOption?.values[dimension.key]}</strong></span>
@@ -203,7 +220,7 @@ export function ProductPage() {
           </div>
         </section>
       </main>
-      <SiteFooter />
+      <SiteFooter company={company} />
     </>
   );
 }

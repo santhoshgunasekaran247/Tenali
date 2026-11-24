@@ -14,6 +14,8 @@ create table if not exists companies (
     invoice_settings jsonb not null default '{}'::jsonb,
     site_theme jsonb not null default '{}'::jsonb,
     storefront_content jsonb not null default '{}'::jsonb,
+    storefront_template text not null default 'current'
+        check (storefront_template in ('current', 'marketplace', 'boutique', 'heritage', 'supermarket', 'jewellery')),
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

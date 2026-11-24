@@ -21,6 +21,7 @@ export function itemPayload(item: InventoryItemInput): InventoryItemInput {
 
 export function productPayload(product: InventoryProduct): InventoryProductInput {
   return { ...itemPayload(product), name: product.name, brand_id: product.brand_id, category_id: product.category_id,
+    tags: product.tags || [],
     minimum_order_quantity: product.minimum_order_quantity,
     hsn_code: product.hsn_code, image_url: product.image_url, image_urls: (product.image_urls || "").split("|").filter(Boolean),
     catalog_visible: product.catalog_visible, best_seller: product.best_seller, sru_special: product.sru_special, home_order: product.home_order };
@@ -36,11 +37,13 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const clearDrafts = useClearDrafts();
   const [draft, setDraft] = useDraftState<InventoryProductInput & {variant_name:string}>(`${draftKey}form`, () => ({
     ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, hsn_code: null, image_url: null, image_urls: [],
+    tags: [],
     catalog_visible: false, best_seller: false, sru_special: false, home_order: 999, minimum_order_quantity: 1,
     ...(product && !variantMode ? productPayload(product) : {}),
     ...(variantMode ? { pricing_mode: "inherit" as const, image_url: variant?.image_url || null, ...(variant ? itemPayload(variant) : {}) } : {}),
     variant_name: variant?.variant_name || "",
   }));
+  const [tagsText, setTagsText] = useState(() => (draft.tags || []).join(", "));
   const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
   const [gallery, setGallery] = useDraftState(`${draftKey}gallery`, (!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
   const [createdLookups, setCreatedLookups] = useState<Pick<InventoryLookups, "brands" | "categories">>({ brands: [], categories: [] });
@@ -140,6 +143,10 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       <label>{variantMode?"Variant Name":"Product Name"}<input required={!variantMode} maxLength={200} value={variantMode?draft.variant_name:draft.name} onChange={event=>patch(variantMode?{variant_name:event.target.value}:{name:event.target.value})}/></label>
       <label>Item Name<input maxLength={200} value={draft.item_name||""} onChange={event=>patch({item_name:event.target.value})}/></label>
       <label>SKU<input maxLength={100} value={draft.sku||""} onChange={event=>patch({sku:event.target.value})}/></label>
+      {!variantMode?<label className="company-field-wide">Product tags
+        <input maxLength={1200} value={tagsText} onChange={event=>{setTagsText(event.target.value);patch({tags:Array.from(new Set(event.target.value.split(",").map(tag=>tag.trim()).filter(Boolean)))})}} placeholder="New collection, Handcrafted, Festive" />
+        <span className="ops-copy-note">Add up to 30 comma-separated labels (80 characters each). Tags are reusable across products and searchable in the storefront. Homepage section membership is managed separately in Storefront Design.</span>
+      </label>:null}
       {!variantMode?<>{([["brands", "brand_id", "Brand"], ["categories", "category_id", "Category"]] as const).map(([kind, field, label]) =>
         <label key={kind}>{label}<input list={`${draftKey}${kind}`} maxLength={150} value={lookupNames[kind]}
           placeholder={`Select or type a new ${label.toLowerCase()}`} onChange={event => {

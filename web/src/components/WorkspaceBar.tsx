@@ -7,13 +7,13 @@ import { useAuth } from "../features/auth";
 import { tenantBase } from "../features/tenantTransport";
 import { storefrontText } from "../features/catalog/storefrontText";
 
-export function WorkspaceBar(){
+export function WorkspaceBar({ navigation }: { navigation?: Record<string, string> } = {}){
   const auth=useAuth();const[error,setError]=useState('');const[busy,setBusy]=useState(false);
   const location=useLocation();
   const menu=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{if(menu.current?.open)menu.current.open=false;},[location.pathname,location.search,location.hash]);
   if(!auth.user)return null;
-  const copy=auth.storefront?.storefront_content?.navigation||{};
+  const copy=navigation||auth.storefront?.storefront_content?.navigation||{};
   const label=(key:string,fallback:string)=>storefrontText(copy[key]||fallback,auth.user!);
   return <details ref={menu} className="workspace-menu">
     <summary aria-label={label("account_menu","My Account")}><Building2 size={16}/><span>{label("account_menu","My Account")}</span><ChevronDown size={14}/></summary>
