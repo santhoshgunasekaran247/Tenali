@@ -14,7 +14,7 @@ export function BrandCard({ brand, template = "current", caption, action, href }
   const logo = toAssetUrl(`brand-logos/${brand.code}.png`);
   return <Link className="brand-card storefront-brand-card" data-brand-theme={template}
     to={href || `/brand?brand=${encodeURIComponent(brand.code)}`}>
-    {template === "marketplace" ? null : <div className="logo-box">
+    {template === "marketplace" || template === "category_first" ? null : <div className="logo-box">
       {failedLogo !== logo ? <img src={logo} alt="" loading="lazy" onError={() => setFailedLogo(logo)} />
         : <span className="brand-monogram" aria-hidden="true">{brand.name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</span>}
     </div>}

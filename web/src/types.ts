@@ -91,7 +91,7 @@ export type SiteTheme = {
   border_color: string;
 };
 
-export type StorefrontTemplate = "current" | "marketplace" | "boutique" | "heritage" | "supermarket" | "jewellery";
+export type StorefrontTemplate = "current" | "marketplace" | "category_first" | "boutique" | "heritage" | "supermarket" | "jewellery";
 export type CompanySetup = Company & { tenant_slug: string; storefront_content: StorefrontContent; invoice_settings: InvoiceSettings; site_theme: SiteTheme; storefront_template: StorefrontTemplate };
 export type CompanyUpdateInput = Omit<CompanySetup, "id" | "is_active" | "features">;
 

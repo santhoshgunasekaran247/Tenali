@@ -61,7 +61,7 @@ function CatalogThemeBanner({ template, eyebrow, heading, description, image, im
       </div>
     </header>;
   }
-  if (template === "marketplace") {
+  if (template === "marketplace" || template === "category_first") {
     return <header className="theme-catalog-banner theme-catalog-banner--marketplace">
       <div><p className="eyebrow">{eyebrow}</p><h1>{heading}</h1>{description ? <p>{description}</p> : null}
         {note ? <p className="catalog-note">{note}</p> : null}{actions}</div>

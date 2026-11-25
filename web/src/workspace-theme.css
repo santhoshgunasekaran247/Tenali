@@ -117,10 +117,12 @@
 .storefront-preview-notice { margin: 0; padding: 8px 14px; color: #425f7d; background: #f6f9fc; border-bottom: 1px solid #dce7f3; font-size: 11px; line-height: 1.5; }
 .storefront-preview-notice label { display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
 .storefront-preview-notice p { margin: 5px 0 0; }
-.storefront-preview-device-switch { display: flex; gap: 4px; padding: 3px; border: 1px solid #dce7f3; border-radius: 6px; background: #f6f9fc; }
-.storefront-preview-device-switch button { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border: 0; border-radius: 4px; color: #526b87; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
-.storefront-preview-device-switch button.active { color: #193d67; background: #fff; box-shadow: 0 1px 3px #18395b22; }
+.storefront-preview-controls { display: flex; align-items: center; gap: 8px; }
+.storefront-preview-device-switch, .storefront-preview-zoom-switch { display: flex; gap: 4px; padding: 3px; border: 1px solid #dce7f3; border-radius: 6px; background: #f6f9fc; }
+.storefront-preview-device-switch button, .storefront-preview-zoom-switch button { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border: 0; border-radius: 4px; color: #526b87; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
+.storefront-preview-device-switch button.active, .storefront-preview-zoom-switch button.active { color: #193d67; background: #fff; box-shadow: 0 1px 3px #18395b22; }
 .storefront-preview-canvas { display: flex; justify-content: center; align-items: flex-start; min-height: 600px; height: calc(100dvh - 285px); padding: 14px; overflow: hidden; }
+.storefront-preview-canvas.actual-size { justify-content: flex-start; overflow: auto; }
 .storefront-preview-frame { position: relative; flex: none; }
 .storefront-preview-canvas iframe { position: absolute; top: 0; left: 0; display: block; max-width: none; border: 0; outline: 1px solid #c9d5e2; border-radius: 5px; background: #fff; box-shadow: 0 5px 18px #15345120; transform-origin: top left; }
 .app-root[data-storefront-preview="true"] :is(a, button, input, select, textarea, form, [role="button"], [role="link"]) { pointer-events: none; cursor: default; }
@@ -138,5 +140,7 @@
   .storefront-design-workspace { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .storefront-design-controls { max-height: none; min-height: 0; }
   .storefront-design-preview { min-height: 500px; }
+  .storefront-preview-toolbar { flex-wrap: wrap; }
+  .storefront-preview-controls { flex-wrap: wrap; }
   .storefront-preview-canvas { height: 66dvh; min-height: 500px; }
 }

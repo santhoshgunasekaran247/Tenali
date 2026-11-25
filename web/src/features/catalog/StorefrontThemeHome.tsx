@@ -42,7 +42,7 @@ function ThemeHero({ template, section, sections, companyName, company, text }: 
   const target = sections.find(item => item.section_type === "products");
   const primaryHref = target ? `#${sectionId(target, sections)}` : "/brand?category=all";
   const link = (key: string, href: string, label: string) => storefrontLink(company, key, href, label, section.section_key);
-  const imageUrl = section.image_url || (template === "marketplace" ? MARKETPLACE_IMAGES.hero
+  const imageUrl = section.image_url || (template === "marketplace" || template === "category_first" ? MARKETPLACE_IMAGES.hero
     : template === "boutique" ? BOUTIQUE_IMAGES.hero
       : template === "heritage" ? HERITAGE_IMAGES.hero
         : template === "supermarket" ? SUPERMARKET_IMAGES.hero : JEWELLERY_IMAGES.hero);
@@ -163,6 +163,15 @@ function CategorySection({ template, section, text, company }: { template: Theme
       </Link>
     ))}</div>;
   }
+  if (template === "category_first") {
+    return <nav className="category-first-grid" aria-label={section.title}>{categories.map(category => (
+      <Link className="category-first-tile" to={destination(category.category_slug)} key={category.id}>
+        <SectionImage src={category.image_url} alt="" />
+        <strong>{category.category_title}</strong>
+        <span>{storefrontLink(company, "category.card", "", text("category_action")).children}</span>
+      </Link>
+    ))}</nav>;
+  }
   if (template === "heritage") {
     return <div className="heritage-category-list">{categories.map(category => (
       <Link className="heritage-category-item" to={destination(category.category_slug)} key={category.id}>
@@ -246,11 +255,13 @@ function ProductSection({ template, section, phone, checkoutEnabled, checkoutErr
   const products = section.products || [];
   const cards = products.map(product => <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={checkoutEnabled} template={template} productCopy={productCopy} />);
   const alert = checkoutError ? <p className="checkout-notice" role="alert">Online checkout unavailable: {checkoutError}</p> : null;
-  if (template === "marketplace" || template === "supermarket") {
+  if (template === "supermarket") {
     return <>{alert}{bulkNote}<div className={`${template}-product-grid`} role="region" aria-label={section.title}>{cards}</div></>;
   }
-  const railClass = template === "boutique" ? "boutique-product-rail"
-    : template === "heritage" ? "heritage-product-rail" : "jewellery-product-rail";
+  const railClass = template === "marketplace" ? "marketplace-product-rail"
+    : template === "category_first" ? "category-first-product-rail"
+      : template === "boutique" ? "boutique-product-rail"
+        : template === "heritage" ? "heritage-product-rail" : "jewellery-product-rail";
   return <>{alert}{bulkNote}<ProductRail label={section.title} className={railClass}>{cards}</ProductRail></>;
 }
 
@@ -270,7 +281,10 @@ export function StorefrontThemeHome({
       description: text(`${prefix}_description`),
     };
   });
-  const sections = configured;
+  const sections = template === "category_first"
+    ? [...configured].sort((first, second) =>
+      Number(second.section_type === "categories") - Number(first.section_type === "categories"))
+    : configured;
   const completedStory = template === "heritage" || template === "supermarket" || template === "jewellery";
   const savedStoryImage = data.company.storefront_content?.images?.[`${template}_story`];
   const storyImage = savedStoryImage === undefined
@@ -312,7 +326,7 @@ export function StorefrontThemeHome({
           : <BrandSection template={template} section={section} text={text} company={data.company} />}
       </section>;
     })}
-    {template === "marketplace" ? <section id="why" className="marketplace-story marketplace-why">
+    {template === "marketplace" || template === "category_first" ? <section id="why" className="marketplace-story marketplace-why">
       <img className="marketplace-story-image" src={MARKETPLACE_IMAGES.story} alt="" loading="lazy" />
       <div><p className="eyebrow">{text("why_eyebrow")}</p><h2>{storyHeading}</h2></div>
       <p>{text("why_description")}</p>
@@ -369,7 +383,7 @@ export function StorefrontThemeHome({
           <Link className="link" {...link("contact.phone", `tel:${(data.company.phone || "").replace(/[^\d+]/g, "")}`, data.company.phone || "Phone")} /> : null}
       </div>
     </section> : null}
-    {template === "marketplace" ? <section id="collection-special" className="marketplace-story marketplace-about">
+    {template === "marketplace" || template === "category_first" ? <section id="collection-special" className="marketplace-story marketplace-about">
       <img className="marketplace-story-image" src={MARKETPLACE_IMAGES.collection} alt="" loading="lazy" />
       <div><p className="eyebrow">{text("collection_eyebrow")}</p><h2>{text("collection_heading_first")} {text("collection_heading_second")}</h2><p>{text("collection_description")}</p></div>
       <div className="marketplace-about-points">{["one", "two", "three"].map(key =>

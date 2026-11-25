@@ -23,6 +23,16 @@ const samples: Record<StorefrontTemplate, readonly SampleProduct[]> = {
     ["Portable phone charger", "799", "photo-1609091839311-d5365f9ff1c5"],
     ["Everyday shoulder bag", "1299", "photo-1548036328-c9fa89d128fa"],
   ],
+  category_first: [
+    ["Wireless headphones", "1099", "photo-1505740420928-5e560c06d30e"],
+    ["Everyday smart watch", "2499", "photo-1523275335684-37898b6baf30"],
+    ["Unisex running shoes", "2299", "photo-1542291026-7eec264c27ff"],
+    ["Everyday ceramic planter", "549", "photo-1490312278390-ab64016e0aa9"],
+    ["Cotton casual T-shirt", "999", "photo-1521572163474-6864f9cf17ab"],
+    ["Cotton cushion cover set", "699", "photo-1600210492486-724fe5c67fb0"],
+    ["Portable phone charger", "799", "photo-1609091839311-d5365f9ff1c5"],
+    ["Everyday shoulder bag", "1299", "photo-1548036328-c9fa89d128fa"],
+  ],
   boutique: [
     ["Handwoven kurta set", "4250", "photo-1594633312681-425c7b97ccd1"],
     ["Cotton-silk saree", "3490", "photo-1610030469983-98e550d6193c"],

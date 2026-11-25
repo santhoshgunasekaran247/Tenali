@@ -59,7 +59,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
   const storefrontOpen=previewCompany ? true : (auth.storefront||company)?.storefront_enabled!==false;
   const navText=(key:string,fallback:string)=>storefrontText(navigation[key]||fallback,displayBrand);
   const inPortal=location.pathname.startsWith("/portal");
-  const marketplace=!inPortal&&storefrontOpen&&storefrontCompany?.storefront_template==="marketplace";
+  const marketplace=!inPortal&&storefrontOpen&&["marketplace","category_first"].includes(storefrontCompany?.storefront_template||"");
   const boutique=!inPortal&&storefrontOpen&&storefrontCompany?.storefront_template==="boutique";
   const collectionHeader=!inPortal&&storefrontOpen&&["heritage","supermarket","jewellery"].includes(storefrontCompany?.storefront_template||"");
   const link = (key: string, href: string, label: string) => storefrontLink({ ...displayBrand, storefront_content: storefrontCompany?.storefront_content }, key, href, label);

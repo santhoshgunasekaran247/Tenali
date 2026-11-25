@@ -22,6 +22,7 @@ type SectionOptions = {
 const templates: Array<[StorefrontTemplate, string, string]> = [
   ["current", "Classic", "The current Tenali storefront"],
   ["marketplace", "Marketplace", "Dense, fast-shopping product discovery"],
+  ["category_first", "Category First", "Amazon-style direct category browsing"],
   ["boutique", "Boutique", "Editorial, curated collections"],
   ["heritage", "Heritage India", "Craft, origin and cultural storytelling"],
   ["supermarket", "Supermarket", "Everyday value and quick category access"],
@@ -126,6 +127,7 @@ export function StorefrontDesignPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [previewScaleMode, setPreviewScaleMode] = useState<"fit" | "actual">("fit");
   const [useSamples, setUseSamples] = useState(false);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewCanvas = useRef<HTMLDivElement>(null);
@@ -201,7 +203,8 @@ export function StorefrontDesignPage() {
   const previewBase = tenantBase() || (company ? `/c/${company.tenant_slug}` : "");
   const previewUrl = company ? `${previewBase}/?storefrontPreview=${encodeURIComponent(company.id)}` : "";
   const previewWidth = device === "desktop" ? 1440 : 390;
-  const previewScale = previewSize.width > 0 ? Math.min(1, previewSize.width / previewWidth) : 1;
+  const fitScale = previewSize.width > 0 ? Math.min(1, previewSize.width / previewWidth) : 1;
+  const previewScale = previewScaleMode === "actual" ? 1 : fitScale;
   const previewHeight = previewSize.height || 570;
   const enabledCount = sections.filter(section => section.is_enabled).length;
   const productCount = useMemo(() => options?.products.length || 0, [options]);
@@ -552,10 +555,16 @@ export function StorefrontDesignPage() {
       </aside>
       <section className="storefront-design-preview" aria-label="Live storefront preview">
         <div className="storefront-preview-toolbar">
-          <div><strong>Live preview</strong><span>{previewWidth}px {device} · {Math.round(previewScale * 100)}% · Fit to panel</span></div>
-          <div className="storefront-preview-device-switch" role="group" aria-label="Preview device">
-            <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? "active" : ""} onClick={() => setDevice("desktop")}><Monitor size={16} />Desktop</button>
-            <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? "active" : ""} onClick={() => setDevice("mobile")}><Smartphone size={16} />Mobile</button>
+          <div><strong>Live preview</strong><span>{previewWidth}px {device} · {Math.round(previewScale * 100)}% · {previewScaleMode === "fit" ? "Fit to panel" : "Actual size"}</span></div>
+          <div className="storefront-preview-controls">
+            <div className="storefront-preview-zoom-switch" role="group" aria-label="Preview zoom">
+              <button type="button" aria-pressed={previewScaleMode === "fit"} className={previewScaleMode === "fit" ? "active" : ""} onClick={() => setPreviewScaleMode("fit")}>Fit</button>
+              <button type="button" aria-pressed={previewScaleMode === "actual"} className={previewScaleMode === "actual" ? "active" : ""} onClick={() => setPreviewScaleMode("actual")}>100%</button>
+            </div>
+            <div className="storefront-preview-device-switch" role="group" aria-label="Preview device">
+              <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? "active" : ""} onClick={() => setDevice("desktop")}><Monitor size={16} />Desktop</button>
+              <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? "active" : ""} onClick={() => setDevice("mobile")}><Smartphone size={16} />Mobile</button>
+            </div>
           </div>
         </div>
         <div className="storefront-preview-notice">
@@ -563,7 +572,7 @@ export function StorefrontDesignPage() {
           <p>Unmapped sections always show samples here. Selecting products returns to your actual selections.
             Samples and this preview switch are never saved or shown on the live store. Shopping actions are disabled.</p>
         </div>
-        <div ref={previewCanvas} className={`storefront-preview-canvas${device === "mobile" ? " mobile" : ""}`}>
+        <div ref={previewCanvas} className={`storefront-preview-canvas${device === "mobile" ? " mobile" : ""}${previewScaleMode === "actual" ? " actual-size" : ""}`}>
           <div className="storefront-preview-frame" style={{ width: previewWidth * previewScale, height: previewHeight }}>
             {previewUrl ? <iframe ref={iframe} title="Live storefront preview" src={previewUrl} onLoad={sendPreview}
               style={{ width: previewWidth, height: previewHeight / previewScale, transform: `scale(${previewScale})` }} /> : null}

@@ -145,7 +145,7 @@ export function ProductPage() {
               <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")}</p>
               <span className="jewellery-divider" aria-hidden="true" /><h1>{product.name}</h1>
               <span className="jewellery-product-collection">{product.category_title}</span>
-            </header> : template === "marketplace" ? <header className="product-theme-title product-theme-title--marketplace">
+            </header> : template === "marketplace" || template === "category_first" ? <header className="product-theme-title product-theme-title--marketplace">
               <p className="eyebrow">{product.brand_name || text("fallback_brand","{nickname}")}</p>
               <h1>{product.name}</h1><span>{product.category_title}</span>
             </header> : <>

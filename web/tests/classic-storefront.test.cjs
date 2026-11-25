@@ -359,7 +359,7 @@ test("theme samples stay in preview copies and never replace explicit or unavail
   const sections = classicSections(empty);
   const before = JSON.stringify(sections);
   const firstNames = new Set();
-  for (const template of ["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"]) {
+  for (const template of ["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"]) {
     const preview = previewHelpers.storefrontPreviewSections(sections, empty, template);
     const shelves = preview.filter(section => section.section_type === "products");
     const products = shelves.flatMap(section => section.products);
@@ -486,7 +486,7 @@ test("homepage actions honour global and per-section settings and every selectab
     "section.classic-hero.hero.primary": { label: "Explore this edit", href: "/#section-classic-brands" },
     "section.classic-best-sellers.section.view_all": { label: "See these products", href: "/brand?q=new" },
   } } };
-  for (const template of ["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"]) {
+  for (const template of ["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"]) {
     const store = { ...configured, storefront_template: template };
     const tree = template === "current" ? renderHome(sections, { company: store }) : renderMarketplace({ company: store, sections }, template);
     const links = all(tree, node => node.type === "Link");
@@ -503,6 +503,27 @@ test("homepage actions honour global and per-section settings and every selectab
   }
   const hidden = sections.map(section => ({ ...section, is_enabled: section.section_type === "hero" }));
   assert.ok(!linkHelpers.storefrontSectionTargets(hidden, "current").some(target => target.href === "/#section-classic-brands"));
+});
+
+test("category-first storefront opens directly on the selected category tiles", () => {
+  const sections = classicSections(data);
+  const store = { ...company, storefront_template: "category_first" };
+  const tree = renderMarketplace({ company: store, sections }, "category_first");
+  const homeSections = tree.props.children.flat(Infinity).filter(child => child?.type === "section");
+  assert.equal(homeSections[0].props.id, "categories");
+  const categoryGrid = all(tree, node => node.props.className === "category-first-grid")[0];
+  assert.ok(categoryGrid);
+  assert.equal(all(categoryGrid, node => node.props.className === "category-first-tile").length, 4);
+});
+
+test("marketplace product sections use horizontal rails to keep the homepage compact", () => {
+  for (const template of ["marketplace", "category_first"]) {
+    const tree = renderMarketplace({ company: { ...company, storefront_template: template }, sections: classicSections(data) }, template);
+    const productRails = all(tree, node => node.type === "ProductRail");
+    assert.ok(productRails.length > 0);
+    const expectedClass = template === "category_first" ? "category-first-product-rail" : "marketplace-product-rail";
+    assert.ok(productRails.every(node => node.props.className === expectedClass));
+  }
 });
 
 test("link defaults remain item-specific and unsafe destinations are not rendered", () => {
@@ -716,6 +737,9 @@ test("sample palettes follow the chosen design while custom colours survive them
   const marketplace = storefrontSiteTheme(DEFAULT_SITE_THEME, "marketplace");
   assert.equal(marketplace.accent_color, "#ffd15a");
   assert.equal(marketplace.primary_color, "#173c59");
+  const categoryFirst = storefrontSiteTheme(DEFAULT_SITE_THEME, "category_first");
+  assert.equal(categoryFirst.primary_color, "#131921");
+  assert.equal(categoryFirst.accent_color, "#febd69");
   assert.equal(storefrontSiteTheme(marketplace, "current").accent_color, DEFAULT_SITE_THEME.accent_color);
   const custom = { ...marketplace, accent_color: "#8844aa" };
   assert.equal(storefrontSiteTheme(custom, "current").accent_color, "#8844aa");
@@ -751,7 +775,7 @@ test("brand cards have distinct themes and a failed logo falls back without losi
   const boutique = BrandCard({ ...props, template: "boutique", action: "View this studio →" });
   assert.equal(text(all(boutique, node => node.type === "em")[0]), "View this studio →");
   assert.equal(boutique.props.to, classic.props.to);
-  for (const template of ["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"]) {
+  for (const template of ["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"]) {
     assert.equal(text(all(BrandCard({ ...props, template, action: "View products →" }), node => node.type === "em")[0]), "View products →");
   }
   const categories = renderMarketplace({ company: { ...company, storefront_content: {

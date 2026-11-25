@@ -18,7 +18,8 @@ const defaultHeaderMenu = [
 
 export function storefrontHeaderMenu(company: LinkCompany & Pick<Company, "storefront_template">): StorefrontMenuItem[] {
   if (company.storefront_content?.header_menu != null) return company.storefront_content.header_menu;
-  return defaultHeaderMenu.filter(([key]) => key !== "all_departments" || company.storefront_template === "marketplace")
+  return defaultHeaderMenu.filter(([key]) => key !== "all_departments" ||
+    company.storefront_template === "marketplace" || company.storefront_template === "category_first")
     .map(([key, fallback, href]) => {
       const link = storefrontLink(company, `nav.${key}`, href, company.storefront_content?.navigation[key] || fallback);
       return { key, label: link.children, href: link.to, is_enabled: true };
@@ -118,7 +119,7 @@ export function storefrontLinkDefinitions(company: Company, sections: Storefront
   ]) add("Footer", `footer.${key}`, label, href, label);
   for (const section of sections) {
     const keys = section.section_type === "hero"
-      ? ["hero.primary", "hero.secondary", ...(company.storefront_template === "marketplace" ? ["quick.categories", "quick.about"] : [])]
+      ? ["hero.primary", "hero.secondary", ...(["marketplace", "category_first"].includes(company.storefront_template || "") ? ["quick.categories", "quick.about"] : [])]
       : ["section.view_all"];
     for (const key of keys) {
       const base = definitions.find(definition => definition.key === key);

@@ -319,7 +319,7 @@ class CompanyUpdate(BaseModel):
     social_links: dict[str, str] = Field(default_factory=dict, max_length=20)
     invoice_settings: InvoiceSettings = Field(default_factory=InvoiceSettings)
     site_theme: SiteTheme | None = None
-    storefront_template: Literal["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"] | None = None
+    storefront_template: Literal["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"] | None = None
     storefront_content: StorefrontContent = Field(default_factory=StorefrontContent)
     # None keeps the current setting so callers that omit it never reopen or close the storefront by accident.
     storefront_enabled: bool | None = None
@@ -340,7 +340,7 @@ class CompanySetupOut(CompanyUpdate):
 
     gst_number: str | None = None
     site_theme: SiteTheme = Field(default_factory=SiteTheme)
-    storefront_template: Literal["current", "marketplace", "boutique", "heritage", "supermarket", "jewellery"] = "current"
+    storefront_template: Literal["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"] = "current"
     tenant_slug: str | None = None
     storefront_enabled: bool = True
     workflow_guidance_enabled: bool = True

@@ -16,6 +16,10 @@ export const STOREFRONT_THEME_PALETTES: Record<StorefrontTemplate, SiteTheme> = 
     primary_color: "#173c59", accent_color: "#ffd15a", background_color: "#ffffff",
     surface_color: "#ffffff", text_color: "#1d2730", muted_text_color: "#707780", border_color: "#e5ebef",
   },
+  category_first: {
+    primary_color: "#131921", accent_color: "#febd69", background_color: "#f3f4f6",
+    surface_color: "#ffffff", text_color: "#0f1111", muted_text_color: "#565959", border_color: "#d5d9d9",
+  },
   boutique: {
     primary_color: "#7d4545", accent_color: "#d7ad94", background_color: "#fffdfb",
     surface_color: "#ffffff", text_color: "#3a302e", muted_text_color: "#887b75", border_color: "#eee5e0",
