@@ -17,6 +17,7 @@ import { Package } from "lucide-react";
 import { useAuth } from "../features/auth";
 import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
 import { hasStorefrontLinkOverride, storefrontLink, storefrontSectionId } from "../features/catalog/storefrontLinks";
+import { storefrontSectionStyle } from "../features/catalog/classicStorefront";
 
 type StorefrontPreviewMessage = {
   type: "tenali-storefront-preview";
@@ -30,7 +31,7 @@ function applyPreview(data: CatalogHomeResponse, draft: StorefrontPreviewMessage
     ...data,
     company: { ...data.company, ...draft.company },
     sections: draft.sections.filter(section => section.is_enabled),
-    classic_sections_configured: draft.sections.some(section => !!section.configuration.classic_slot),
+    classic_sections_configured: draft.sections.length > 0,
   };
 }
 
@@ -153,15 +154,11 @@ export function HomePage() {
             {text(`${heading}_heading_first`)}<br /><span>{text(`${heading}_heading_second`)}</span>
           </>;
           const presentation = {
-            "data-image-ratio": String(section.configuration.image_ratio || "square"),
+            "data-image-ratio": String(section.configuration.image_ratio || (section.section_type === "hero" ? "theme" : "square")),
             "data-image-fit": String(section.configuration.image_fit || "cover"),
             "data-font-family": String(section.configuration.font_family || "default"),
             "data-border-style": String(section.configuration.border_style || "theme"),
-            style: {
-              backgroundColor: typeof section.configuration.background_color === "string" ? section.configuration.background_color : undefined,
-              color: typeof section.configuration.text_color === "string" ? section.configuration.text_color : undefined,
-              borderColor: typeof section.configuration.accent_color === "string" ? section.configuration.accent_color : undefined,
-            },
+            style: storefrontSectionStyle(section.configuration),
           };
           if (slot === "hero") return <section key={section.section_key} id={`section-${section.section_key}`}
             className={`hero storefront-section storefront-section-hero${section.image_url ? " hero-configured" : ""}`} {...presentation}>
@@ -180,15 +177,11 @@ export function HomePage() {
           return section.section_type === "hero" ? (
           <section key={section.id || section.section_key} id={`section-${section.section_key}`}
             className="hero hero-configured storefront-section storefront-section-hero"
-            data-image-ratio={String(section.configuration.image_ratio || "square")}
+            data-image-ratio={String(section.configuration.image_ratio || "theme")}
             data-image-fit={String(section.configuration.image_fit || "cover")}
             data-font-family={String(section.configuration.font_family || "default")}
             data-border-style={String(section.configuration.border_style || "theme")}
-            style={{
-              backgroundColor: typeof section.configuration.background_color === "string" ? section.configuration.background_color : undefined,
-              color: typeof section.configuration.text_color === "string" ? section.configuration.text_color : undefined,
-              borderColor: typeof section.configuration.accent_color === "string" ? section.configuration.accent_color : undefined,
-            }}>
+            style={storefrontSectionStyle(section.configuration)}>
             <div className="hero-copy">
               {section.eyebrow ? <p className="eyebrow">{section.eyebrow}</p> : null}
               <h1>{section.title}</h1>

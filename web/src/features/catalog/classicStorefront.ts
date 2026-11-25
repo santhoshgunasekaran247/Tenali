@@ -1,4 +1,19 @@
+import type { CSSProperties } from "react";
 import type { CatalogHomeResponse, StorefrontSection } from "../../types";
+import { contrastingText } from "../siteTheme";
+
+export function storefrontSectionStyle(configuration: StorefrontSection["configuration"]): CSSProperties & {
+  "--site-accent"?: string; "--site-on-accent"?: string;
+} {
+  const accent = typeof configuration.accent_color === "string" ? configuration.accent_color : undefined;
+  return {
+    backgroundColor: typeof configuration.background_color === "string" ? configuration.background_color : undefined,
+    color: typeof configuration.text_color === "string" ? configuration.text_color : undefined,
+    borderColor: accent,
+    "--site-accent": accent,
+    "--site-on-accent": accent ? contrastingText(accent) : undefined,
+  };
+}
 
 export const CLASSIC_COPY_FIELDS: Record<string, Array<[string, string, number]>> = {
   hero: [

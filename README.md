@@ -110,7 +110,7 @@ Render Environment settings, never in the static UI or the repository.
   Marketplace's Hero panel has four independent action controls: primary and
   secondary buttons, plus the category and story large links.
 - **Homepage sections → Header** manages up to nine primary menu items. Add an
-  item, edit its label/destination, hide it temporarily or remove it. Cart,
+  item, edit its label/destination, move it up/down, hide it temporarily or remove it. Cart,
   shopper account and workspace controls remain separate. Existing menus are
   retained until edited; an empty menu intentionally hides the primary links.
   Settings preview live and save in `storefront_content.header_menu` without a
@@ -139,6 +139,37 @@ controls in their respective section panels. No nonfunctional wishlist or
 newsletter form is added.
 Boutique category, brand and search listings use compact, text-only headers;
 catalogue images remain on their category, brand and product cards.
+
+Heritage India uses the reference's maroon/cream masthead, separate craft menu,
+framed photographic hero, circular craft tiles and artisan story. Supermarket
+uses a green search-led header, mint produce campaign, compact department tiles
+and dense product shelves. Jewellery uses a chocolate/gold split hero with copy
+on the left, collection tiles, maker seals and an atelier story. All three keep
+the Classic section selections, editable actions, three About points, Contact
+and structured footer. Their **Why** panels replace or remove the decorative
+story image; Hero images override the reference photographs. Product photos
+remain catalogue-driven, with consistent image frames per shelf. Hiding every
+saved section intentionally leaves those sections hidden, including when a store
+uses only custom sections. Existing JSON/tables are reused; no migration is needed.
+Hero **Image size → Theme default** preserves the reference composition. Explicit
+Square, Portrait (4:5) and Landscape (16:9) choices size the image frame rather
+than clipping the accompanying copy. Heritage switches to a split image/copy
+composition for explicit sizes. Section fonts apply to headings and card titles;
+section accents also update decorative accents and their contrast text.
+
+For isolated browser tenant audits, the development-only
+`web/tests/storefront-tenant-audit.jsx` mounts the real designer with synthetic
+catalogue items and in-memory saves. Use a fresh development tab, block API writes,
+and install iframe GET fixtures for `/api/catalog/company`, `/api/company` and
+`/api/company/storefront-preview` from `window.parent.__tenaliAudit` before mounting.
+The iframe also needs an `/api/auth/session` fixture for an owner identity whose
+`company_id` matches the fixture company; otherwise the authenticated shell
+correctly rejects palette/header draft messages while home content still previews.
+Import `mountTenantAudit(template)` from `/tests/storefront-tenant-audit.jsx`;
+`window.__tenaliAudit.snapshot()` exposes saved fixture state and `remount()`
+checks reloading. The helper is not imported by the application or production
+build. Reload the tab to restore normal API methods. Never use published tenant
+saves, uploads, payments, messages or orders for these audits.
 
 Catalogue/category/brand listings, search results, product details, cart, checkout
 and shopper account use the main header navigation and shared colour tokens,

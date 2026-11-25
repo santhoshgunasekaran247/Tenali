@@ -9,6 +9,7 @@ import { toAssetUrl } from "../features/catalog/utils";
 import { CLASSIC_COPY_FIELDS, classicSections } from "../features/catalog/classicStorefront";
 import { storefrontPreviewSections } from "../features/catalog/storefrontPreview";
 import { BOUTIQUE_IMAGES } from "../features/catalog/boutiqueImages";
+import { HERITAGE_IMAGES, SUPERMARKET_IMAGES, JEWELLERY_IMAGES } from "../features/catalog/themeImages";
 import { isStorefrontHref, MAX_STOREFRONT_MENU_ITEMS, storefrontHeaderMenu, storefrontLinkDefinitions, storefrontSectionTargets, type StorefrontLinkDefinition, type StorefrontLinkSetting } from "../features/catalog/storefrontLinks";
 import type { CatalogStorefrontPreviewResponse, CompanySetup, CompanyUpdateInput, StorefrontMenuItem, StorefrontSection, StorefrontTemplate } from "../types";
 
@@ -26,6 +27,12 @@ const templates: Array<[StorefrontTemplate, string, string]> = [
   ["supermarket", "Supermarket", "Everyday value and quick category access"],
   ["jewellery", "Jewellery", "Premium product and occasion-led presentation"],
 ];
+
+const storyImages = [
+  ["heritage", "heritage_story", "Craft story image", HERITAGE_IMAGES.story],
+  ["supermarket", "supermarket_story", "Fresh picks story image", SUPERMARKET_IMAGES.story],
+  ["jewellery", "jewellery_story", "Atelier story image", JEWELLERY_IMAGES.story],
+] as const;
 
 type PreviewMessage = {
   type: "tenali-storefront-preview";
@@ -214,6 +221,12 @@ export function StorefrontDesignPage() {
     while (headerMenu.some(item => item.key === `menu-${index}`)) index++;
     updateHeaderMenu([...headerMenu, { key: `menu-${index}`, label: "New menu item", href: "/", is_enabled: true }]);
   };
+  const moveHeaderMenuItem = (index: number, direction: -1 | 1) => {
+    const next = [...headerMenu];
+    const target = index + direction;
+    [next[index], next[target]] = [next[target], next[index]];
+    updateHeaderMenu(next);
+  };
   const actionField = (definition: StorefrontLinkDefinition) => <ActionField key={definition.key}
     definition={definition} value={company?.storefront_content.links?.[definition.key]} targets={linkTargets}
     onChange={value => {
@@ -383,7 +396,7 @@ export function StorefrontDesignPage() {
               <label>Browser title<input maxLength={140} value={company.storefront_content.home.browser_title || ""}
                 onChange={event => updateHomeCopy("browser_title", event.target.value)} /></label>
               <h4>Header menu ({headerMenu.length}/{MAX_STOREFRONT_MENU_ITEMS})</h4>
-              <p>Add, hide or remove up to 9 primary menu items. Cart and account controls remain separate.</p>
+              <p>Add, reorder, hide or remove up to 9 primary menu items. Cart and account controls remain separate.</p>
               {headerMenu.map((item, index) => <div key={item.key}>
                 <ActionField requireDestination definition={{ key: item.key, title: `Menu ${index + 1}: ${item.label}`,
                   label: item.label, href: item.href, group: "Header menu" }} value={item} targets={linkTargets}
@@ -392,6 +405,10 @@ export function StorefrontDesignPage() {
                 <label className="storefront-design-checkbox"><input type="checkbox" checked={item.is_enabled}
                   onChange={event => updateHeaderMenu(headerMenu.map((entry, position) => position === index
                     ? { ...entry, is_enabled: event.target.checked } : entry))} />Show {item.label || `menu ${index + 1}`}</label>
+                <button type="button" className="ops-link-btn" disabled={index === 0} aria-label={`Move menu ${index + 1} up`}
+                  onClick={() => moveHeaderMenuItem(index, -1)}><ChevronUp size={15} aria-hidden="true" />Move up</button>
+                <button type="button" className="ops-link-btn" disabled={index === headerMenu.length - 1} aria-label={`Move menu ${index + 1} down`}
+                  onClick={() => moveHeaderMenuItem(index, 1)}><ChevronDown size={15} aria-hidden="true" />Move down</button>
                 <button type="button" className="ops-link-btn" onClick={() => updateHeaderMenu(headerMenu.filter((_, position) => position !== index))}>
                   <Trash2 size={15} aria-hidden="true" />Remove menu {index + 1}</button>
               </div>)}
@@ -450,7 +467,12 @@ export function StorefrontDesignPage() {
                   </div>
                 </details> : null}
                 <ImageField label="Section image" value={section.image_url} onChange={value => updateSection(section.section_key, { image_url: value })} onError={setError} />
-                <label>Image size<select value={String(section.configuration.image_ratio || "square")} onChange={event => updateSection(section.section_key, { configuration: { ...section.configuration, image_ratio: event.target.value } })}>
+                <label>Image size<select value={String(section.configuration.image_ratio || (section.section_type === "hero" ? "theme" : "square"))} onChange={event => {
+                  const { image_ratio, ...configuration } = section.configuration;
+                  updateSection(section.section_key, { configuration: event.target.value === "theme" ? configuration
+                    : { ...configuration, image_ratio: event.target.value } });
+                }}>
+                  {section.section_type === "hero" ? <option value="theme">Theme default</option> : null}
                   <option value="square">Square</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option>
                 </select></label>
                 <label>Image fit<select value={String(section.configuration.image_fit || "cover")} onChange={event => updateSection(section.section_key, { configuration: { ...section.configuration, image_fit: event.target.value } })}>
@@ -505,6 +527,11 @@ export function StorefrontDesignPage() {
                   onChange={value => updateCompany({ storefront_content: { ...company.storefront_content,
                     images: { ...company.storefront_content.images, [key]: value } } })} onError={setError} />)}
               </> : null}
+              {slot === "why" ? storyImages.filter(([template]) => template === company.storefront_template).map(([, key, label, fallback]) =>
+                <ImageField key={key} label={label} value={company.storefront_content.images?.[key] === undefined
+                  ? fallback : company.storefront_content.images[key]}
+                  onChange={value => updateCompany({ storefront_content: { ...company.storefront_content,
+                    images: { ...company.storefront_content.images, [key]: value } } })} onError={setError} />) : null}
               {linkDefinitions.filter(definition => slot === "why" ? definition.key === "why.contact"
                 : slot === "contact" ? definition.key.startsWith("contact.") : false).map(actionField)}
             </div>

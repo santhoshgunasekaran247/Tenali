@@ -73,9 +73,9 @@ export function storefrontSectionTargets(sections: StorefrontSection[], template
   const targets = sections.filter(section => section.is_enabled).map(section => ({
     href: `/#section-${section.section_key}`, label: section.title || section.section_type,
   }));
-  if (template === "current" || template === "marketplace" || template === "boutique") targets.push({ href: "/#why", label: "Why choose us" });
+  targets.push({ href: "/#why", label: "Why choose us" });
   targets.push({ href: "/#contact", label: "Contact" });
-  if (template !== "supermarket") targets.push({ href: "/#collection-special", label: "About / collection story" });
+  targets.push({ href: "/#collection-special", label: "About / collection story" });
   return targets;
 }
 
@@ -83,7 +83,6 @@ export function storefrontLinkDefinitions(company: Company, sections: Storefront
   const home = company.storefront_content?.home || {};
   const nav = company.storefront_content?.navigation || {};
   const classic = !company.storefront_template || company.storefront_template === "current";
-  const nativeCopy = classic || company.storefront_template === "marketplace" || company.storefront_template === "boutique";
   const firstProduct = sections.find(section => section.is_enabled && section.section_type === "products");
   const heroTarget = classic ? "/#collection-special" : firstProduct ? `/#section-${firstProduct.section_key}` : "/brand?category=all";
   const definitions: StorefrontLinkDefinition[] = [];
@@ -96,8 +95,8 @@ export function storefrontLinkDefinitions(company: Company, sections: Storefront
     ["cart", "Cart / enquiry list", "/cart", "Cart"],
   ]) add("Header", `nav.${key}`, title, href, nav[key] || fallback);
   for (const [key, title, href, label] of [
-    ["hero.primary", "Hero primary button", heroTarget, nativeCopy ? home.hero_primary_action || "Shop collections" : "Shop collections"],
-    ["hero.secondary", "Hero secondary button", classic ? "/#categories" : "/brand?category=all", nativeCopy ? home.hero_secondary_action || "Browse catalogue" : "Browse catalogue"],
+    ["hero.primary", "Hero primary button", heroTarget, home.hero_primary_action || "Shop collections"],
+    ["hero.secondary", "Hero secondary button", classic ? "/#categories" : "/brand?category=all", home.hero_secondary_action || "Browse catalogue"],
     ["quick.categories", "Hero category panel (large link)", "/#categories", home.hero_secondary_action || "Browse categories"],
     ["quick.about", "Hero story panel (large link)", "/#collection-special", home.hero_primary_action || "Our story"],
     ["categories.more", "More categories", "/brand?category=all", home.categories_more_action || "Explore more categories"],

@@ -202,7 +202,7 @@ class CatalogService:
             "best_sellers": best_sellers[:8],
             "sru_specials": sru_specials[:8],
             "sections": sections,
-            "classic_sections_configured": any(section["configuration"].get("classic_slot") for section in section_rows),
+            "classic_sections_configured": bool(section_rows),
             "catalog_products": all_products,
         }
 

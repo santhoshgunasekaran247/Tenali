@@ -213,24 +213,26 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
                 payload = {key: value for key, value in restored.items() if key != "id"}
                 self.assertEqual(getattr(StorefrontSectionInput.model_validate(payload), field), ids)
 
-    def test_hidden_classic_sections_remain_configured_without_exposing_their_items(self):
+    def test_hidden_sections_remain_configured_without_exposing_their_items(self):
         company_result = Mock()
         company_result.mappings.return_value.first.return_value = {"id": "company"}
         empty_result = Mock()
         empty_result.mappings.return_value.all.return_value = []
         section_result = Mock()
-        section_result.mappings.return_value.all.return_value = [{
-            "id": "hidden-section", "section_type": "products",
-            "is_enabled": False, "configuration": {"classic_slot": "best-sellers"},
-        }]
-        db = Mock()
-        db.execute.side_effect = [company_result, empty_result, empty_result, empty_result, section_result]
+        for configuration in ({"classic_slot": "best-sellers"}, {}):
+            with self.subTest(configuration=configuration):
+                section_result.mappings.return_value.all.return_value = [{
+                    "id": "hidden-section", "section_type": "products",
+                    "is_enabled": False, "configuration": configuration,
+                }]
+                db = Mock()
+                db.execute.side_effect = [company_result, empty_result, empty_result, empty_result, section_result]
 
-        result = CatalogService(db).home("company")
+                result = CatalogService(db).home("company")
 
-        self.assertTrue(result["classic_sections_configured"])
-        self.assertEqual(result["sections"], [])
-        self.assertEqual(db.execute.call_count, 5)
+                self.assertTrue(result["classic_sections_configured"])
+                self.assertEqual(result["sections"], [])
+                self.assertEqual(db.execute.call_count, 5)
 
 
 if __name__ == "__main__":

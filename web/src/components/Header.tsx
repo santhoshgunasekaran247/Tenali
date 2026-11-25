@@ -61,6 +61,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
   const inPortal=location.pathname.startsWith("/portal");
   const marketplace=!inPortal&&storefrontOpen&&storefrontCompany?.storefront_template==="marketplace";
   const boutique=!inPortal&&storefrontOpen&&storefrontCompany?.storefront_template==="boutique";
+  const collectionHeader=!inPortal&&storefrontOpen&&["heritage","supermarket","jewellery"].includes(storefrontCompany?.storefront_template||"");
   const link = (key: string, href: string, label: string) => storefrontLink({ ...displayBrand, storefront_content: storefrontCompany?.storefront_content }, key, href, label);
   const menuItems=storefrontHeaderMenu({ ...displayBrand, storefront_template: storefrontCompany?.storefront_template,
     storefront_content: storefrontCompany?.storefront_content }).filter(item=>item.is_enabled);
@@ -82,7 +83,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
     document.querySelector('meta[name="twitter:image"]')?.setAttribute("content",image);
   },[logo]);
   return (
-    <header className={`header${inPortal ? " header-portal" : ""}${marketplace ? " header-marketplace" : ""}${boutique ? " header-boutique" : ""}`}>
+    <header className={`header${inPortal ? " header-portal" : ""}${marketplace ? " header-marketplace" : ""}${boutique ? " header-boutique" : ""}${collectionHeader ? ` header-collections header-${storefrontCompany?.storefront_template}` : ""}`}>
       {marketplace ? <div className="marketplace-utility"><span>{companyName}</span><span>Prices in INR <Link {...link("nav.contact", "/#contact", navText("contact","Contact"))} /></span></div> : null}
       <Link className="brand" to={brandHref} aria-label={companyName||(platformBrand?'Tenali':'Workspace home')}>
         {logo ? <img src={logoSrc} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : companyName?<strong>{companyName}</strong>:<span className="brand-loading" aria-hidden="true"/>}
@@ -105,8 +106,8 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
             <Link to="/portal">{navText("operations_portal","Operations Portal")}</Link>
             <PortalNavigation mobile />
             {auth.storefront?.id === auth.user.company_id ? <Link to="/">{navText("storefront","Storefront")}</Link> : <a href={storefrontHref}>{navText("storefront","Storefront")}</a>}
-          </> : storefrontCompany&&storefrontOpen&&!marketplace&&!boutique ? primaryMenu : null}
-        </div> : storefrontCompany&&storefrontOpen&&!marketplace&&!boutique ? primaryMenu : null}
+          </> : storefrontCompany&&storefrontOpen&&!marketplace&&!boutique&&!collectionHeader ? primaryMenu : null}
+        </div> : storefrontCompany&&storefrontOpen&&!marketplace&&!boutique&&!collectionHeader ? primaryMenu : null}
         {auth.storefront&&storefrontOpen&&!inPortal&&cartModeState.mode&&(cartModeState.mode!=="none"||cart.items.length)?<Link to={link("nav.cart", "/cart", "").to} className={`header-cart-link${cartModeState.mode==="enquiry"?" header-enquiry-link":""}`}>{link("nav.cart", "/cart", cartWords(cartModeState.mode).list).children} ({cart.items.reduce((total,item)=>total+item.quantity,0)})</Link>:null}
         {storefrontCompany&&!inPortal?<Link {...link("nav.shopper_account", "/account", navText("shopper_account","Shopper Account"))} />:null}
         {!auth.user?<Link {...link("nav.sign_in", "/login", navText("sign_in","Workspace Staff Sign In"))} onClick={()=>menuOpen&&onMenuToggle()} />:null}
@@ -119,6 +120,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
       {boutique&&menuItems.length ? <nav className="boutique-navigation" aria-label="Store collections">
         {sectionLinks}
       </nav> : null}
+      {collectionHeader&&menuItems.length ? <nav className="storefront-collection-navigation" aria-label="Store collections">{sectionLinks}</nav> : null}
     </header>
   );
 }
