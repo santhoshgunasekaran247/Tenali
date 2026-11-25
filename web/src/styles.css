@@ -2398,6 +2398,18 @@ footer strong {
   .reports-filter-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 800px) {
+  .finance-ops-page .ops-grid { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+  .finance-ops-page .ops-card, .finance-ops-page .ops-form,
+  .finance-ops-page .ops-form label, .finance-ops-page .party-selector { min-width: 0; }
+  .finance-ops-page .ops-card-head, .finance-ops-page .ops-list-tools { flex-wrap: wrap; gap: 8px; }
+  .finance-ops-page .ops-form :is(input, select, textarea),
+  .finance-ops-page .ops-list-tools :is(input, select) { min-width: 0; max-width: 100%; }
+  .finance-ops-page .ops-list-tools .party-selector { flex: 1 1 200px; max-width: 100%; }
+  .finance-ops-page .ops-list-tools label { min-width: 0; max-width: 100%; }
+  .finance-ops-page .party-result { overflow-wrap: anywhere; }
+}
+
 @media (max-width: 520px) {
   .product-grid,
   .home-product-grid,

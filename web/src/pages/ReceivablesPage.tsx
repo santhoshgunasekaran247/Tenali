@@ -443,7 +443,7 @@ export function ReceivablesPage() {
   };
 
   return (
-    <div className="ops-page">
+    <div className="ops-page finance-ops-page">
       <section className="ops-hero">
         <PortalHomeLink />
         <p className="eyebrow">Operations</p>
