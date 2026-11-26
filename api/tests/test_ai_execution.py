@@ -333,11 +333,26 @@ class MediaUnitTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             normalize_upload(payload.model_copy(update={"data_base64":base64.b64encode(encrypted.getvalue()).decode()}))
         many=PdfWriter()
-        for _ in range(6):
-            many.add_blank_page(width=100,height=100)
+        for _ in range(20):
+            many.add_page(page)
+        twenty=io.BytesIO();many.write(twenty)
+        _, mime, stored, extracted, bound = normalize_upload(payload.model_copy(
+            update={"data_base64": base64.b64encode(twenty.getvalue()).decode()}))
+        self.assertEqual((mime, stored), ("text/plain", twenty.getvalue()))
+        self.assertIn("PDF page 20: Synthetic total 25", extracted)
+        self.assertEqual(bound, len(extracted.encode()) + 512)
+        many.add_blank_page(width=100,height=100)
         oversized=io.BytesIO();many.write(oversized)
-        with self.assertRaises(HTTPException):
+        with self.assertRaisesRegex(HTTPException, "one to twenty pages"):
             normalize_upload(payload.model_copy(update={"data_base64":base64.b64encode(oversized.getvalue()).decode()}))
+        stream.set_data(b"BT /F1 12 Tf 10 70 Td (" + b"x" * 600 + b") Tj ET")
+        dense=PdfWriter()
+        for _ in range(20):
+            dense.add_page(page)
+        dense_output=io.BytesIO();dense.write(dense_output)
+        with self.assertRaisesRegex(HTTPException, "12,000 UTF-8 bytes"):
+            normalize_upload(payload.model_copy(
+                update={"data_base64":base64.b64encode(dense_output.getvalue()).decode()}))
         with self.assertRaises(HTTPException):
             normalize_upload(payload.model_copy(update={"data_base64":base64.b64encode(b"%PDF-malformed").decode()}))
 

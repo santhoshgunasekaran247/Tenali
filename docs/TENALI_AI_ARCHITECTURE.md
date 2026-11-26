@@ -783,7 +783,7 @@ invalid cancellation. Existing immutable deletion archives remain authoritative.
 Stock transfers record workspace-user attribution in a narrowly validated new column;
 legacy profile attribution is retained and tenant credentials receive no SELECT grant.
 
-Private uploads accept UTF-8 `.txt`, text PDF (one to five unencrypted pages), Excel
+Private uploads accept UTF-8 `.txt`, text PDF (one to 20 unencrypted pages), Excel
 `.xlsx`, or a single PNG/JPEG/WebP image, at most 20 MiB/file, ten retained files/conversation and two
 files/message. Text extraction is limited to 12,000 UTF-8 bytes. Scanned PDFs must
 be uploaded as page images. Images are decoded, orientation-corrected, stripped of metadata and stored

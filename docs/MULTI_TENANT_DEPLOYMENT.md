@@ -78,7 +78,7 @@ without importing records; download it, check and correct the manifest, then
 upload it on Bulk Upload. Separate images and embedded PDF/Excel images can be
 cropped into product images; the workbook README records the AI's description
 of the catalog theme. AI input limits are 20 MiB per file, two files per message,
-five PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to
+20 PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to
 40 products per reply and can be further limited by the configured output budget.
 Each embedded image and each normalized stored image remain limited to 2 MiB;
 larger source-image uploads are resized and compressed before storage.
@@ -458,7 +458,7 @@ document/image uploads remain subsequent phases.
    limit). Restart non-reloading API processes after deploying the upload-limit change.
    Uploads are private database content, not public storage objects: 20 MiB/file, up to two
    selected files/message and ten retained files/conversation. PDFs must contain text
-   and have at most five unencrypted pages. Use page images for scans.
+   and have at most 20 unencrypted pages. Use page images for scans.
    Images are normalized to at most 2048 x 2048 and 2 MiB for storage; the provider
    receives a 1024 x 1024 copy. Document text remains limited to 12,000 UTF-8 bytes.
    Downgrading below revision `069_ai_upload_limit` requires removing retained

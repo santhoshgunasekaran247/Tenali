@@ -237,8 +237,8 @@ def normalize_upload(payload):
             raise HTTPException(422, "PDF content, extension and type must match.")
         try:
             reader = PdfReader(io.BytesIO(raw), strict=True)
-            if reader.is_encrypted or not 1 <= len(reader.pages) <= 5:
-                raise HTTPException(422, "Use an unencrypted PDF with one to five pages.")
+            if reader.is_encrypted or not 1 <= len(reader.pages) <= 20:
+                raise HTTPException(422, "Use an unencrypted PDF with one to twenty pages.")
             if any(len(page.get_contents().get_data()) > 1_000_000 for page in reader.pages if page.get_contents()):
                 raise HTTPException(422, "PDF page contents are too large.")
             page_text = [page.extract_text() or "" for page in reader.pages]
