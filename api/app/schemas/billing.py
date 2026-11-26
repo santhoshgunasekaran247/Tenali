@@ -13,7 +13,7 @@ class InvoiceLineCreate(BaseModel):
     product_id: UUID | None = None
     variant_id: UUID | None = None
     description: str = Field(min_length=1, max_length=500)
-    hsn: str = Field(pattern=r"^\d{4,8}$")
+    hsn: str = Field(default="", pattern=r"^(?:\d{4,8})?$")
     quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
     rate: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     gst_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)

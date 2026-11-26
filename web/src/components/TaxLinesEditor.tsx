@@ -31,7 +31,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
   return <>
     <fieldset className="invoice-lines" disabled={disabled}>
       <legend>Items</legend>
-      <Link className="ops-inline-link" to="/portal/masters/hsn">Manage HSN / GST</Link>
+      {gstRegistered ? <Link className="ops-inline-link" to="/portal/masters/hsn">Manage HSN / GST</Link> : null}
       {vendorId ? <p className="ops-copy-note">
         {availableProducts.length ? "Showing products mapped to the selected vendor." : "No active products are mapped to the selected vendor."}{" "}
         <Link to="/portal/inventory">Manage product / vendor mappings</Link>. Add an active vendor offer to the product or its active variants, then return here. Your purchase draft is kept.
@@ -65,7 +65,7 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
           }}><option value="">Select variant</option>{products.find(item=>item.id===line.product_id)!.variants.filter(variant=>variant.is_active&&(!vendorId||variant.offers.some(offer=>offer.vendor_id===vendorId&&offer.is_active))).map(variant=><option key={variant.id} value={variant.id}>{variant.variant_name}</option>)}</select>
         </label>:null}
         <label>HSN / SAC
-          <select required disabled={!!lineProduct?.hsn_code} value={line.hsn} onChange={(event) => {
+          <select required={gstRegistered} disabled={!!lineProduct?.hsn_code} value={line.hsn} onChange={(event) => {
             const selected = masters.find((master) => master.code === event.target.value);
             updateLine(index, { hsn: selected?.code || "", gst_rate: selected ? Number(selected.gst_rate) : 0 });
           }}>
@@ -77,9 +77,9 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
         </label>
         <div className="invoice-line-values">
           <label>Quantity<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></label>
-          <label>{(line.price_includes_gst ?? pricesIncludeGst) ? "Price incl. GST (INR)" : "Rate excl. GST (INR)"}<input required type="number" min="0" step="0.01" value={line.rate} onChange={(event) => updateLine(index, { rate: Number(event.target.value) })} /></label>
-          <label>GST %<input type="number" readOnly value={gstRegistered ? line.gst_rate : 0} /></label>
-          {!line.product_id ? <label className="ops-toggle"><input type="checkbox" checked={line.price_includes_gst ?? pricesIncludeGst} onChange={(event) => updateLine(index, { price_includes_gst: event.target.checked })} />Incl. GST</label> : null}
+          <label>{gstRegistered ? ((line.price_includes_gst ?? pricesIncludeGst) ? "Price incl. GST (INR)" : "Rate excl. GST (INR)") : "Price (INR)"}<input required type="number" min="0" step="0.01" value={line.rate} onChange={(event) => updateLine(index, { rate: Number(event.target.value) })} /></label>
+          {gstRegistered ? <label>GST %<input type="number" readOnly value={line.gst_rate} /></label> : null}
+          {gstRegistered && !line.product_id ? <label className="ops-toggle"><input type="checkbox" checked={line.price_includes_gst ?? pricesIncludeGst} onChange={(event) => updateLine(index, { price_includes_gst: event.target.checked })} />Incl. GST</label> : null}
         </div>
       </div>; })}
       <button className="ops-link-btn" type="button" disabled={lines.length >= 200} onClick={() => onChange([...lines, newTaxLine()])}>
@@ -87,8 +87,8 @@ export function TaxLinesEditor({ lines, masters, onChange, disabled = false, pro
       </button>
     </fieldset>
     <dl className="invoice-totals">
-      <div><dt>Taxable Value</dt><dd>{formatTotal(subtotal)}</dd></div>
-      <div><dt>Total GST</dt><dd>{formatTotal(gstTotal)}</dd></div>
+      <div><dt>{gstRegistered ? "Taxable Value" : "Subtotal"}</dt><dd>{formatTotal(subtotal)}</dd></div>
+      {gstRegistered ? <div><dt>Total GST</dt><dd>{formatTotal(gstTotal)}</dd></div> : null}
       <div><dt>Total</dt><dd>{formatTotal(total)}</dd></div>
     </dl>
   </>;

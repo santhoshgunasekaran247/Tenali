@@ -4,7 +4,7 @@ import hmac
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
@@ -26,6 +26,28 @@ CREDENTIALS = {"razorpay_key_id": "rzp_live_fixture", "razorpay_key_secret": "fi
 
 
 class CheckoutSecurityTests(unittest.TestCase):
+    def test_unregistered_checkout_allows_product_without_hsn(self):
+        from app.services.shop_checkout import price_item
+        product_id = uuid4()
+        item = MagicMock(product_id=product_id, variant_id=None, quantity=1)
+        product = {"name": "Widget", "hsn_code": None, "minimum_order_quantity": 1, "pricing_mode": "price",
+                   "preferred_vendor_id": None, "mrp": None, "selling_price": Decimal("100"), "discount_percent": 0, "sku": "W"}
+        for registered in (True, False):
+            db = MagicMock()
+            db.execute.side_effect = [
+                MagicMock(mappings=MagicMock(return_value=MagicMock(first=MagicMock(return_value=product)))),
+                MagicMock(first=MagicMock(return_value=None)),
+                MagicMock(scalar_one=MagicMock(return_value=registered)),
+                MagicMock(scalar_one=MagicMock(return_value=Decimal("3"))),
+            ]
+            if registered:
+                with self.assertRaises(HTTPException):
+                    price_item(db, "company", item, "store")
+            else:
+                with patch("app.services.shop_checkout.reserved_stock", return_value=0):
+                    result = price_item(db, "company", item, "store")
+                self.assertEqual((result["hsn"], result["unit_paise"]), (None, 10000))
+
     def test_connection_checks_are_read_only_and_do_not_claim_activation(self):
         with patch.object(providers, "provider_request", return_value={"entity": "collection", "items": []}) as request:
             message = providers.check_connection("razorpay", CREDENTIALS, "Primary")

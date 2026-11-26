@@ -135,6 +135,7 @@ function Impact({ value }: { value: unknown }) {
 function ReviewPreview({ draft, labels }: { draft: ActionDraft; labels: WorkflowStep["labels"] }) {
   const preview = draft.validation?.preview;
   if (!preview) return null;
+  const taxable = object(preview.document).gst_registered !== false;
   const money = (value: unknown) => Number.isFinite(Number(value))
     ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(value)) : String(value);
   const totals = [["subtotal", "Before tax"], ["gst_total", "GST"], ["total", "Total"],
@@ -156,13 +157,13 @@ function ReviewPreview({ draft, labels }: { draft: ActionDraft; labels: Workflow
         <dt>{fieldLabel(key)}</dt><dd><Impact value={labels[key]?.value === value ? labels[key].label : value} /></dd>
       </div>)}</dl> : null}
     {totals.some(([key]) => preview[key] != null) ? <dl className="ai-review-totals">
-      {totals.filter(([key]) => preview[key] != null).map(([key, title]) =>
+      {totals.filter(([key]) => preview[key] != null && (key !== "gst_total" || taxable)).map(([key, title]) =>
         <div key={key}><dt>{title}</dt><dd>{money(preview[key])}</dd></div>)}
     </dl> : null}
     {lines.length ? <div className="ai-review-table"><table><thead><tr>
-      <th>Item</th><th>Qty</th><th>Rate</th><th>GST</th><th>Total</th>
+      <th>Item</th><th>Qty</th><th>Rate</th>{taxable ? <th>GST</th> : null}<th>Total</th>
     </tr></thead><tbody>{lines.map((line, index) => <tr key={index}><td>{String(line.description || `Line ${index + 1}`)}</td>
-      <td>{String(line.quantity ?? "")}</td><td>{money(line.rate)}</td><td>{String(line.gst_rate ?? "")}%</td>
+      <td>{String(line.quantity ?? "")}</td><td>{money(line.rate)}</td>{taxable ? <td>{String(line.gst_rate ?? "")}%</td> : null}
       <td>{line.total != null ? money(line.total) : "See total above"}</td></tr>)}</tbody></table></div> : null}
     {stock.length ? <ul className="ai-stock-summary" aria-label="Stock before and after">{stock.map((change, index) => {
       const line = lines.find(line => line.product_id === change.product_id && line.variant_id === change.variant_id);
@@ -265,18 +266,18 @@ function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = fa
   </details>;
 }
 
-function Estimate({ estimate }: { estimate: WorkflowEstimate }) {
+function Estimate({ estimate, taxable }: { estimate: WorkflowEstimate; taxable: boolean }) {
   const money = (value: string) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(value));
   return <section className="ai-review-preview" aria-label="Calculated so far">
     <h4>Calculated so far</h4>
     <dl className="ai-review-totals">
-      <div><dt>Before tax</dt><dd>{money(estimate.subtotal)}</dd></div>
-      <div><dt>GST</dt><dd>{money(estimate.gst_total)}</dd></div>
+      <div><dt>{taxable ? "Before tax" : "Subtotal"}</dt><dd>{money(estimate.subtotal)}</dd></div>
+      {taxable ? <div><dt>GST</dt><dd>{money(estimate.gst_total)}</dd></div> : null}
       <div><dt>Total</dt><dd>{money(estimate.total)}</dd></div>
     </dl>
-    <div className="ai-review-table"><table><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>GST</th><th>Total</th></tr></thead>
+    <div className="ai-review-table"><table><thead><tr><th>Item</th><th>Qty</th><th>Rate</th>{taxable ? <th>GST</th> : null}<th>Total</th></tr></thead>
       <tbody>{estimate.lines.map((line, index) => <tr key={index}><td>{line.description}</td><td>{line.quantity}</td>
-        <td>{money(line.rate)}{line.price_includes_gst ? " incl." : ""}</td><td>{line.gst_rate}% · {money(line.gst)}</td><td>{money(line.total)}</td></tr>)}</tbody></table></div>
+        <td>{money(line.rate)}{taxable && line.price_includes_gst ? " incl." : ""}</td>{taxable ? <td>{line.gst_rate}% · {money(line.gst)}</td> : null}<td>{money(line.total)}</td></tr>)}</tbody></table></div>
     {estimate.stock?.length ? <ul className="ai-stock-summary" aria-label="Stock before and after">{estimate.stock.map((row, index) =>
       <li key={index}><strong>{row.product}</strong> @ {row.store}: {row.current} → {row.after} ({Number(row.change) >= 0 ? "+" : ""}{row.change})</li>)}</ul> : null}
     {estimate.stock_source && estimate.stock?.length ? <p className="ai-draft-note">Source: {estimate.stock_source}</p> : null}
@@ -352,7 +353,7 @@ function WorkflowFields({ workflow, step, action, disabled, onRun }: {
         Create new {String(choice.query)}</button> : null}
       {choice.manual_path ? <Link to={choice.manual_path}>Manage {choice.capability}</Link> : null}
     </div>)}
-    {step.estimate ? <Estimate estimate={step.estimate} /> : null}
+    {step.estimate ? <Estimate estimate={step.estimate} taxable={step.action === "purchase_create" || step.gst_registered !== false} /> : null}
     {step.issues.length ? <ul role="status">{step.issues.map((issue, index) =>
       <li key={index}>{fieldLabel(issue.field)}: {issue.message}
         {issue.links?.map(link => <Link key={link.path} className="ai-issue-link" to={link.path}>{link.label}</Link>)}</li>)}</ul> : null}

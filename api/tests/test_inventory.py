@@ -3,6 +3,7 @@ import os
 from decimal import Decimal
 from datetime import date, timedelta
 from uuid import uuid4
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -14,6 +15,16 @@ from app.services.inventory_service import InventoryService
 
 
 class InventoryRulesTests(unittest.TestCase):
+    def test_product_creation_requires_hsn_only_for_registered_companies(self):
+        db = MagicMock()
+        service = InventoryService(db, "company")
+        db.execute.return_value.scalar_one.return_value = True
+        with self.assertRaises(HTTPException):
+            service.preview_product(ProductInput(name="No HSN"))
+        db.execute.return_value.scalar_one.return_value = False
+        result = service.preview_product(ProductInput(name="No HSN"))
+        self.assertEqual(result["name"], "No HSN")
+
     def test_discount_and_price_calculate_both_ways(self):
         self.assertEqual(resolve_catalog_price(1000, None, 15, "discount")["catalog_price"], Decimal("850.00"))
         self.assertEqual(resolve_catalog_price(1000, 850, 0, "price")["effective_discount"], Decimal("15.00"))

@@ -442,13 +442,15 @@ def prerequisite_would_cycle(parent, child, steps):
     return False
 
 
-def required_fields(action, payload):
+def required_fields(action, payload, gst_registered=True):
     required = list(EXPLICIT.get(action, ()))
     if action in {"purchase_create", "invoice_create"} and payload.get("fully_paid") is True:
         required = [key for key in required if key != ("amount_paid" if action == "purchase_create" else "amount_received")]
         required += ["account_id", "payment_mode"]
     if action in {"product_create", "product_update"} and payload.get("pricing_mode", "price") == "price":
         required += ["selling_price"]
+    if action == "product_create" and gst_registered:
+        required += ["hsn_code"]
     if action == "borrowing_create" and payload.get("create_account_transaction"):
         required += ["account_id"]
     if action in {"expense_create", "business_payment_create"} and payload.get("purpose") in {"purchase", "billing"}:
@@ -476,7 +478,12 @@ def required_fields(action, payload):
             required += ["account_id", "payment_mode"]
         for index, line in enumerate(payload.get("lines") or []):
             if isinstance(line, dict):
-                required += [f"lines.{index}.{key}" for key in ("gst_rate", "price_includes_gst")]
+                if action == "purchase_create" or gst_registered:
+                    required += [f"lines.{index}.{key}" for key in ("hsn", "gst_rate", "price_includes_gst")]
+    if action == "quotation_create" and gst_registered:
+        for index, line in enumerate(payload.get("lines") or []):
+            if isinstance(line, dict):
+                required.append(f"lines.{index}.hsn")
     return list(dict.fromkeys(required))
 
 
@@ -484,18 +491,18 @@ def workflow_view(row):
     row = dict(row)
     row["plan"] = deepcopy(row["plan"])
     for item in row["plan"].get("steps", []):
-        item["required_fields"] = required_fields(item["action"], item["payload"])
+        item["required_fields"] = required_fields(item["action"], item["payload"], item.get("gst_registered", True))
     root = next(iter(row["plan"].get("steps", [])), None)
     if root:
         row["operation_summary"] = ACTIONS[root["action"]].description
     return row
 
 
-def missing_fields(action, payload):
+def missing_fields(action, payload, gst_registered=True):
     issues = []
     if action in {"party_update", "account_update"} and not payload:
         issues.append({"field": "", "message": "Enter at least one changed field."})
-    for key in required_fields(action, payload):
+    for key in required_fields(action, payload, gst_registered):
         value = payload
         try:
             for part in key.split("."):
@@ -1119,6 +1126,10 @@ class WorkflowService:
             if item["action"] not in self.actions:
                 item["issues"].append({"field": "", "message": "This prerequisite action is no longer permitted."})
                 continue
+            if item["action"] in {"product_create", "invoice_create", "quotation_create"}:
+                item["gst_registered"] = self.db.execute(
+                    text("select gst_registered from companies where id=:company"), self.scope
+                ).scalar_one()
             if item["action"] in {"purchase_create", "invoice_create", "quotation_create"}:
                 item["payload"] = normalize_document_proposal(item["action"], item["payload"])
             coerce_payload(item["action"], item["payload"])
@@ -1195,7 +1206,7 @@ class WorkflowService:
                 item["estimate"] = self.document_estimate(item)
             # One clear message per field; linked fields wait on their prerequisite step instead of showing UUID errors.
             noted = {issue["field"] for issue in item["issues"]} | set(item["bindings"])
-            item["issues"] += [issue for issue in missing_fields(action.key, item["payload"])
+            item["issues"] += [issue for issue in missing_fields(action.key, item["payload"], item.get("gst_registered", True))
                                if not issue["field"] or issue["field"] not in noted]
             if not item["issues"] and not item["choices"]:
                 values = business_payload(action.key, item["payload"])

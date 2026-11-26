@@ -166,11 +166,12 @@ def document_preview(db, company, action, values):
         lines = purchase_line_totals(model)
         stock_store(db, company, str(model.store_id))
     else:
-        resolve_product_lines(db, company, existing, persist_hsn=False)
-        MastersService(db).apply_hsn_rates(model.lines, company)
         seller = dict(db.execute(text("""select company_name,address,gst_number,gst_registered,udyam_number,
             logo_url,phone,email,website,invoice_settings,prices_include_gst from companies where id=:company for share"""),
             {"company": company}).mappings().one())
+        resolve_product_lines(db, company, existing, persist_hsn=False, require_hsn=bool(seller["gst_registered"]))
+        if seller["gst_registered"]:
+            MastersService(db).apply_hsn_rates(model.lines, company)
         customer = dict(db.execute(text("select id,legal_name,gst_number,address from parties where company_id=:company and id=:id for share"),
             {"company": company, "id": str(model.customer_party_id)}).mappings().one())
         store = get_store(db, company, str(model.store_id))
@@ -193,7 +194,7 @@ def document_preview(db, company, action, values):
         if line.product_id:
             product = db.execute(text("select hsn_code from products where id=:id and company_id=:company"),
                                  {"id": str(line.product_id), "company": company}).mappings().one()
-            if not product["hsn_code"]:
+            if not product["hsn_code"] and line.hsn:
                 hsn_updates[str(line.product_id)] = line.hsn
         if line.product_id and (not isinstance(model, PurchaseCreate) or (model.received_now and model.receipt_type != "SERVICE")):
             key = (store_id, str(line.product_id), str(line.variant_id) if line.variant_id else None)

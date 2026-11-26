@@ -266,18 +266,21 @@ class BillingService:
         if not stock_store(self.db, resolved_company_id, stock_store_id):
             raise HTTPException(422, "Stock store not found")
 
+        company = self.db.execute(
+            text("select company_name, address, gst_number, gst_registered, udyam_number, logo_url, phone, email, website, invoice_settings, prices_include_gst from companies where id = :company_id"),
+            {"company_id": resolved_company_id},
+        ).mappings().one()
         document_data = None
         if payload.lines:
-            resolve_product_lines(self.db,resolved_company_id,payload.lines)
-            MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
-            company = self.db.execute(
-                text("select company_name, address, gst_number, gst_registered, udyam_number, logo_url, phone, email, website, invoice_settings, prices_include_gst from companies where id = :company_id"),
-                {"company_id": resolved_company_id},
-            ).mappings().one()
+            resolve_product_lines(self.db, resolved_company_id, payload.lines, require_hsn=bool(company["gst_registered"]))
+            if company["gst_registered"]:
+                MastersService(self.db).apply_hsn_rates(payload.lines, resolved_company_id)
             document_data = build_invoice_document(payload, dict(company), dict(customer), store, bool(company["prices_include_gst"]))
             payload.subtotal = Decimal(document_data["subtotal"])
             payload.gst_total = Decimal(document_data["gst_total"])
             payload.total = Decimal(document_data["total"])
+        elif not company["gst_registered"] and payload.gst_total:
+            raise HTTPException(422, "GST cannot be charged when the company is not GST registered")
 
         if payload.subtotal < 0 or payload.gst_total < 0:
             raise HTTPException(status_code=422, detail="subtotal and gst_total must be non-negative")

@@ -49,7 +49,7 @@ def create_draft_products(db, company_id: str, lines, vendor_id: str, selling_pr
 
 
 def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = None, allow_drafts: bool = False,
-                          *, persist_hsn: bool = True):
+                          *, persist_hsn: bool = True, require_hsn: bool = True):
     for line in lines:
         if line.variant_id and not line.product_id:
             raise HTTPException(422, "A variant requires its parent product")
@@ -70,7 +70,7 @@ def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = No
         elif db.execute(text("select id from product_variants where product_id=:product and is_active=true limit 1"), {"product": str(line.product_id)}).scalar_one_or_none():
             raise HTTPException(422, f"Select a variant for {product['name']}")
         hsn = product["hsn_code"]
-        if not hsn:
+        if not hsn and (line.hsn or require_hsn):
             # Products without an HSN take the code chosen on the line, and keep it for future bills.
             if not active_hsn(db, company_id, line.hsn):
                 raise HTTPException(422, f"Choose an HSN/SAC code for {product['name']}")
@@ -85,7 +85,7 @@ def resolve_product_lines(db, company_id: str, lines, vendor_id: str | None = No
             and variant_id is not distinct from cast(:variant as uuid) and vendor_id=:vendor and is_active=true limit 1"""),
             {"product": str(line.product_id), "variant": str(line.variant_id) if line.variant_id else None, "vendor": vendor_id}).scalar_one_or_none():
             raise HTTPException(422, "The selected vendor is not mapped to this product/variant")
-        line.hsn = hsn
+        line.hsn = hsn or ""
         line.description = product["name"] + (f" - {variant['variant_name']}" if variant else "")
 
 

@@ -66,11 +66,12 @@ class QuotationService:
             shipping_address=payload.shipping_address, place_of_supply=payload.place_of_supply)
         if any(line.new_product for line in values.lines):
             raise HTTPException(422, "A quotation cannot create products. Select an existing product or describe the item.")
-        resolve_product_lines(self.db, company_id, values.lines, persist_hsn=False)
-        MastersService(self.db).apply_hsn_rates(values.lines, company_id)
         company = self.db.execute(text("""select company_name, address, gst_number, gst_registered,
             udyam_number, logo_url, phone, email, website, invoice_settings, prices_include_gst
             from companies where id=:company"""), {"company": company_id}).mappings().one()
+        resolve_product_lines(self.db, company_id, values.lines, persist_hsn=False, require_hsn=bool(company["gst_registered"]))
+        if company["gst_registered"]:
+            MastersService(self.db).apply_hsn_rates(values.lines, company_id)
         document = build_invoice_document(values, dict(company), dict(customer), store, bool(company["prices_include_gst"]))
         document_total(Decimal(document["subtotal"]), Decimal(document["gst_total"]), Decimal(document["total"]))
         document["document_title"] = "QUOTATION"

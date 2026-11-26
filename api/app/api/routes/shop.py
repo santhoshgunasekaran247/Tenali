@@ -167,10 +167,12 @@ def availability(company=Depends(open_store), db=Depends(identity_db)):
         where company_id=:company and is_active and holds_stock and allows_pickup order by name"""), {"company": company["id"]}).mappings()]
     readiness = checkout_availability(db, str(company["id"]), settings)
     whatsapp = orders_service.whatsapp_number(db, str(company["id"]), None)
+    gst_registered = db.execute(text("select gst_registered from companies where id=:company"),
+                                {"company": company["id"]}).scalar_one()
     return {**readiness, "shipping_paise": settings["shipping_paise"] if settings else None,
             "prepaid_enabled": bool(settings and settings["prepaid_enabled"]), "cod_enabled": bool(settings and settings["cod_enabled"]),
             "cod_limit": float(settings["cod_limit"]) if settings else None, "pickup_enabled": bool(settings and settings["pickup_enabled"]),
-            "pickup_stores": pickup_stores, "whatsapp_number": whatsapp}
+            "pickup_stores": pickup_stores, "whatsapp_number": whatsapp, "gst_registered": gst_registered}
 
 
 @router.get("/nearby")

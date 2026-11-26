@@ -124,7 +124,7 @@ def _ensure_shipping_sac(db: Session, company_id: str, settings: dict) -> None:
 
 def _invoice_lines(order: dict, settings: dict) -> list[InvoiceLineCreate]:
     lines = [InvoiceLineCreate(product_id=item["product_id"], variant_id=item["variant_id"], description=item["name"],
-                               hsn=item.get("hsn") or "9999", quantity=item["quantity"],
+                               hsn=item.get("hsn") or "", quantity=item["quantity"],
                                rate=Decimal(item["unit_paise"]) / 100, price_includes_gst=True)
              for item in order["items"]]
     if order["shipping_paise"]:
@@ -150,7 +150,9 @@ def _create_order_invoice(db: Session, company_id: str, order: dict, *, invoice_
                           reference: str) -> dict:
     from app.services.billing_service import BillingService
     settings = checkout_policy(db, company_id)
-    _ensure_shipping_sac(db, company_id, settings)
+    if db.execute(text("select gst_registered from companies where id=:company"),
+                  {"company": company_id}).scalar_one():
+        _ensure_shipping_sac(db, company_id, settings)
     party = db.execute(text("""select customer_party_id from shopper_accounts
         where company_id=:company and id=:shopper"""),
         {"company": company_id, "shopper": order["shopper_id"]}).scalar_one_or_none()

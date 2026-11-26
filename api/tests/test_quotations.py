@@ -78,6 +78,26 @@ class QuotationTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 422)
         db.commit.assert_not_called()
 
+    @patch("app.services.quotation_service.MastersService")
+    @patch("app.services.quotation_service.resolve_product_lines")
+    @patch("app.services.quotation_service.get_store")
+    def test_unregistered_quotation_does_not_require_hsn_or_charge_gst(self, get_store, resolve, masters):
+        db = MagicMock()
+        payload = self.payload(lines=[{"description": "Widget", "quantity": "2", "rate": "100", "gst_rate": "18"}])
+        get_store.return_value = {"id": payload.store_id, "address": "Seller address"}
+        customer = {"legal_name": "Customer", "address": "Customer address", "gst_number": None}
+        company = {"company_name": "Seller", "address": "Seller address", "gst_number": None,
+                   "gst_registered": False, "prices_include_gst": True}
+        db.execute.side_effect = [
+            MagicMock(mappings=MagicMock(return_value=MagicMock(first=MagicMock(return_value=customer)))),
+            MagicMock(mappings=MagicMock(return_value=MagicMock(one=MagicMock(return_value=company)))),
+        ]
+        _, document = QuotationService(db).prepare("company", payload)
+        self.assertFalse(resolve.call_args.kwargs["require_hsn"])
+        masters.assert_not_called()
+        self.assertEqual((document["lines"][0]["hsn"], document["gst_total"], document["total"]),
+                         ("", "0.00", "200.00"))
+
     @patch("app.services.quotation_service.QuotationService")
     def test_ai_preview_and_post_use_quotation_service_without_committing(self, service):
         from app.ai.business_writes import apply_action, operational_preview

@@ -519,9 +519,13 @@ Live migration, restart, voice activation and paid recording tests require appro
 Apply revision `037_product_drafts` (`products.is_draft`, default false) before
 deploying the API, because line resolution and the inventory list read it.
 
-- **HSN on products without one:** a sales or purchase line for a product with no
-  HSN/SAC uses the active code chosen on the line, and that code is saved to the
-  product. Products that already have a code always use their own.
+- **HSN and GST:** GST-registered companies must choose an active HSN/SAC and its
+  GST rate when creating a product. The product editor can create a missing master;
+  AI workflows can create it as a prerequisite. For non-registered companies, HSN
+  is optional for products and sales; sales and online orders do not charge GST.
+  Purchase bills still record vendor GST. For legacy products without an HSN, a
+  code selected on a sales or purchase line is saved to the product. Products
+  that already have a code always use their own.
 - **New items on a purchase bill:** choose "New item - add to inventory as draft".
   Posting creates a product named after the line description, with the chosen
   HSN, mapped to the bill's vendor at the line's taxable unit rate. It is hidden

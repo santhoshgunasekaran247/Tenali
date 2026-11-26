@@ -159,6 +159,12 @@ class InventoryService:
             raise HTTPException(409, "This name already exists") from error
         return dict(row)
 
+    def _require_product_hsn(self, values: dict) -> None:
+        if not values.get("hsn_code") and self.db.execute(
+            text("select gst_registered from companies where id=:company"), {"company": self.company_id}
+        ).scalar_one():
+            raise HTTPException(422, "Select an active HSN/SAC code and GST rate for this product")
+
     def _validate_item(self, values: dict, product_id: str | None, variant_id: str | None = None) -> None:
         for field, table in [("brand_id", "brands"), ("category_id", "product_categories")]:
             if values.get(field) and not self.db.execute(text(f"select id from {table} where id=:id and company_id=:company and is_active=true"),
@@ -296,6 +302,8 @@ class InventoryService:
         if current and current.get("is_draft") and payload.catalog_visible:
             raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
+        if not product_id:
+            self._require_product_hsn(values)
         self._validate_item(values, product_id)
         projected = self._enrich({**(current or {}), **values}, current["offers"] if current else [], Decimal("0"))
         if projected["pricing_error"]:
@@ -313,6 +321,8 @@ class InventoryService:
         if current and current.get("is_draft") and payload.catalog_visible:
             raise HTTPException(422, "Confirm this draft product before showing it on the storefront")
         values = payload.model_dump()
+        if not product_id:
+            self._require_product_hsn(values)
         tag_names = values.pop("tags", None)
         self._validate_item(values, product_id)
         files = FileStore(self.db)
@@ -395,8 +405,7 @@ class InventoryService:
 
     def confirm_draft(self, product_id: str, *, commit: bool = True) -> dict:
         product = self._product(product_id, lock=True)
-        if not product.get("hsn_code"):
-            raise HTTPException(422, "Set an HSN/SAC code before confirming this product")
+        self._require_product_hsn(product)
         self.db.execute(text("update products set is_draft=false, updated_at=now() where id=:id and company_id=:company"),
                         {"id": product_id, "company": self.company_id})
         if commit:

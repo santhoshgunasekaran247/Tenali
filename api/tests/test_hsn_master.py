@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from app.schemas.billing import InvoiceLineCreate
 from app.schemas.masters import HsnMasterCreate, HsnMasterUpdate
 from app.services.masters_service import MastersService
+from app.services.commerce_stock import resolve_product_lines
+from uuid import uuid4
 
 
 class HsnMasterSchemaTests(unittest.TestCase):
@@ -49,12 +51,30 @@ class HsnRateResolutionTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 422)
         self.assertIn("8516", error.exception.detail)
 
+    def test_missing_hsn_is_rejected_when_tax_rates_are_required(self):
+        line = InvoiceLineCreate(description="Test item", quantity=1, rate=100)
+        with self.assertRaises(HTTPException):
+            self.service.apply_hsn_rates([line], "company-one")
+        self.db.execute.assert_not_called()
+
     def test_rate_resolution_is_atomic_for_all_lines(self):
         self.db.execute.return_value.mappings.return_value.all.return_value = [{"code": "8516", "gst_rate": Decimal("18.00")}]
         missing = InvoiceLineCreate(description="Other item", hsn="9999", quantity=1, rate=100)
         with self.assertRaises(HTTPException):
             self.service.apply_hsn_rates([self.line, missing], "company-one")
         self.assertEqual(self.line.gst_rate, Decimal("0"))
+
+    def test_product_without_hsn_can_be_sold_when_hsn_is_not_required(self):
+        product_id = uuid4()
+        line = InvoiceLineCreate(product_id=product_id, description="Test", quantity=1, rate=100)
+        self.db.execute.side_effect = [
+            MagicMock(mappings=MagicMock(return_value=MagicMock(first=MagicMock(
+                return_value={"name": "Product", "hsn_code": None, "is_draft": False})))),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        ]
+        resolve_product_lines(self.db, "company", [line], require_hsn=False)
+        self.assertEqual((line.hsn, line.description), ("", "Product"))
+        self.assertEqual(self.db.execute.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -93,7 +93,9 @@ def price_item(db, company_id: str, item, stock_store_id: str):
     elif db.execute(text("select 1 from product_variants where product_id=:product and is_active=true limit 1"),
                     {"product": product_id}).first():
         raise HTTPException(422, "Select a product variant before checkout")
-    if not product["hsn_code"]:
+    if not product["hsn_code"] and db.execute(
+        text("select gst_registered from companies where id=:company"), {"company": company_id}
+    ).scalar_one():
         raise HTTPException(422, f"{product['name']} needs an HSN/SAC code before it can be sold online")
     selected = variant if variant and variant["pricing_mode"] != "inherit" else product
     vendor_id = (variant["preferred_vendor_id"] if variant else None) or product["preferred_vendor_id"]

@@ -49,7 +49,7 @@ export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string
   const data = invoice.document_data;
   if (!data?.lines.length) throw new Error("This legacy invoice has no saved product details for a tax invoice.");
   const settings = { ...DEFAULT_INVOICE_SETTINGS, ...data.seller.invoice_settings,
-    ...(isQuotation ? { title: "QUOTATION" } : {}) };
+    ...(isQuotation ? { title: "QUOTATION" } : data.gst_registered === false ? { title: "BILL OF SUPPLY" } : {}) };
   const NAVY = colorRgb(settings.primary_color);
   const GOLD = colorRgb(settings.accent_color);
   const [logo, signature] = await Promise.all([
@@ -74,7 +74,7 @@ export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string
   table({
     startY: 42, theme: "plain", columnStyles: { 0: { cellWidth: 100 }, 1: { cellWidth: 80 } },
     body: [[
-      [seller.company_name, seller.address, `GSTIN: ${seller.gst_number || ""}`,
+      [seller.company_name, seller.address, seller.gst_number ? `GSTIN: ${seller.gst_number}` : "",
         seller.udyam_number ? `Udyam: ${seller.udyam_number}` : "",
         [seller.phone, seller.email].filter(Boolean).join(" | "), seller.website].filter(Boolean).join("\n"),
       `${isQuotation ? "Quotation" : "Invoice"} No: ${invoice.invoice_number}\nDate: ${invoiceDate}\nPlace of Supply: ${data.place_of_supply}${invoice.reference ? `\nReference: ${invoice.reference}` : ""}`,
@@ -86,11 +86,12 @@ export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string
     headStyles: { fillColor: NAVY, textColor: 255 },
     columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 90 } },
     body: [[
-      `${data.bill_to.name}\n${data.bill_to.address}${data.bill_to.gst_number ? `\nGSTIN: ${data.bill_to.gst_number}` : "\nUnregistered customer"}`,
+      `${data.bill_to.name}\n${data.bill_to.address}${data.gst_registered === false ? "" : data.bill_to.gst_number ? `\nGSTIN: ${data.bill_to.gst_number}` : "\nUnregistered customer"}`,
       `${data.ship_to.name}\n${data.ship_to.address}`,
     ]],
   });
-  const taxHeaders = data.interstate ? ["IGST"] : ["CGST", "SGST"];
+  const taxable = data.gst_registered !== false;
+  const taxHeaders = taxable ? (data.interstate ? ["IGST"] : ["CGST", "SGST"]) : [];
   table({
     startY: endY + 6, theme: "grid",
     head: [["#", "Product / Description", "HSN", "Qty", "Rate", ...taxHeaders, "Total"]],
@@ -99,7 +100,7 @@ export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string
     columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: data.interstate ? 52 : 42 }, 2: { cellWidth: 19 } },
     body: data.lines.map((line, index) => [
       String(index + 1), line.description, line.hsn, line.quantity, money(line.rate),
-      ...(data.interstate
+      ...(!taxable ? [] : data.interstate
         ? [`${money(line.igst)}\n(${Number(line.gst_rate)}%)`]
         : [`${money(line.cgst)}\n(${Number(line.gst_rate) / 2}%)`, `${money(line.sgst)}\n(${Number(line.gst_rate) / 2}%)`]),
       money(line.total),
@@ -110,9 +111,9 @@ export async function createInvoicePdf(invoice: Invoice, quotationNotes?: string
     startY: endY + 4, theme: "plain", pageBreak: "avoid",
     columnStyles: { 0: { cellWidth: 130, halign: "right" }, 1: { cellWidth: 50, halign: "right" } },
     body: [
-      ["Taxable Value (INR)", money(data.subtotal)],
-      ...(data.interstate ? [["IGST", taxSum("igst")]] : [["CGST", taxSum("cgst")], ["SGST", taxSum("sgst")]]),
-      ["Total GST", money(data.gst_total)],
+      [taxable ? "Taxable Value (INR)" : "Subtotal (INR)", money(data.subtotal)],
+      ...(taxable ? (data.interstate ? [["IGST", taxSum("igst")]] : [["CGST", taxSum("cgst")], ["SGST", taxSum("sgst")]]) : []),
+      ...(taxable ? [["Total GST", money(data.gst_total)]] : []),
       [{ content: `${isQuotation ? "Quotation" : "Invoice"} Total (INR)`, styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }, { content: money(data.total), styles: { fontStyle: "bold", fillColor: NAVY, textColor: 255 } }],
     ],
   });

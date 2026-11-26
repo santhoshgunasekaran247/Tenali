@@ -222,7 +222,7 @@ export function BillingPage() {
       const amountReceived = Number(form.amount_received || 0);
 
       if (!form.customer_party_id) throw new Error("Select customer party.");
-      if (lines.some((line) => !hsnMasters.some((master) => master.code === line.hsn))) {
+      if (company?.gst_registered !== false && lines.some((line) => !hsnMasters.some((master) => master.code === line.hsn))) {
         throw new Error("Select an active HSN / SAC code for every item.");
       }
       if (![subtotal, gstTotal, total].every(Number.isFinite)) {
@@ -511,7 +511,7 @@ export function BillingPage() {
               Auto-create receivable for unpaid balance
             </label>}
 
-            <button className="btn" type="submit" disabled={saving || loading || !!referenceErrors.length || !!storeContext.error || !storeContext.selected || !hsnMasters.length}>
+            <button className="btn" type="submit" disabled={saving || loading || !!referenceErrors.length || !!storeContext.error || !storeContext.selected || (company?.gst_registered !== false && !hsnMasters.length)}>
               {saving ? "Saving..." : documentKind === "quotation" ? "Save Quotation" : "Post Invoice"}
             </button>
           </form>

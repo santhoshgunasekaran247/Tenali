@@ -29,8 +29,9 @@ export function productPayload(product: InventoryProduct): InventoryProductInput
 
 export const inventoryMoney = (value: number | null | undefined) => value == null ? "-" : `INR ${Number(value).toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-export function ProductEditor({ product, variant, variantMode = false, lookups, hsn, onSaved, onClose }: {
+export function ProductEditor({ product, variant, variantMode = false, lookups, hsn, gstRegistered, onSaved, onClose }: {
   product?: InventoryProduct; variant?: InventoryVariant; variantMode?: boolean; lookups: InventoryLookups; hsn: HsnMaster[];
+  gstRegistered: boolean;
   onSaved: (product: InventoryProduct) => void; onClose: () => void;
 }) {
   const draftKey = `inventory.product.${product?.id || "new"}.${variantMode ? variant?.id || "new-variant" : "base"}.`;
@@ -47,6 +48,10 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
   const [gallery, setGallery] = useDraftState(`${draftKey}gallery`, (!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
   const [createdLookups, setCreatedLookups] = useState<Pick<InventoryLookups, "brands" | "categories">>({ brands: [], categories: [] });
+  const [createdHsn, setCreatedHsn] = useState<HsnMaster[]>([]);
+  const [showNewHsn, setShowNewHsn] = useState(false);
+  const [newHsn, setNewHsn] = useState({ code: "", description: "", gst_rate: "" });
+  const hsnOptions = [...hsn, ...createdHsn];
   const lookupOptions = {
     brands: [...lookups.brands, ...createdLookups.brands],
     categories: [...lookups.categories, ...createdLookups.categories],
@@ -78,6 +83,23 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const price = previewMode === "discount" ? (mrp != null ? Math.round(mrp * (1 - Number(previewDiscount) / 100) * 100) / 100 : null) : previewPrice;
   const discount = previewMode === "price" && mrp && price != null ? Math.round((mrp - price) * 10000 / mrp) / 100 : previewDiscount;
   const patch = (values: Partial<typeof draft>) => setDraft((previous) => ({...previous,...values}));
+  const createHsn = async () => {
+    setSaving(true); setError("");
+    try {
+      if (!/^(?:\d{4}|\d{6}|\d{8})$/.test(newHsn.code) || !newHsn.description.trim() ||
+          newHsn.gst_rate.trim() === "" || !Number.isFinite(Number(newHsn.gst_rate)) ||
+          Number(newHsn.gst_rate) < 0 || Number(newHsn.gst_rate) > 100) {
+        throw new Error("Enter a 4, 6 or 8 digit HSN/SAC, description and GST rate between 0 and 100.");
+      }
+      const master = await api.createHsnMaster({ code: newHsn.code, description: newHsn.description.trim(), gst_rate: Number(newHsn.gst_rate), is_active: true });
+      setCreatedHsn(previous => [...previous, master]);
+      patch({ hsn_code: master.code });
+      setShowNewHsn(false);
+      setNewHsn({ code: "", description: "", gst_rate: "" });
+      window.dispatchEvent(new Event("hsn-master-updated"));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to create HSN/SAC."); }
+    finally { setSaving(false); }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setSaving(true); setError("");
     try {
@@ -155,7 +177,14 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
             patch({ [field]: lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.trim().toLowerCase())?.id || null });
           }} /><datalist id={`${draftKey}${kind}`}>{lookupOptions[kind].map(entry => <option key={entry.id} value={entry.name}/>)}</datalist>
           <small>New {label.toLowerCase()} names are created when you save the product.</small></label>)}
-        <label>HSN / SAC<select value={draft.hsn_code||""} onChange={event=>patch({hsn_code:event.target.value||null})}><option value="">Not set</option>{draft.hsn_code&&!hsn.some(item=>item.code===draft.hsn_code)?<option value={draft.hsn_code}>{draft.hsn_code} (inactive)</option>:null}{hsn.map(item=><option key={item.id} value={item.code}>{item.code} - {item.description} ({item.gst_rate}%)</option>)}</select></label></>:null}
+        <label>HSN / SAC{gstRegistered && !product ? " (required)" : ""}<select required={gstRegistered && !product} value={draft.hsn_code||""} onChange={event=>patch({hsn_code:event.target.value||null})}><option value="">Not set</option>{draft.hsn_code&&!hsnOptions.some(item=>item.code===draft.hsn_code)?<option value={draft.hsn_code}>{draft.hsn_code} (inactive)</option>:null}{hsnOptions.map(item=><option key={item.id} value={item.code}>{item.code} - {item.description} ({item.gst_rate}%)</option>)}</select></label>
+        <div><button type="button" className="ops-link-btn" onClick={()=>setShowNewHsn(!showNewHsn)}>{showNewHsn ? "Cancel new HSN / SAC" : "Create HSN / SAC"}</button></div>
+        {showNewHsn ? <div className="inventory-wide">
+          <label>HSN / SAC code<input inputMode="numeric" maxLength={8} value={newHsn.code} onChange={event=>setNewHsn({...newHsn,code:event.target.value})}/></label>
+          <label>Description<input maxLength={300} value={newHsn.description} onChange={event=>setNewHsn({...newHsn,description:event.target.value})}/></label>
+          <label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={newHsn.gst_rate} onChange={event=>setNewHsn({...newHsn,gst_rate:event.target.value})}/></label>
+          <button type="button" className="btn light" onClick={()=>void createHsn()}>Create and select</button>
+        </div> : null}</>:null}
       <label>Size<input maxLength={100} value={draft.size||""} onChange={event=>patch({size:event.target.value})}/></label>
       <label>Colour<input maxLength={100} value={draft.colour||""} onChange={event=>patch({colour:event.target.value})}/></label>
       {([["weight","Weight (kg)"],["height","Height (cm)"],["width","Width (cm)"],["length","Length (cm)"]] as const).map(([key,label])=><label key={key}>{label}<input type="number" min="0" step="0.001" value={draft[key]??""} onChange={event=>patch({[key]:event.target.value===""?null:Number(event.target.value)})}/></label>)}

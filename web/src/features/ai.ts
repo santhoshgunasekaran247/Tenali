@@ -43,6 +43,7 @@ export type WorkflowChoice = { field: string; query: string; capability: string;
   options: { value: string; label: string }[]; more_matches: boolean; can_create: boolean; manual_path?: string | null };
 export type WorkflowStep = {
   required_fields?: string[];
+  gst_registered?: boolean;
   id: string; action: string; target: string | null; payload: Record<string, unknown>;
   draft_id: string | null; draft_status?: ActionDraft["status"];
   issues: WorkflowIssue[]; choices: WorkflowChoice[];

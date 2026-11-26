@@ -97,6 +97,13 @@ class InvoiceDocumentTests(unittest.TestCase):
                 self.assertIsNone(document["seller"]["gst_number"])
                 self.assertEqual(self.payload.lines[0].gst_rate, Decimal("18"))
 
+    def test_unregistered_invoice_accepts_missing_hsn_without_tax(self):
+        self.company.update(gst_registered=False, gst_number=None)
+        self.payload.lines[0].hsn = ""
+        document = build_invoice_document(self.payload, self.company, self.customer)
+        self.assertEqual((document["lines"][0]["hsn"], document["gst_total"], document["total"]),
+                         ("", "0.00", "200.00"))
+
     def test_database_store_snapshot_is_json_serializable(self):
         store_id = uuid4()
         store = {"id": store_id, "company_id": uuid4(), "code": "MAIN",

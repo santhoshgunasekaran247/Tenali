@@ -65,6 +65,8 @@ class MastersService:
         if not lines:
             return
         codes = sorted({line.hsn for line in lines})
+        if "" in codes:
+            raise HTTPException(status_code=422, detail="Select an active HSN/SAC code for every item")
         rows = self.db.execute(text("""
             select code, gst_rate from hsn_masters
             where company_id = :company_id and is_active = true and code in :codes

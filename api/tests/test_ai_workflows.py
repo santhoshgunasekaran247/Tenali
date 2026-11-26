@@ -18,6 +18,16 @@ from app.ai.workflows import (MAX_STEPS, REFERENCES, REPLACEMENTS, TARGETS, Work
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_gst_registration_controls_product_and_sales_requirements(self):
+        product = {"name": "Widget", "selling_price": 100}
+        self.assertIn("hsn_code", required_fields("product_create", product, True))
+        self.assertNotIn("hsn_code", required_fields("product_create", product, False))
+        invoice = {"lines": [{"description": "Widget", "quantity": 1, "rate": 100}]}
+        self.assertIn("lines.0.hsn", required_fields("invoice_create", invoice, True))
+        self.assertNotIn("lines.0.hsn", required_fields("invoice_create", invoice, False))
+        self.assertNotIn("lines.0.gst_rate", required_fields("invoice_create", invoice, False))
+        self.assertIn("lines.0.gst_rate", required_fields("purchase_create", invoice, False))
+
     def service(self):
         assistant = Mock()
         assistant.scope = {"company": str(uuid4()), "user": str(uuid4())}
