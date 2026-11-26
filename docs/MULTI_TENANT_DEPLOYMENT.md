@@ -715,6 +715,20 @@ and actual data-handling practices before publication. Anonymous visitors now se
 a platform homepage with an app description and public policy links; signed-in
 workspace/storefront routing is preserved.
 
+The platform homepage includes a silent, five-minute beginner guide with 28
+steps and eight clickable, timed chapters. Instructions occupy a dark panel;
+actual app screens using sample data occupy a separate light panel. It follows
+one example through products, opening stock, Excel uploads, a part-paid invoice,
+remaining stock, the online shop and AI.
+Deploy `web/public/tenali-product-tour.mp4`, its
+`tenali-product-tour-poster.jpg` poster, `tenali-product-tour.vtt` English captions
+and `tenali-product-tour-chapters.vtt` chapter track together with the frontend.
+`web/src/content/product-tour.json` supplies the chapter buttons and full written
+guide; keep its timings and instructions consistent with the video and tracks.
+Caption cues leave a short gap between steps to prevent overlapping text after seeking.
+Playback failures show a written-guide alternative. The guide makes no live AI
+requests and needs no database migration.
+
 Tenant owners/admins use **Store Policies** (`/portal/policies`), also linked from
 Company Setup. Each tenant gets independent, editable privacy, terms, shipping and
 delivery, payment, cancellation/refund/returns/exchanges, account/data-deletion and

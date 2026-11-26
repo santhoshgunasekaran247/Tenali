@@ -1,0 +1,118 @@
+WEBVTT
+
+00:00.000 --> 00:14.900
+We will add a steel water bottle, record 24 bottles in stock, then sell two
+for INR 250 each.
+
+00:15.000 --> 00:24.900
+Choose Set up my business, then a sign-in option. After sign-in, enter your
+business name and workspace address.
+
+00:25.000 --> 00:34.900
+In Company Setup, enter your business name, address, phone and email.
+Display Name is the name customers see.
+
+00:35.000 --> 00:44.900
+Off: sales documents have no GST. On: GST applies and GSTIN is needed. This
+sample shop is not GST-registered, so we use Off.
+
+00:45.000 --> 00:54.900
+Open the three-line menu. Product Inventory is for items, Billing is for
+sales bills, and Dashboard is for a quick business check.
+
+00:55.000 --> 01:04.900
+Open Product Inventory, then choose Add Product. A product is one of the
+things you sell.
+
+01:05.000 --> 01:14.900
+Product Name: Steel water bottle. SKU: BOTTLE-01. SKU is your own short
+item code. Use a name you will recognise.
+
+01:15.000 --> 01:24.900
+Choose or type the brand and category. HSN / SAC groups products for tax.
+Select a matching saved code when needed.
+
+01:25.000 --> 01:34.900
+Choose Keep catalog price. Enter 250 in Catalog Price (INR). This is the
+catalogue selling price, not your supplier's buying price.
+
+01:35.000 --> 01:44.900
+Choose a Product Image file, or enter its image URL. Check the preview. Use
+PNG, JPEG or WebP under 1 MB.
+
+01:45.000 --> 01:54.900
+Keep Active selected. Review the details, then choose Save Product. Adding
+a product does not add physical stock; that comes next.
+
+01:55.000 --> 02:04.900
+Owned Stock: select your store and Stock In. Quantity: 24. Reason: Opening
+stock. Choose Record Stock Movement once.
+
+02:05.000 --> 02:14.900
+Choose Bulk Excel, then Products and Download products template. Fill the
+Data sheet in Excel. The README sheet explains each column.
+
+02:15.000 --> 02:24.900
+Web pictures: use public HTTPS links in image_url. Local files: use
+image_file filenames, then ZIP manifest.xlsx with its images folder.
+
+02:25.000 --> 02:39.900
+Choose your file, then Upload & process. Download results: success.xlsx
+lists saved rows; failure.xlsx explains errors. Fix only failed rows.
+Resume an interrupted import rather than starting again.
+
+02:40.000 --> 02:49.900
+Open Billing. Choose Sales invoice and the billing store. Find your
+customer, or choose Add customer here to enter a new one.
+
+02:50.000 --> 02:59.900
+Set the invoice date and Bill To Address. Place of Supply is the sale's
+state. Keep Ship to billing address checked for the same delivery address.
+
+03:00.000 --> 03:09.900
+Select Steel water bottle from Product / Inventory. Quantity: 2. Price:
+250. Use Add Item for another product on the same bill.
+
+03:10.000 --> 03:19.900
+Check the total: 2 bottles x INR 250 = INR 500. This sample shop has no
+GST. Check your own bill's tax too.
+
+03:20.000 --> 03:29.900
+The customer pays INR 300. Enter Amount Received Now: 300, Payment Mode:
+cash, and Received In Account: Shop cash. INR 200 remains due.
+
+03:30.000 --> 03:44.900
+Keep Auto-create receivable for unpaid balance checked: this tracks the INR
+200 still owed. Review the bill, choose Post Invoice once, and wait for
+confirmation.
+
+03:45.000 --> 03:54.900
+Open the bottle's Owned Stock tab. 24 bottles minus 2 sold leaves 22. Check
+Stock History; do not enter the same sale again manually.
+
+03:55.000 --> 04:09.900
+Open Dashboard and choose the reporting period. Collections shows money
+customers still owe: INR 200 in our example. Older unpaid bills can appear
+here too.
+
+04:10.000 --> 04:19.900
+The online shop is optional. In Edit Product, check photos and price, then
+select Visible in customer catalog and save.
+
+04:20.000 --> 04:29.900
+In Company Setup, check Storefront Address and Storefront open to the
+public. Choose Save Changes. Storefront Design changes colours, pictures
+and layout.
+
+04:30.000 --> 04:39.900
+Open Customer View. Check the picture, name and price as a customer would.
+Your storefront is your online shop. Share its link when ready.
+
+04:40.000 --> 04:49.900
+When AI is enabled, open Tenali AI and choose New chat. Type your question
+in everyday words. This example does not send an AI request.
+
+04:50.000 --> 05:00.000
+Attach a bill or catalogue using the paperclip. For products, select
+Prepare product bulk workbook first. Check AI suggestions before saving
+business records.
