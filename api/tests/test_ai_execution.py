@@ -67,12 +67,30 @@ class BusinessAdapterUnitTests(unittest.TestCase):
 
         with patch.object(ExecutionService, "for_draft", return_value=None), \
                 patch("app.ai.execution.FileStore") as files, \
-                patch("app.ai.execution.display_image", side_effect=lambda content: events.append(content)):
+                patch("app.ai.execution.display_image", side_effect=lambda content, **kwargs: events.append(content)):
             files.return_value.product_photo.side_effect = photo
             with self.assertRaisesRegex(RuntimeError, "stop after lock"):
                 service.execute(uuid4(), ExecutionApproval(expected_version=1, expected_hash="a" * 64))
         # Reads finish and the transaction ends before slow AI rendering; only then does execution lock.
         self.assertEqual(events, ["commit", b"ai-photo:a", b"data:x", "lock"])
+
+    def test_product_theme_is_used_when_warming_uploaded_and_existing_images(self):
+        service = ExecutionService.__new__(ExecutionService)
+        service.db, service.scope = Mock(), {"company": str(uuid4()), "user": str(uuid4())}
+        service.drafts = Mock()
+        service.drafts.get.return_value = {"action_key": "product_update", "target_id": str(uuid4()),
+                                          "payload": {"image_background": "#123456", "image_url": "old",
+                                                      "image_urls": ["data:new"]}}
+        service.drafts.reference.return_value = {"image_background": "#ffffff", "image_url": "old",
+                                                  "image_urls": "", "image_originals": {"old": "original"}}
+        with patch("app.ai.execution.FileStore") as files, patch("app.ai.execution.display_image") as render:
+            files.return_value.stored_product_image.return_value = b"old photo"
+            files.return_value.product_photo.return_value = (b"new photo", "image/png")
+            service.prepare_images(uuid4())
+        self.assertEqual(render.call_args_list, [
+            unittest.mock.call(b"old photo", background="#123456"),
+            unittest.mock.call(b"new photo", background="#123456"),
+        ])
 
     def test_stale_approval_is_sent_back_for_review_instead_of_staying_stuck(self):
         service = ExecutionService.__new__(ExecutionService)
@@ -107,6 +125,31 @@ class MediaUnitTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 normalize_upload(payload.model_copy(update={"data_base64": base64.b64encode(data).decode()}))
 
+    def test_excel_attachment_extracts_rows_and_retains_original(self):
+        from openpyxl import Workbook
+        book = Workbook()
+        book.active.append(["Name", "Price"])
+        book.active.append(["Lamp", 100])
+        hidden = book.create_sheet("Hidden")
+        hidden.sheet_state = "hidden"
+        hidden.append(["not included"])
+        output = io.BytesIO()
+        book.save(output)
+        raw = output.getvalue()
+        payload = AIUpload(file_name="catalog.xlsx",
+                           mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           data_base64=base64.b64encode(raw).decode())
+        name, mime, stored, extracted, bound = normalize_upload(payload)
+        self.assertEqual((name, mime, stored), ("catalog.xlsx", "text/plain", raw))
+        self.assertIn("Row 2: Lamp | 100", extracted)
+        self.assertNotIn("not included", extracted)
+        self.assertEqual(bound, len(extracted.encode()) + 512)
+        book.active["B2"] = "=1+1"
+        output = io.BytesIO()
+        book.save(output)
+        with self.assertRaisesRegex(HTTPException, "formula"):
+            normalize_upload(payload.model_copy(update={"data_base64": base64.b64encode(output.getvalue()).decode()}))
+
     def test_images_are_decoded_resized_and_metadata_removed(self):
         source = io.BytesIO()
         Image.new("RGB", (3000, 2100), "white").save(source, format="PNG")
@@ -129,6 +172,22 @@ class MediaUnitTests(unittest.TestCase):
         with Image.open(io.BytesIO(normalize_upload(jpeg)[2])) as normalized:
             self.assertEqual(normalized.size,(20,40))
             self.assertFalse(normalized.getexif())
+
+    def test_transparent_ai_photo_preserves_alpha_for_product_background(self):
+        from app.ai.media import model_image, photo_reference, referenced_photo
+        image = io.BytesIO()
+        Image.new("RGBA", (30, 30), (200, 80, 50, 64)).save(image, format="PNG")
+        payload = AIUpload(file_name="product.png", mime_type="image/png",
+                           data_base64=base64.b64encode(image.getvalue()).decode())
+        _, mime, raw, _, _ = normalize_upload(payload)
+        self.assertEqual(mime, "image/png")
+        db = Mock()
+        db.execute.return_value.scalar_one_or_none.return_value = raw
+        cropped = referenced_photo(db, uuid4(), photo_reference(uuid4(), "0,0,1000,1000"), uuid4())
+        with Image.open(io.BytesIO(cropped)) as result:
+            self.assertEqual(result.getpixel((0, 0))[3], 64)
+        with Image.open(io.BytesIO(model_image(raw))) as result:
+            self.assertEqual(result.format, "JPEG")
 
     def test_product_photo_crop_is_full_resolution_or_nothing(self):
         from app.ai.media import crop_region, photo_preview

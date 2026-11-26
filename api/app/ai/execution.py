@@ -12,24 +12,29 @@ from app.ai.drafts import DraftService, digest
 from app.ai.actions import ACTIONS
 from app.services.feature_controls import lock_policy
 from app.services.object_storage import FileStore
-from app.services.product_images import display_image
+from app.services.product_images import display_image, normalize_background
 
 logger = logging.getLogger(__name__)
 
 
 def image_sources(value):
     """Every product image source (image_url / image_urls) anywhere in a draft payload."""
+    yield from (source for source, _ in image_sources_with_background(value))
+
+
+def image_sources_with_background(value, background="#ffffff"):
     if isinstance(value, dict):
+        background = normalize_background(value.get("image_background") or background)
         for name, item in value.items():
             if name == "image_url" and isinstance(item, str):
-                yield item
+                yield item, background
             elif name == "image_urls" and isinstance(item, list):
-                yield from (source for source in item if isinstance(source, str))
+                yield from ((source, background) for source in item if isinstance(source, str))
             else:
-                yield from image_sources(item)
+                yield from image_sources_with_background(item, background)
     elif isinstance(value, list):
         for item in value:
-            yield from image_sources(item)
+            yield from image_sources_with_background(item, background)
 
 
 class ExecutionService:
@@ -58,19 +63,29 @@ class ExecutionService:
         execution takes its locks, so the locked transaction only uploads cached results. Any problem is left
         for the locked execution to report."""
         files, photos = FileStore(self.db), []
-        for source in dict.fromkeys(image_sources(self.drafts.get(draft_id)["payload"])):
+        draft = self.drafts.get(draft_id)
+        current = None
+        if draft.get("action_key") == "product_update" and draft.get("target_id"):
+            current = self.drafts.reference("products", draft["target_id"])
+        previous = normalize_background((current or {}).get("image_background") or "#ffffff")
+        existing = {current.get("image_url"), *((current.get("image_urls") or "").split("|"))} if current else set()
+        for source, background in dict.fromkeys(image_sources_with_background(draft["payload"], previous)):
             try:
+                if current and source in existing and background != previous:
+                    original = (current.get("image_originals") or {}).get(source) or source
+                    photos.append((files.stored_product_image(self.scope["company"], original), background))
+                    continue
                 photo = files.product_photo(self.scope["company"], source)
             except HTTPException:
                 continue
             if photo:
-                photos.append(photo[0])
+                photos.append((photo[0], background))
         if not photos:
             return
         self.db.commit()  # Nothing is written yet; do not hold a transaction open while rendering.
-        for content in photos:
+        for content, background in photos:
             try:
-                display_image(content)
+                display_image(content, background=background)
             except HTTPException:
                 continue
 

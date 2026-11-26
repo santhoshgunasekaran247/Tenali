@@ -84,7 +84,7 @@ class CustomDomainRouting:
             self.app, allow_origins=[expected_origin], allow_credentials=True,
             allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=["Content-Type", "X-CSRF-Token", "X-Tenant-Slug", "Idempotency-Key"],
-            expose_headers=list(CSRF_HEADERS.values()) + ["Content-Disposition"],
+            expose_headers=list(CSRF_HEADERS.values()) + ["Content-Disposition", "X-Bulk-Success-Count", "X-Bulk-Failure-Count"],
             max_age=600,
         )
         await cors(mapped, receive, token_headers)

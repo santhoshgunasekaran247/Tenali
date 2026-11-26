@@ -118,6 +118,25 @@ class ProductImageTests(unittest.TestCase):
             self.assertLess(result.convert("RGB").getpixel((500, 500))[0], 60)
         self.product_mask.assert_not_called()
 
+    def test_selected_background_is_applied_and_cache_is_color_specific(self):
+        clear = Image.new("RGBA", (30, 60), (0, 0, 0, 0))
+        clear.paste((20, 120, 200, 255), (5, 10, 25, 50))
+        content = self.encode(clear)
+        white = display_image(content)
+        dark = display_image(content, background="#202830")
+        self.assertNotEqual(white, dark)
+        with Image.open(io.BytesIO(dark)) as result:
+            red, green, blue = result.convert("RGB").getpixel((5, 5))
+            self.assertLess(abs(red - 32), 5)
+            self.assertLess(abs(green - 40), 5)
+            self.assertLess(abs(blue - 48), 5)
+        self.assertEqual(display_image(content, background="#202830"), dark)
+
+    def test_custom_background_requires_an_isolated_product(self):
+        photo = self.encode(Image.new("RGB", (40, 20), (90, 140, 60)))
+        with self.assertRaisesRegex(HTTPException, "background"):
+            display_image(photo, background="#202830")
+
     def test_without_a_clear_product_the_full_photo_fills_the_square(self):
         photo = Image.new("RGB", (400, 300), "white")
         photo.paste((180, 90, 30), (150, 100, 250, 200))
@@ -293,7 +312,7 @@ class ProductImageFixTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 422)
         new = f"/api/public-images/{self.company}/new"
         self.assertEqual(stored.call_args.args, (self.company, original))
-        render.assert_called_once_with(PNG)
+        render.assert_called_once_with(PNG, background="#ffffff")
         self.assertEqual(save.call_args.args[1:3], (b"webp", "image/webp"))
         self.assertEqual(result["image_url"], new)
         self.assertEqual(writes, [{"image_url": new, "image_urls": f"{new}|{other}",

@@ -50,7 +50,7 @@ class MastersService:
             raise HTTPException(status_code=409, detail="HSN/SAC code already exists; edit or reactivate it") from exc
         return dict(row)
 
-    def update_hsn(self, master_id: str, payload: HsnMasterUpdate, company_id: str | None) -> dict:
+    def update_hsn(self, master_id: str, payload: HsnMasterUpdate, company_id: str | None, *, commit: bool = True) -> dict:
         row = self.db.execute(text("""
             update hsn_masters set description = :description, gst_rate = :gst_rate,
                 is_active = :is_active, updated_at = now()
@@ -58,7 +58,8 @@ class MastersService:
         """), {**payload.model_dump(), "id": master_id, "company_id": self._company_id(company_id)}).mappings().first()
         if not row:
             raise HTTPException(status_code=404, detail="HSN/SAC code not found")
-        self.db.commit()
+        if commit:
+            self.db.commit()
         return dict(row)
 
     def apply_hsn_rates(self, lines: list[InvoiceLineCreate], company_id: str) -> None:

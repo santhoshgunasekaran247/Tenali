@@ -19,6 +19,7 @@ const fieldLabel = (key: string) => ({
   store_name: "Receiving store", purchase_date: "Purchase date", payment_mode: "Payment mode",
   account_name: "Payment account", fully_paid: "Fully paid now", received_now: "Goods received now",
   vendor_party_id: "Vendor", customer_party_id: "Customer", related_party_id: "Related party",
+  vendor_id: "Vendor", preferred_vendor_id: "Preferred vendor", mrp: "Vendor MRP (INR)", buying_price: "Buying price (INR)",
 } as Record<string, string>)[key] || friendly(key.replace(/_id$/, ""));
 const actionLabel = (key: string, payload: Record<string, unknown> = {}) => (
   key === "party_create" || key === "party_update" ? ({
@@ -179,16 +180,18 @@ function ReviewPreview({ draft, labels }: { draft: ActionDraft; labels: Workflow
   </section>;
 }
 
-function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = false, referenceLabels = {}, requiredFields = [], onEdit, onRun }: {
+function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = false, vendorOfferPending = false, workflowValues, referenceLabels = {}, requiredFields = [], onEdit, onRun }: {
   draft: ActionDraft; action?: DraftAction; writable: boolean; busy: boolean;
   duplicate: boolean;
   workflowStep?: boolean;
+  vendorOfferPending?: boolean;
+  workflowValues?: Record<string, unknown>;
   referenceLabels?: WorkflowStep["labels"];
   requiredFields?: string[];
   onEdit?: (payload: Record<string, unknown>) => Promise<unknown>;
   onRun: (operation: () => Promise<unknown>) => Promise<void>;
 }) {
-  const original = JSON.stringify(draft.payload, null, 2);
+  const original = JSON.stringify({ ...draft.payload, ...workflowValues }, null, 2);
   const [editing, setEditing] = useState(original);
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -221,6 +224,7 @@ function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = fa
       {duplicate ? <span className="ai-draft-duplicate">Possible duplicate</span> : null}</span></span></summary>
     {duplicate ? <p role="status">Another draft may describe the same operation. Review both before submitting to avoid a duplicate.</p> : null}
     {draft.action_key === "purchase_bundle_create" ? <p className="ai-draft-note">Vendor → product → purchase → payment and stock receipt are reviewed and submitted together. The new product remains a draft until confirmed for sale.</p> : null}
+    {vendorOfferPending ? <p className="ai-draft-note">Save the product first, then review and save its vendor offer. The active offer sets the preferred vendor. Product creation does not record a purchase or add stock.</p> : null}
     {draft.high_impact ? <p className="ai-message-status">High impact: review all dependencies, refunds and stock effects.</p> : null}
     <details className="ai-entry-details" open={draft.status === "editing" || dirty || undefined}>
     <summary>{draft.status === "editing" ? "Entry details" : "View or edit entry details"}</summary>
@@ -228,6 +232,8 @@ function DraftCard({ draft, action, writable, busy, duplicate, workflowStep = fa
     {values && action ? <><Fields values={values} schema={workflowStep && action.workflow_schema ? action.workflow_schema : action.schema}
       root={workflowStep && action.workflow_schema ? action.workflow_schema : action.schema} disabled={readonly} showAll={showAll}
       labels={referenceLabels}
+      visibleFields={draft.action_key === "offer_create" || draft.action_key === "offer_update" ? ["mrp", "buying_price", "is_active"] :
+        draft.action_key === "product_create" ? ["mrp", "buying_price", "preferred_vendor_id"] : requiredFields}
       requiredFields={[...requiredFields, ...(draft.action_key === "purchase_create" ? ["store_id", "purchase_date", "received_now", "lines"] :
         draft.action_key === "purchase_bundle_create" ? ["vendor_name", "create_vendor_if_missing", "product_name", "quantity", "rate", "hsn", "store_name", "purchase_date", "price_includes_gst", "fully_paid", "received_now", ...(values?.fully_paid === true ? ["payment_mode", "account_name"] : [])] :
         draft.action_key === "invoice_create" ? ["store_id", "invoice_date", "lines"] : [])]}
@@ -310,7 +316,9 @@ function WorkflowFields({ workflow, step, action, disabled, onRun }: {
   useEffect(() => { setValues(step.payload); setTarget(step.target || ""); setError(""); }, [workflow.version, step.id]);
   const required = [...new Set([...(step.required_fields || []), ...step.issues
     .filter(issue => issue.message.startsWith("Required:") || issue.message === "Field required").map(issue => issue.field)])];
-  const visible = [...new Set([...required, ...step.issues.map(issue => issue.field)])];
+  const visible = [...new Set([...required, ...step.issues.map(issue => issue.field),
+    ...(["offer_create", "offer_update", "product_create"].includes(step.action) ? ["mrp", "buying_price"] : []),
+    ...(step.action === "product_create" ? ["preferred_vendor_id"] : [])])];
   const choose = (path: string, value: string, query?: string) => {
     try {
       const next = path === "target" ? values : changePath(values, path, value);
@@ -490,6 +498,11 @@ export function AIDrafts({ conversationId, refreshKey, writable, aiEnabled }: {
         const action = actions.find(item => item.key === step.action), draft = drafts.find(item => item.id === step.draft_id);
         if (draft) return <DraftCard key={step.id} draft={draft} action={action} writable={writable && !!action}
           busy={historyBlocked} duplicate={hasDuplicateDraft(draft, drafts)} workflowStep referenceLabels={step.labels}
+          vendorOfferPending={!!step.preferred_offer_step}
+          workflowValues={step.action === "product_create" ? {
+            preferred_vendor_id: step.payload.preferred_vendor_id,
+            mrp: step.payload.mrp, buying_price: step.payload.buying_price,
+          } : undefined}
           requiredFields={step.required_fields}
           onEdit={payload => ai.editWorkflow(workflow, step, step.target, payload, undefined, draft.version)} onRun={run} />;
         if (step.draft_status === "executed") return <p key={step.id}>{actionLabel(step.action)}: submitted</p>;

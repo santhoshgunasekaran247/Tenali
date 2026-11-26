@@ -21,9 +21,11 @@ export function itemPayload(item: InventoryItemInput): InventoryItemInput {
 
 export function productPayload(product: InventoryProduct): InventoryProductInput {
   return { ...itemPayload(product), name: product.name, brand_id: product.brand_id, category_id: product.category_id,
+    category_ids: product.category_ids || (product.category_id ? [product.category_id] : []),
     tags: product.tags || [],
     minimum_order_quantity: product.minimum_order_quantity,
     hsn_code: product.hsn_code, image_url: product.image_url, image_urls: (product.image_urls || "").split("|").filter(Boolean),
+    image_background: product.image_background || "#ffffff",
     catalog_visible: product.catalog_visible, best_seller: product.best_seller, sru_special: product.sru_special, home_order: product.home_order };
 }
 
@@ -37,14 +39,15 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const draftKey = `inventory.product.${product?.id || "new"}.${variantMode ? variant?.id || "new-variant" : "base"}.`;
   const clearDrafts = useClearDrafts();
   const [draft, setDraft] = useDraftState<InventoryProductInput & {variant_name:string}>(`${draftKey}form`, () => ({
-    ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, hsn_code: null, image_url: null, image_urls: [],
+    ...EMPTY_ITEM, name: "", brand_id: null, category_id: null, category_ids: [], hsn_code: null, image_url: null, image_urls: [], image_background: "#ffffff",
     tags: [],
     catalog_visible: false, best_seller: false, sru_special: false, home_order: 999, minimum_order_quantity: 1,
     ...(product && !variantMode ? productPayload(product) : {}),
     ...(variantMode ? { pricing_mode: "inherit" as const, image_url: variant?.image_url || null, ...(variant ? itemPayload(variant) : {}) } : {}),
     variant_name: variant?.variant_name || "",
   }));
-  const [tagsText, setTagsText] = useState(() => (draft.tags || []).join(", "));
+  const [newTag, setNewTag] = useState("");
+  const [brandDescription, setBrandDescription] = useDraftState(`${draftKey}brandDescription`, "");
   const [attributes, setAttributes] = useDraftState<Array<[string,string]>>(`${draftKey}attributes`, Object.entries(variant?.attributes || (!variantMode ? product?.attributes : {}) || {}));
   const [gallery, setGallery] = useDraftState(`${draftKey}gallery`, (!variantMode ? product?.image_urls : "")?.split("|").join("\n") || "");
   const [createdLookups, setCreatedLookups] = useState<Pick<InventoryLookups, "brands" | "categories">>({ brands: [], categories: [] });
@@ -56,6 +59,8 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
     brands: [...lookups.brands, ...createdLookups.brands],
     categories: [...lookups.categories, ...createdLookups.categories],
   };
+  const tagOptions = Array.from(new Map([...(lookups.tags || []), ...(draft.tags || [])]
+    .map(tag => [tag.toLocaleLowerCase(), tag])).values()).sort((a, b) => a.localeCompare(b));
   const [lookupNames, setLookupNames] = useDraftState(`${draftKey}lookupNames`, {
     brands: lookups.brands.find(item => item.id === draft.brand_id)?.name ||
       (draft.brand_id && draft.brand_id === product?.brand_id ? product.brand_name : "") || "",
@@ -107,23 +112,29 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       if (entries.some(([key]) => !key.trim()) || new Set(entries.map(([key])=>key.trim())).size !== entries.length) throw new Error("Custom attributes need unique, non-empty names.");
       const item = itemPayload({...draft, attributes:Object.fromEntries(entries.map(([key,value])=>[key.trim(),value.trim()]))});
       const lookupIds = { brand_id: draft.brand_id, category_id: draft.category_id };
+      let categoryIds = draft.category_ids || [];
       if (!variantMode) {
         for (const [kind, field] of [["brands", "brand_id"], ["categories", "category_id"]] as const) {
           const name = lookupNames[kind].trim();
           const existing = lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.toLowerCase());
           let id = !name ? draft[field] || null : existing?.id || draft[field];
           if (name && !id) {
-            const created = await api.inventoryCreateLookup(kind, name);
+            const created = kind === "brands" && brandDescription.trim()
+              ? await api.inventoryCreateLookup(kind, name, { description: brandDescription.trim(), is_active: true })
+              : await api.inventoryCreateLookup(kind, name);
             id = created.id;
             setCreatedLookups(previous => ({ ...previous, [kind]: [...previous[kind], created] }));
           }
           lookupIds[field] = id || null;
           patch({ [field]: lookupIds[field] });
         }
+        categoryIds = [...new Set([...(lookupIds.category_id ? [lookupIds.category_id] : []), ...categoryIds])];
+        lookupIds.category_id = lookupIds.category_id || categoryIds[0] || null;
+        patch({ category_id: lookupIds.category_id, category_ids: categoryIds });
       }
       const result = variantMode && product
         ? await api.inventorySaveVariant(product.id,{...item,image_url:draft.image_url,variant_name:draft.variant_name.trim() || [draft.size,draft.colour].filter(Boolean).join(" / ")},variant?.id)
-        : await api.inventorySaveProduct({...draft,...item,...lookupIds,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
+        : await api.inventorySaveProduct({...draft,...item,...lookupIds,category_ids:categoryIds,image_urls:[...new Set([draft.image_url,...gallery.split(/\r?\n/)].filter((value):value is string=>!!value?.trim()).map(value=>value.trim()))], variant_name:undefined} as InventoryProductInput,product?.id);
       clearDrafts(draftKey);
       onSaved(result);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to save product."); }
@@ -165,18 +176,51 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
       <label>{variantMode?"Variant Name":"Product Name"}<input required={!variantMode} maxLength={200} value={variantMode?draft.variant_name:draft.name} onChange={event=>patch(variantMode?{variant_name:event.target.value}:{name:event.target.value})}/></label>
       <label>Item Name<input maxLength={200} value={draft.item_name||""} onChange={event=>patch({item_name:event.target.value})}/></label>
       <label>SKU<input maxLength={100} value={draft.sku||""} onChange={event=>patch({sku:event.target.value})}/></label>
-      {!variantMode?<label className="company-field-wide">Product tags
-        <input maxLength={1200} value={tagsText} onChange={event=>{setTagsText(event.target.value);patch({tags:Array.from(new Set(event.target.value.split(",").map(tag=>tag.trim()).filter(Boolean)))})}} placeholder="New collection, Handcrafted, Festive" />
-        <span className="ops-copy-note">Add up to 30 comma-separated labels (80 characters each). Tags are reusable across products and searchable in the storefront. Homepage section membership is managed separately in Storefront Design.</span>
-      </label>:null}
+      {!variantMode?<div className="company-field-wide">
+        <label>Product labels<select multiple size={Math.min(7, Math.max(3, tagOptions.length))} value={draft.tags || []}
+          onChange={event=>{
+            const tags = Array.from(event.currentTarget.selectedOptions, option=>option.value);
+            if (tags.length > 30) { setError("Select at most 30 product labels."); return; }
+            setError(""); patch({tags});
+          }}>
+          {tagOptions.map(tag=><option key={tag.toLocaleLowerCase()} value={tag}>{tag}</option>)}
+        </select></label>
+        <label>New label<input maxLength={80} value={newTag} onChange={event=>setNewTag(event.target.value)} /></label>
+        <button type="button" className="ops-link-btn" disabled={!newTag.trim() || (draft.tags || []).length >= 30}
+          onClick={()=>{
+            const name = newTag.trim();
+            const existing = tagOptions.find(tag=>tag.toLocaleLowerCase()===name.toLocaleLowerCase()) || name;
+            if (!(draft.tags || []).some(tag=>tag.toLocaleLowerCase()===existing.toLocaleLowerCase())) patch({tags:[...(draft.tags || []), existing]});
+            setNewTag("");
+          }}>Add label</button>
+        <span className="ops-copy-note">Select up to 30 labels (on desktop, use Ctrl or Command to select more than one). New labels are created when the product is saved.</span>
+      </div>:null}
       {!variantMode?<>{([["brands", "brand_id", "Brand"], ["categories", "category_id", "Category"]] as const).map(([kind, field, label]) =>
         <label key={kind}>{label}<input list={`${draftKey}${kind}`} maxLength={150} value={lookupNames[kind]}
           placeholder={`Select or type a new ${label.toLowerCase()}`} onChange={event => {
             const name = event.target.value;
+            if (kind === "brands" && name.trim().toLowerCase() !== lookupNames.brands.trim().toLowerCase()) setBrandDescription("");
             setLookupNames(previous => ({ ...previous, [kind]: name }));
-            patch({ [field]: lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.trim().toLowerCase())?.id || null });
+            const id = lookupOptions[kind].find(entry => entry.name.toLowerCase() === name.trim().toLowerCase())?.id || null;
+            patch(kind === "categories" ? { category_id: id, category_ids: id
+              ? [...new Set([id, ...(draft.category_ids || [])])]
+              : (draft.category_ids || []).filter(category => category !== draft.category_id) }
+              : { [field]: id });
           }} /><datalist id={`${draftKey}${kind}`}>{lookupOptions[kind].map(entry => <option key={entry.id} value={entry.name}/>)}</datalist>
           <small>New {label.toLowerCase()} names are created when you save the product.</small></label>)}
+        {lookupNames.brands.trim() && !lookupOptions.brands.some(entry => entry.name.toLowerCase() === lookupNames.brands.trim().toLowerCase()) && !draft.brand_id ?
+          <label>New brand description (optional)<textarea maxLength={2000} value={brandDescription} onChange={event=>setBrandDescription(event.target.value)}/></label> : null}
+        <label>Additional categories<select multiple size={Math.min(7, Math.max(3, lookupOptions.categories.length))}
+          value={draft.category_ids || []} onChange={event=>{
+            const ids = Array.from(event.currentTarget.selectedOptions, option=>option.value);
+            if (ids.length > 30) { setError("Select at most 30 categories."); return; }
+            const primary = ids.includes(draft.category_id || "") ? draft.category_id : ids[0] || null;
+            setError(""); patch({ category_id: primary, category_ids: ids });
+            setLookupNames(previous => ({ ...previous, categories: lookupOptions.categories.find(entry=>entry.id===primary)?.name || "" }));
+          }}>
+          {(draft.category_ids || []).filter(id=>!lookupOptions.categories.some(entry=>entry.id===id)).map(id=><option key={id} value={id}>{id} (inactive)</option>)}
+          {lookupOptions.categories.map(entry=><option key={entry.id} value={entry.id}>{entry.name}</option>)}
+        </select><small>Select multiple categories; the category above is the primary one.</small></label>
         <label>HSN / SAC{gstRegistered && !product ? " (required)" : ""}<select required={gstRegistered && !product} value={draft.hsn_code||""} onChange={event=>patch({hsn_code:event.target.value||null})}><option value="">Not set</option>{draft.hsn_code&&!hsnOptions.some(item=>item.code===draft.hsn_code)?<option value={draft.hsn_code}>{draft.hsn_code} (inactive)</option>:null}{hsnOptions.map(item=><option key={item.id} value={item.code}>{item.code} - {item.description} ({item.gst_rate}%)</option>)}</select></label>
         <div><button type="button" className="ops-link-btn" onClick={()=>setShowNewHsn(!showNewHsn)}>{showNewHsn ? "Cancel new HSN / SAC" : "Create HSN / SAC"}</button></div>
         {showNewHsn ? <div className="inventory-wide">
@@ -209,7 +253,9 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
         {draft.image_url ? <button className="ops-link-btn" type="button" onClick={()=>patch({image_url:null})}>Use main product image</button> : null}
         {variant?.image_original_url && draft.image_url === variant.image_url ? <a className="social-caption" href={variant.image_original_url} target="_blank" rel="noreferrer">View original upload</a> : null}
       </div> : null}
-      {!variantMode?<><label>Primary Image URL / Asset Path<input aria-label="Primary image URL or asset path" value={draft.image_url?.startsWith('data:')?"":draft.image_url||""} placeholder={draft.image_url?.startsWith('data:')?"Uploaded image":""} onChange={event=>patch({image_url:event.target.value||null})}/></label>
+      {!variantMode?<><label>Product image background<input type="color" value={draft.image_background || "#ffffff"} onChange={event=>patch({image_background:event.target.value})}/>
+        <small>Saved with the product. A non-white background requires a transparent photo or AI background removal. Existing uploaded photos are re-rendered on save; external image links must be uploaded first.</small></label>
+        <label>Primary Image URL / Asset Path<input aria-label="Primary image URL or asset path" value={draft.image_url?.startsWith('data:')?"":draft.image_url||""} placeholder={draft.image_url?.startsWith('data:')?"Uploaded image":""} onChange={event=>patch({image_url:event.target.value||null})}/></label>
         <label>Product Image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{void imageUpload(event.target.files?.[0]);event.target.value="";}}/>        {draft.image_url?<img className="inventory-image-preview" src={toAssetUrl(draft.image_url)} alt="Product preview"/>:null}{draft.image_url&&savedImages.originals[draft.image_url]?<a className="social-caption" href={savedImages.originals[draft.image_url]} target="_blank" rel="noreferrer">View original upload</a>:null}<span className="social-caption">On save, uploads are enhanced into a 1000×1000 WebP for the website; the original is kept too. Up to 1 MB.</span></label>
         <label className="inventory-wide">Gallery Image URLs<textarea rows={2} value={gallery} onChange={event=>setGallery(event.target.value)}/></label>
         {product&&draftImages.length?<div className="inventory-wide inventory-image-fixes" aria-label="Fix product images with AI">
@@ -219,7 +265,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
             const saved = savedImages.urls.has(image);
             return <li key={image}>
               <img src={toAssetUrl(image)} alt="" loading="lazy"/>
-              <button type="button" className="btn light" disabled={!saved || !!fixingImage || imageBusy} aria-busy={fixingImage === image || undefined}
+              <button type="button" className="btn light" disabled={!saved || !!fixingImage || imageBusy || (draft.image_background || "#ffffff") !== (product.image_background || "#ffffff")} aria-busy={fixingImage === image || undefined}
                 title={saved ? "Fix this image with AI" : "Save the product first, then fix this image"} onClick={() => void fixImage(image)}>
                 <Sparkles size={14} aria-hidden="true"/>{fixingImage === image ? "Fixing..." : "Fix with AI"}</button>
               {!saved?<small>Save first</small>:null}

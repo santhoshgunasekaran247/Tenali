@@ -76,6 +76,9 @@ import type {
 import { tenantFetch } from "./features/tenantTransport";
 
 export const API_BASE = "/api";
+export type BulkKind = "products" | "variants" | "hsn" | "parties" | "brands" | "categories" | "images";
+export type BulkJob = { id: string; kind: BulkKind; processed: number; total: number; completed: boolean;
+  created_at: string; expires_at: string };
 export const API_RESULT_EVENT = "tenali-api-result";
 export type ApiResult = { method: string; path: string; ok: boolean; status: number; data?: unknown; message?: string };
 
@@ -110,6 +113,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
             return `${location ? `${location}: ` : ""}${String(item.msg)}`;
           }).join("; ");
         }
+
       }
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
@@ -123,7 +127,31 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return data;
 }
 
+async function bulkFile(path: string, options?: RequestInit) {
+  const response = await tenantFetch(`${API_BASE}${path}`, options);
+  if (!response.ok) {
+    const body = await response.text();
+    let message = body;
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && "detail" in parsed && typeof parsed.detail === "string") message = parsed.detail;
+    } catch { /* Response may not be JSON. */ }
+    throw new Error(message || `Request failed: ${response.status}`);
+  }
+  return { blob: await response.blob(), success: response.headers.get("X-Bulk-Success-Count"), failures: response.headers.get("X-Bulk-Failure-Count") };
+}
+
 export const api = {
+  bulkTemplate: (kind: BulkKind) => bulkFile(`/bulk/templates/${kind}`),
+  bulkExport: (kind: BulkKind, ids: string[]) => bulkFile(`/bulk/exports/${kind}`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }),
+  bulkJobs: () => request<{ items: BulkJob[] }>("/bulk/jobs"),
+  bulkStart: (kind: BulkKind, file: File, key: string) => request<BulkJob>(`/bulk/jobs/${kind}?${new URLSearchParams({ client_key: key })}`,
+    { method: "POST", headers: { "Content-Type": file.name.toLowerCase().endsWith(".zip")
+      ? "application/zip" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, body: file }),
+  bulkAdvance: (id: string) => request<BulkJob>(`/bulk/jobs/${id}/advance`, { method: "POST" }),
+  bulkResults: (id: string) => bulkFile(`/bulk/jobs/${id}/results`),
+  bulkDelete: (id: string) => request(`/bulk/jobs/${id}`, { method: "DELETE" }),
   dashboard: (period: { month: string } | { from_date: string; to_date: string }, storeId: string) => request<OperationsDashboard>(`/dashboard?${new URLSearchParams({ ...period, ...(storeId ? { store_id: storeId } : {}) })}`),
   publicCompany:()=>request<import('./features/auth').PublicCompany>('/catalog/company'),
   auditEvents:(from:string,to:string,offset:number,limit=100)=>request<{items:Array<{id:string;action:string;entity_type:string;entity_id:string;created_at:string;old_value:unknown;new_value:unknown;actor_user_id?:string|null}>}>(`/reports/audit-events?offset=${offset}&limit=${limit}${from?`&from_date=${from}`:''}${to?`&to_date=${to}`:''}`),

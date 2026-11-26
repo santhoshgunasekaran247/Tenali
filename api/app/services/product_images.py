@@ -20,13 +20,20 @@ _rendered: OrderedDict = OrderedDict()
 _rendered_lock = threading.Lock()
 
 
-def display_image(content: bytes, size: int = DISPLAY_SIZE) -> bytes:
-    key = (hashlib.sha256(content).hexdigest(), size)
+def normalize_background(background: str) -> str:
+    if not isinstance(background, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
+        raise HTTPException(422, "Choose a valid product image background color.")
+    return background.lower()
+
+
+def display_image(content: bytes, size: int = DISPLAY_SIZE, *, background: str = "#ffffff") -> bytes:
+    background = normalize_background(background)
+    key = (hashlib.sha256(content).hexdigest(), size, background)
     with _rendered_lock:
         if key in _rendered:
             _rendered.move_to_end(key)
             return _rendered[key]
-    result = _render(content, size)
+    result = _render(content, size, background)
     with _rendered_lock:
         _rendered[key] = result
         while len(_rendered) > RENDER_CACHE_SIZE:
@@ -34,7 +41,7 @@ def display_image(content: bytes, size: int = DISPLAY_SIZE) -> bytes:
     return result
 
 
-def _render(content: bytes, size: int) -> bytes:
+def _render(content: bytes, size: int, background: str) -> bytes:
     """Website display version of a product photo as a square WebP. When AI segmentation (or the photo's
     own transparency) isolates the product, only the product is kept, on pure white with a soft contact
     shadow. Otherwise the whole photo fills the square over a blurred extension of itself, never a
@@ -61,7 +68,7 @@ def _render(content: bytes, size: int) -> bytes:
     if mask is None:
         mask = vision_models.product_mask(image)
     box = mask.point(lambda value: 255 if value > 40 else 0).getbbox() if mask is not None else None
-    canvas = Image.new("RGB", (size, size), "white")
+    canvas = Image.new("RGB", (size, size), background)
     if box:
         margin = max(2, round(max(box[2] - box[0], box[3] - box[1]) * 0.01))
         box = (max(0, box[0] - margin), max(0, box[1] - margin), min(image.width, box[2] + margin), min(image.height, box[3] + margin))
@@ -79,6 +86,8 @@ def _render(content: bytes, size: int) -> bytes:
         canvas.paste((60, 60, 60), mask=layer.filter(ImageFilter.GaussianBlur(max(6, image.width // 30))))
         canvas.paste(image, (left, top), mask)
     else:
+        if background != "#ffffff":
+            raise HTTPException(422, "The product background could not be isolated. Use a transparent image, enable AI segmentation, or choose white.")
         image = _enhance(trim_background(image), size, vision_models)
         cover = max(size / image.width, size / image.height)
         backdrop = image.resize((max(size, round(image.width * cover)), max(size, round(image.height * cover))), Image.BILINEAR)

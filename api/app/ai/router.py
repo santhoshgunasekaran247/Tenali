@@ -13,6 +13,7 @@ from app.ai.actions import DraftCreate, DraftEdit, DraftApproval, ExecutionAppro
 from app.ai.drafts import DraftService, available_actions
 from app.ai.execution import ExecutionService
 from app.ai.workflows import WorkflowCreate, WorkflowEdit, WorkflowService, workflow_schema
+from app.ai.catalog_workbook import download_catalog
 
 router = APIRouter()
 
@@ -178,6 +179,12 @@ def delete(conversation_id: UUID, expected_version: int = Query(ge=1), service=D
 @router.get("/conversations/{conversation_id}/messages")
 def messages(conversation_id: UUID, offset: int = Query(0, ge=0), client_key: UUID | None = None, service=Depends(assistant)):
     return service.messages(conversation_id, offset, client_key)
+
+@router.get("/conversations/{conversation_id}/messages/{message_id}/catalog")
+def catalog_workbook(conversation_id: UUID, message_id: UUID, service=Depends(assistant)):
+    return Response(download_catalog(service, conversation_id, message_id), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="tenali-catalog.zip"',
+                             "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.post("/conversations/{conversation_id}/messages")

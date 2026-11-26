@@ -94,7 +94,10 @@ def _catalog_categories_query() -> str:
           and (
               exists(select 1 from products product
                   where product.company_id = product_categories.company_id
-                    and product.category_id = product_categories.id
+                    and (product.category_id = product_categories.id or exists (
+                        select 1 from product_category_products assignment
+                        where assignment.company_id=product.company_id and assignment.product_id=product.id
+                          and assignment.category_id=product_categories.id))
                     and product.is_active = true and product.catalog_visible = true)
               or exists(select 1 from storefront_section_categories selection
                   join storefront_sections section
@@ -151,7 +154,7 @@ class CatalogService:
         brands = self.db.execute(
             text(
                 """
-                select id, code, name, coalesce(description, '') as description
+                select id, code, name, coalesce(description, '') as description, image_url
                 from brands
                 where company_id = :company_id and is_active = true
                 order by name asc
@@ -231,7 +234,7 @@ class CatalogService:
         brands = self.db.execute(
             text(
                 """
-                select id, code, name, coalesce(description, '') as description
+                select id, code, name, coalesce(description, '') as description, image_url
                 from brands
                 where company_id = :company_id and is_active = true
                 order by name asc
@@ -253,12 +256,22 @@ class CatalogService:
             params["brand_code"] = brand
 
         if category and category != "all":
-            query += " and c.code = :category_slug"
+            query += """ and (c.code = :category_slug or exists (
+                select 1 from product_category_products assignment
+                join product_categories category on category.company_id=assignment.company_id and category.id=assignment.category_id
+                where assignment.company_id=p.company_id and assignment.product_id=p.id
+                  and category.is_active and category.code=:category_slug))"""
             params["category_slug"] = category
         if search and search.strip():
             query += """ and (
                 p.name ilike :search or coalesce(p.description, '') ilike :search
                 or coalesce(b.name, '') ilike :search or coalesce(c.display_title, c.name, '') ilike :search
+                or exists (
+                    select 1 from product_category_products assignment
+                    join product_categories category on category.company_id=assignment.company_id and category.id=assignment.category_id
+                    where assignment.company_id=p.company_id and assignment.product_id=p.id
+                      and category.is_active and coalesce(category.display_title, category.name, '') ilike :search
+                )
                 or exists (
                     select 1
                     from product_tag_products assignment

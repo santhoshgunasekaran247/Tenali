@@ -3,7 +3,7 @@ import os
 from decimal import Decimal
 from datetime import date, timedelta
 from uuid import uuid4
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -15,6 +15,97 @@ from app.services.inventory_service import InventoryService
 
 
 class InventoryRulesTests(unittest.TestCase):
+    def test_multiple_categories_validate_and_select_primary(self):
+        first, second = uuid4(), uuid4()
+        product = ProductInput(name="Test", category_ids=[first, second])
+        self.assertEqual(product.category_id, first)
+        with self.assertRaises(ValidationError):
+            ProductInput(name="Test", category_ids=[first, first])
+        with self.assertRaises(ValidationError):
+            ProductInput(name="Test", category_id=uuid4(), category_ids=[first])
+
+    @patch("app.services.inventory_service.FileStore")
+    def test_legacy_update_preserves_additional_categories(self, files):
+        primary = uuid4()
+        db = MagicMock()
+        service = object.__new__(InventoryService)
+        service.db, service.company_id = db, "company"
+        service._product = MagicMock(return_value={"category_id": primary, "image_originals": {}})
+        service._validate_item = MagicMock()
+        service._write = MagicMock(return_value="product")
+        service._check_price = MagicMock()
+        service.detail = MagicMock(return_value={"id": "product"})
+        files.return_value.product_image.return_value = (None, None)
+        service.save_product(ProductInput(name="Updated", category_id=primary), "product", commit=False)
+        self.assertFalse(any("product_category_products" in str(call.args[0]) for call in db.execute.call_args_list))
+
+    @patch("app.services.inventory_service.FileStore")
+    def test_explicit_category_selection_replaces_assignments(self, files):
+        primary, second = uuid4(), uuid4()
+        db = MagicMock()
+        service = object.__new__(InventoryService)
+        service.db, service.company_id = db, "company"
+        service._product = MagicMock(return_value={"category_id": primary, "image_originals": {}})
+        service._validate_item = MagicMock()
+        service._write = MagicMock(return_value="product")
+        service._check_price = MagicMock()
+        service.detail = MagicMock(return_value={"id": "product"})
+        files.return_value.product_image.return_value = (None, None)
+        service.save_product(ProductInput(name="Updated", category_ids=[primary, second]), "product", commit=False)
+        queries = db.execute.call_args_list
+        self.assertEqual(len(queries), 3)
+        self.assertIn("delete from product_category_products", str(queries[0].args[0]))
+        self.assertEqual([call.args[1]["category"] for call in queries[1:]], [str(primary), str(second)])
+
+    @patch("app.services.product_images.display_image", return_value=b"themed")
+    @patch("app.services.inventory_service.FileStore")
+    def test_changing_background_rerenders_saved_original_and_preserves_it(self, files, render):
+        db = MagicMock()
+        service = object.__new__(InventoryService)
+        service.db, service.company_id = db, "company"
+        service._product = MagicMock(return_value={
+            "category_id": None, "image_url": "old", "image_urls": "old",
+            "image_background": "#ffffff", "image_originals": {"old": "original"},
+        })
+        service._validate_item = MagicMock()
+        service._write = MagicMock(return_value="product")
+        service._check_price = MagicMock()
+        service.detail = MagicMock(return_value={"id": "product"})
+        files.return_value.stored_product_image.return_value = b"original content"
+        files.return_value.product_image.return_value = ("https://example.test/old", None)
+        files.return_value.save.return_value = {"company_id": "company", "id": "new"}
+        service.save_product(ProductInput(name="Updated", image_url="https://example.test/old",
+                                         image_background="#123456"), "product", commit=False)
+        # A newly supplied external URL is handled as a new image; it is not read as a stored original.
+        files.return_value.stored_product_image.assert_not_called()
+        service._product.return_value["image_url"] = "https://example.test/old"
+        service._product.return_value["image_urls"] = "https://example.test/old"
+        service._product.return_value["image_originals"] = {"https://example.test/old": "original"}
+        service.save_product(ProductInput(name="Updated", image_url="https://example.test/old",
+                                         image_background="#123456"), "product", commit=False)
+        files.return_value.stored_product_image.assert_called_once_with("company", "original")
+        render.assert_called_once_with(b"original content", background="#123456")
+        values = service._write.call_args.args[1]
+        self.assertEqual(values["image_url"], "/api/public-images/company/new")
+        self.assertEqual(values["image_originals"], {"/api/public-images/company/new": "original"})
+
+    def test_inventory_lookups_load_only_workspace_labels(self):
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = "company"
+        service = InventoryService(db, "company")
+        db.execute.reset_mock()
+        db.execute.side_effect = [
+            MagicMock(mappings=MagicMock(return_value=[])),
+            MagicMock(mappings=MagicMock(return_value=[])),
+            MagicMock(mappings=MagicMock(return_value=[{"name": "Featured"}, {"name": "Seasonal"}])),
+            MagicMock(mappings=MagicMock(return_value=[])),
+        ]
+        result = service.lookups()
+        self.assertEqual(result["tags"], ["Featured", "Seasonal"])
+        tag_query = db.execute.call_args_list[2]
+        self.assertIn("company_id=:company", str(tag_query.args[0]))
+        self.assertEqual(tag_query.args[1]["company"], "company")
+
     def test_product_creation_requires_hsn_only_for_registered_companies(self):
         db = MagicMock()
         service = InventoryService(db, "company")
@@ -99,7 +190,7 @@ class InventoryDatabaseTests(unittest.TestCase):
         self.db = Session(bind=self.connection, join_transaction_mode="create_savepoint")
         self.company, self.other, self.vendor_a, self.vendor_b = [str(uuid4()) for _ in range(4)]
         for company in [self.company, self.other]:
-            self.db.execute(text("insert into companies(id,company_name) values(:id,'Inventory regression fixture')"), {"id": company})
+            self.db.execute(text("insert into companies(id,company_name,gst_registered) values(:id,'Inventory regression fixture',false)"), {"id": company})
             from schema_support import ensure_default_store
             ensure_default_store(self.db, company)
         for vendor in [self.vendor_a, self.vendor_b]:

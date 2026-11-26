@@ -5,6 +5,7 @@ create table if not exists brands (
     name text not null,
     is_active boolean not null default true,
     description text,
+    image_url text,
     unique(company_id, name)
 );
 
@@ -45,6 +46,7 @@ create table if not exists products (
     description text,
     image_url text,
     image_urls text,
+    image_background text not null default '#ffffff' check (image_background ~ '^#[0-9a-fA-F]{6}$'),
     mrp numeric(14,2),
     mrp_display text,
     selling_price numeric(14,2),
@@ -80,6 +82,17 @@ create table if not exists products (
 create unique index if not exists uq_products_company_id on products(company_id, id);
 create unique index if not exists uq_product_categories_company_id on product_categories(company_id, id);
 create unique index if not exists uq_brands_company_id on brands(company_id, id);
+
+create table if not exists product_category_products (
+    company_id uuid not null,
+    product_id uuid not null,
+    category_id uuid not null,
+    primary key(company_id, product_id, category_id),
+    foreign key(company_id, product_id) references products(company_id, id) on delete cascade,
+    foreign key(company_id, category_id) references product_categories(company_id, id) on delete cascade
+);
+create index if not exists idx_product_category_products_category
+    on product_category_products(company_id, category_id, product_id);
 
 create table if not exists product_tags (
     id uuid primary key default gen_random_uuid(),

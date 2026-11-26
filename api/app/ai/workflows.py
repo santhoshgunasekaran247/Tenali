@@ -207,6 +207,9 @@ def coerce_payload(action, payload):
 
 def workflow_schema(action):
     schema = deepcopy(ACTIONS[action].schema.model_json_schema())
+    if action == "product_create":
+        for field, title in (("mrp", "Vendor MRP (INR)"), ("buying_price", "Vendor buying price (INR)")):
+            schema["properties"][field] = {**TypeAdapter(Money | None).json_schema(), "title": title}
     if action in {"purchase_create", "invoice_create"}:
         schema["properties"]["fully_paid"] = {"type": "boolean", "title": "Fully paid now"}
     if action == "purchase_create":
@@ -216,8 +219,9 @@ def workflow_schema(action):
         for key, field in definition.get("properties", {}).items():
             if key in REFERENCES:
                 field["x-workflow-reference"] = True
-            elif key == "product_ids":
-                field["items"]["x-workflow-reference"] = True
+            elif key in {"product_ids", "category_ids"}:
+                array = next((option for option in field.get("anyOf", []) if option.get("type") == "array"), field)
+                array["items"]["x-workflow-reference"] = True
             elif key in CHOICES and "enum" not in field:
                 definition["properties"][key] = {"type": "string", "title": field.get("title", key),
                                                  "enum": list(CHOICES[key]), "x-enum-labels": CHOICES[key]}
@@ -242,7 +246,9 @@ def search_reference(action, field):
         current = current.get("items", {}) if key.isdigit() else current.get("properties", {}).get(key, {})
     if not current.get("x-workflow-reference"):
         raise HTTPException(422, "This field is not a searchable record reference.")
-    spec = REFERENCES["product_id"] if field.split(".")[-1].isdigit() else REFERENCES[field.split(".")[-1]]
+    parts = field.split(".")
+    spec = REFERENCES["category_id" if len(parts) > 1 and parts[-2] == "category_ids" else "product_id"] \
+        if parts[-1].isdigit() else REFERENCES[parts[-1]]
     return spec
 
 
@@ -310,6 +316,9 @@ def document_gst_basis(payload):
 
 def business_payload(action, payload):
     values = deepcopy(payload)
+    if action == "product_create":
+        for field in ("preferred_vendor_id", "mrp", "buying_price"):
+            values.pop(field, None)
     if action in {"purchase_create", "invoice_create"}:
         values.pop("fully_paid", None)
     if action == "purchase_create":
@@ -322,6 +331,13 @@ def business_payload(action, payload):
 def validate_workflow_payload(action, payload):
     bounded_payload(payload)
     reject_extra_fields(ACTIONS[action].schema, business_payload(action, payload))
+    if action == "product_create":
+        try:
+            for field in ("mrp", "buying_price"):
+                if payload.get(field) is not None:
+                    TypeAdapter(Money).validate_python(payload[field])
+        except ValidationError as error:
+            raise HTTPException(422, "Vendor MRP and buying price must be non-negative amounts with at most two decimals.") from error
     if action in {"purchase_create", "invoice_create"}:
         try:
             if payload.get("fully_paid") is not None:
@@ -379,6 +395,8 @@ def reset_review(item, steps):
         for key, step_id in parent.get("offer_steps", {}).items():
             if step_id == previous:
                 parent["offer_steps"][key] = item["id"]
+        if parent.get("preferred_offer_step") == previous:
+            parent["preferred_offer_step"] = item["id"]
 
 
 def reference_fields(payload, prefix=()):
@@ -386,9 +404,10 @@ def reference_fields(payload, prefix=()):
         path = (*prefix, key)
         if key in REFERENCES and value not in (None, ""):
             yield path, value, REFERENCES[key]
-        elif key == "product_ids" and isinstance(value, list):
+        elif key in {"product_ids", "category_ids"} and isinstance(value, list):
             for index, item in enumerate(value):
-                yield (*path, index), item, REFERENCES["product_id"]
+                if item not in (None, ""):
+                    yield (*path, index), item, REFERENCES["category_id" if key == "category_ids" else "product_id"]
         elif isinstance(value, dict):
             yield from reference_fields(value, path)
         elif isinstance(value, list):
@@ -405,6 +424,8 @@ def set_path(payload, path, value):
 
 
 def preserve_bindings(item, payload):
+    if item.get("preferred_offer_step") and payload.get("preferred_vendor_id") != item["payload"].get("preferred_vendor_id"):
+        raise HTTPException(409, "Keep the linked preferred vendor. Discard this workflow before choosing another vendor.")
     if item.get("offer_steps"):
         vendor = uuid_value(payload.get("vendor_party_id"))
         keys = {f"{uuid_value(line.get('product_id'))}:{uuid_value(line.get('variant_id')) or ''}:{vendor}"
@@ -500,6 +521,15 @@ def workflow_view(row):
 
 def missing_fields(action, payload, gst_registered=True):
     issues = []
+    if action == "product_create":
+        for field in ("mrp", "buying_price"):
+            if payload.get(field) is not None:
+                try:
+                    TypeAdapter(Money).validate_python(payload[field])
+                except ValidationError:
+                    issues.append({"field": field, "message": "Enter a non-negative amount with at most two decimals."})
+        if any(payload.get(field) is not None for field in ("mrp", "buying_price")) and not payload.get("preferred_vendor_id"):
+            issues.append({"field": "preferred_vendor_id", "message": "Select the vendor for these offer prices."})
     if action in {"party_update", "account_update"} and not payload:
         issues.append({"field": "", "message": "Enter at least one changed field."})
     for key in required_fields(action, payload, gst_registered):
@@ -770,7 +800,7 @@ class WorkflowService:
                     # Return to workflow preparation when new text introduces names or missing prerequisites.
                     draft = self.drafts.lock(draft["id"], draft["version"])
                     self.db.execute(text("""update ai_action_drafts set status='discarded',payload='{}',validation=null,
-                        approved_at=null,approved_version=null,version=version+1 where id=:id
+                        approved_at=null,approved_version=null,version=version+1,updated_at=now() where id=:id
                         and company_id=:company and user_id=:user"""), {**self.scope, "id": draft["id"]})
                     root["payload"] = merged
                     reset_review(root, row["plan"]["steps"])
@@ -1094,6 +1124,32 @@ class WorkflowService:
             item["issues"].append({"field": f"lines.{index}.product_id",
                                    "message": "Complete the vendor offer prerequisite first."})
 
+    def new_product_offer(self, item, steps):
+        vendor = uuid_value(item["payload"].get("preferred_vendor_id"))
+        if not vendor:
+            return
+        if "offer_create" not in self.actions:
+            item["issues"].append({"field": "preferred_vendor_id",
+                "message": "Enable the vendor offer action to map this preferred vendor, or clear the preference."})
+            return
+        child = next((child for child in steps if child["id"] == item.get("preferred_offer_step")), None)
+        if not child:
+            if len(steps) >= MAX_STEPS:
+                item["issues"].append({"field": "preferred_vendor_id", "message": "Too many prerequisites; split this entry."})
+                return
+            child = step("offer_create", {"product_id": None, "vendor_id": vendor})
+            child["bindings"]["product_id"] = {"step_id": item["id"], "path": ["product_id"]}
+            child["labels"]["product_id"] = {"value": "", "label": item["payload"].get("name") or "New product"}
+            steps.append(child)
+            item["preferred_offer_step"] = child["id"]
+        if not child.get("draft_id"):
+            child["payload"]["vendor_id"] = vendor
+            for field in ("mrp", "buying_price"):
+                if field in item["payload"]:
+                    child["payload"][field] = item["payload"][field]
+            if item["labels"].get("preferred_vendor_id"):
+                child["labels"]["vendor_id"] = deepcopy(item["labels"]["preferred_vendor_id"])
+
     def prepare(self, row, create_request=None):
         steps = row["plan"]["steps"]
         by_id = {item["id"]: item for item in steps}
@@ -1112,6 +1168,13 @@ class WorkflowService:
         for item in steps:
             if item.get("draft_id"):
                 draft = self.drafts.get(item["draft_id"])
+                if item["action"] == "product_create" and draft["status"] != "executed" and draft["payload"].get("preferred_vendor_id"):
+                    self.drafts.lock(draft["id"], draft["version"])
+                    self.db.execute(text("""update ai_action_drafts set status='discarded',payload='{}',validation=null,
+                        approved_at=null,approved_version=null,version=version+1 where id=:id
+                        and company_id=:company and user_id=:user"""), {**self.scope, "id": draft["id"]})
+                    reset_review(item, steps)
+                    continue
                 item["draft_status"] = draft["status"]
                 if draft["status"] == "executed":
                     execution = self.db.execute(text("""select result from ai_executions where draft_id=:id
@@ -1202,6 +1265,8 @@ class WorkflowService:
                 self.loan_direction(item)
             if action.key == "purchase_create":
                 self.purchase_offers(item, steps)
+            if action.key == "product_create":
+                self.new_product_offer(item, steps)
             if action.key in {"purchase_create", "invoice_create", "quotation_create"}:
                 item["estimate"] = self.document_estimate(item)
             # One clear message per field; linked fields wait on their prerequisite step instead of showing UUID errors.
@@ -1301,13 +1366,16 @@ class WorkflowService:
                 edit.payload = normalize_document_proposal(item["action"], edit.payload)
             validate_workflow_payload(item["action"], edit.payload)
             preserve_bindings(item, edit.payload)
-            if any(item["id"] in parent.get("offer_steps", {}).values() for parent in row["plan"]["steps"]):
+            if any(item["id"] in parent.get("offer_steps", {}).values() or item["id"] == parent.get("preferred_offer_step")
+                   for parent in row["plan"]["steps"]):
                 for field in ("product_id", "variant_id", "vendor_id"):
                     old, new = item["payload"].get(field), edit.payload.get(field)
                     label = item["labels"].get(field, {}).get("label")
                     if new != old and (not label or normalize(new) != normalize(label)):
                         raise HTTPException(409, "Keep the linked vendor and product on this offer prerequisite.")
                     edit.payload[field] = old
+                if any(item["id"] == parent.get("preferred_offer_step") for parent in row["plan"]["steps"]) and edit.payload.get("is_active") is False:
+                    raise HTTPException(422, "The preferred vendor offer must be active.")
             if item["target"] != edit.target:
                 if item.get("hydrated"):
                     edit.payload = {**item.get("requested_fields", {}),

@@ -44,6 +44,50 @@ const products = [product("tagged"), product("untagged", { hsn_code: null }), pr
 const selects = tree => find(tree, node => node.type === "select");
 const options = select => find(select, node => node.type === "option").map(option => option.props.value);
 
+test("bulk upload resumes the saved job after an interrupted advance", async () => {
+  const state = [], refs = [], effects = [];
+  let stateIndex = 0, refIndex = 0, fail = true;
+  const calls = [];
+  const job = { id: "job", kind: "brands", processed: 0, total: 1, completed: false, expires_at: "2030-01-01" };
+  const react = {
+    useState(initial) { const i = stateIndex++; if (!(i in state)) state[i] = initial;
+      return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; },
+    useRef(initial) { const i = refIndex++; return refs[i] || (refs[i] = { current: initial }); },
+    useEffect(callback) { effects.push(callback); },
+  };
+  const api = {
+    bulkJobs: async () => ({ items: calls.length ? [job] : [] }),
+    bulkStart: async (kind, file, key) => { calls.push(["start", kind, file.name, key]); return job; },
+    bulkAdvance: async id => { calls.push(["advance", id]); if (fail) { fail = false; throw new Error("Connection lost"); }
+      return { ...job, processed: 1, completed: true }; },
+  };
+  const source = readFileSync(path.join(__dirname, "..", "src", "components", "BulkWorkbookPanel.tsx"), "utf8");
+  const compiled = ts.transpileModule(source, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
+  } }).outputText;
+  const exports = {};
+  vm.runInNewContext(compiled, { exports, Error, crypto: { randomUUID: () => "stable-key" },
+    require: name => name === "react" ? react : name === "../api" ? { api } :
+      name === "react/jsx-runtime" ? { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) } : require(name) });
+  const render = () => { stateIndex = 0; refIndex = 0; return exports.BulkWorkbookPanel({ selectedProducts: [], onImported() {} }); };
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  let tree = render();
+  effects.splice(0).forEach(effect => effect());
+  await flush();
+  tree = render();
+  const fileInput = find(tree, node => node.type === "input" && node.props.type === "file")[0];
+  fileInput.props.onChange({ target: { files: [{ name: "items.xlsx", size: 100 }] } });
+  tree = render();
+  find(tree, node => node.type === "button" && text(node) === "Upload workbook")[0].props.onClick();
+  await flush(); await flush();
+  tree = render();
+  assert.match(text(tree), /Connection lost/);
+  find(tree, node => node.type === "button" && text(node) === "Resume")[0].props.onClick();
+  await flush(); await flush();
+  assert.deepEqual(calls, [["start", "products", "items.xlsx", "stable-key"], ["advance", "job"], ["advance", "job"]]);
+  assert.match(text(render()), /Import complete/);
+});
+
 function render(line, vendorId) {
   const changes = [];
   const tree = loadEditor()({ lines: [{ description: "", hsn: "", quantity: 1, rate: 0, gst_rate: 0, ...line }], masters, products, vendorId, onChange: next => changes.push(next) });
@@ -185,8 +229,12 @@ test("existing brand/category names are matched case-insensitively and may be cl
   await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
   assert.deepEqual([saved[0].brand_id, saved[0].category_id], ["b1", "c1"]);
   input(editor.render(), "brands").props.onChange({ target: { value: "" } });
+  input(editor.render(), "categories").props.onChange({ target: { value: "HOM" } });
+  input(editor.render(), "categories").props.onChange({ target: { value: "" } });
   await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
   assert.equal(saved[1].brand_id, null);
+  assert.equal(saved[1].category_id, null);
+  assert.deepEqual(Array.from(saved[1].category_ids), []);
 });
 
 test("lookup creation errors stop product saving and remain visible", async () => {
@@ -200,6 +248,58 @@ test("lookup creation errors stop product saving and remain visible", async () =
   await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
   assert.equal(posted, false);
   assert.match(text(editor.render()), /Brand access denied/);
+});
+
+test("new brand details are passed when the brand is created with the product", async () => {
+  const calls = [];
+  const editor = editorHarness(undefined, {
+    inventoryCreateLookup: async (...args) => { calls.push(args); return { id: "b1", name: args[1], code: "brand" }; },
+    inventorySaveProduct: async payload => { calls.push(["product", payload.brand_id]); return payload; },
+  });
+  find(editor.render(), node => node.type === "input" && node.props.list?.endsWith("brands"))[0]
+    .props.onChange({ target: { value: "New brand" } });
+  find(editor.render(), node => node.type === "textarea" && node.props.maxLength === 2000)[0]
+    .props.onChange({ target: { value: "  Brand details  " } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ["brands", "New brand", { description: "Brand details", is_active: true }], ["product", "b1"],
+  ]);
+});
+
+test("product labels can select existing labels and add a new one", async () => {
+  const saved = [];
+  const editor = editorHarness(undefined, { inventorySaveProduct: async payload => { saved.push(payload); return payload; } },
+    { brands: [], categories: [], vendors: [], tags: ["Featured", "Handcrafted"] });
+  const labelSelect = tree => find(tree, node => node.type === "select" && node.props.multiple)[0];
+  assert.deepEqual(options(labelSelect(editor.render())), ["Featured", "Handcrafted"]);
+  labelSelect(editor.render()).props.onChange({ currentTarget: { selectedOptions: [{ value: "Featured" }, { value: "Handcrafted" }] } });
+  const newLabel = find(find(editor.render(), node => node.type === "label" && text(node).startsWith("New label"))[0], node => node.type === "input")[0];
+  newLabel.props.onChange({ target: { value: "Seasonal" } });
+  find(editor.render(), node => node.type === "button" && text(node) === "Add label")[0].props.onClick();
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(Array.from(saved[0].tags), ["Featured", "Handcrafted", "Seasonal"]);
+});
+
+test("product editor saves multiple categories and a primary category", async () => {
+  const saved = [];
+  const editor = editorHarness(undefined, { inventorySaveProduct: async payload => { saved.push(payload); return payload; } },
+    { brands: [], categories: [{ id: "c1", name: "Kitchen" }, { id: "c2", name: "Gifts" }], vendors: [], tags: [] });
+  const field = find(editor.render(), node => node.type === "label" && text(node).startsWith("Additional categories"))[0];
+  find(field, node => node.type === "select")[0].props.onChange({
+    currentTarget: { selectedOptions: [{ value: "c1" }, { value: "c2" }] },
+  });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(saved[0].category_id, "c1");
+  assert.deepEqual(Array.from(saved[0].category_ids), ["c1", "c2"]);
+});
+
+test("product editor saves the selected image background", async () => {
+  const saved = [];
+  const editor = editorHarness(undefined, { inventorySaveProduct: async payload => { saved.push(payload); return payload; } });
+  find(editor.render(), node => node.type === "input" && node.props.type === "color")[0]
+    .props.onChange({ target: { value: "#202830" } });
+  await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  assert.equal(saved[0].image_background, "#202830");
 });
 
 test("setting a reorder level turns reorder alerts on and keeps the target valid", () => {

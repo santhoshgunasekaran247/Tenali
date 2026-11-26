@@ -50,8 +50,10 @@ class MessageCreate(BaseModel):
 class AIUpload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     file_name: str = Field(min_length=1, max_length=200)
-    mime_type: Literal["text/plain", "application/pdf", "image/png", "image/jpeg", "image/webp"]
+    mime_type: Literal["text/plain", "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       "image/png", "image/jpeg", "image/webp"]
     data_base64: str = Field(min_length=1, max_length=4 * ((2 * 1024 * 1024 + 2) // 3))
+    catalog_images: bool = False
 
 class VoiceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

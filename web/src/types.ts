@@ -162,9 +162,10 @@ export type InventoryItemInput = {
 };
 export type InventoryProductInput = InventoryItemInput & {
   name: string; brand_id: string | null; category_id: string | null; hsn_code: string | null;
+  category_ids?: string[];
   tags: string[];
   minimum_order_quantity: number;
-  image_url: string | null; image_urls: string[]; catalog_visible: boolean;
+  image_url: string | null; image_urls: string[]; image_background?: string | null; catalog_visible: boolean;
   best_seller: boolean; sru_special: boolean; home_order: number;
 };
 export type InventoryOfferInput = {
@@ -191,6 +192,7 @@ export type InventoryProduct = InventoryItem & Omit<InventoryProductInput, "imag
 export type InventoryLookups = {
   brands: Array<{ id: string; name: string; code: string }>;
   categories: Array<{ id: string; name: string; code: string }>;
+  tags: string[];
   vendors: Array<{ id: string; legal_name: string; contact_person?: string; phone?: string; email?: string; address?: string }>;
 };
 export type InventoryAlert = {
@@ -248,6 +250,7 @@ export type Brand = {
   code: string;
   name: string;
   description?: string;
+  image_url?: string | null;
 };
 
 export type CatalogCategory = {

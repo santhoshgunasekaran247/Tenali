@@ -344,10 +344,11 @@ class DraftService:
                     if key in mappings and child:
                         record = self.reference(mappings[key], child)
                         snapshots.append({"table": mappings[key], "id": str(child), "hash": digest(record)})
-                    elif key == "product_ids" and isinstance(child, list):
-                        for product_id in sorted(set(child)):
-                            record = self.reference("products", product_id)
-                            snapshots.append({"table": "products", "id": str(product_id), "hash": digest(record)})
+                    elif key in {"product_ids", "category_ids"} and isinstance(child, list):
+                        table = "products" if key == "product_ids" else "product_categories"
+                        for record_id in sorted(set(child)):
+                            record = self.reference(table, record_id)
+                            snapshots.append({"table": table, "id": str(record_id), "hash": digest(record)})
                     elif isinstance(child, (dict, list)):
                         visit(child)
         visit(normalized)
@@ -394,6 +395,8 @@ class DraftService:
             raise HTTPException(422, f"Provide an explicit {date_fields[action.key]} before approving.")
         if action.key in {"product_update", "variant_update", "offer_update", "brand_update", "category_update"}:
             missing = set(action.schema.model_fields) - set(values)
+            if action.key == "product_update":
+                missing -= {"category_ids", "image_background"}
             if missing:
                 raise HTTPException(422, "Full replacement requires every field to prevent accidental resets: " + ", ".join(sorted(missing)))
         when = next((normalized.get(key) for key in ("transaction_date", "purchase_date", "invoice_date", "payment_date", "transfer_date", "cancellation_date", "settled_on")

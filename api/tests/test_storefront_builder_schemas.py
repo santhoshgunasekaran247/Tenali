@@ -161,7 +161,8 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
             db.executescript("""
                 create table product_categories(id text, company_id text, code text, name text,
                     display_title text, description text, image_url text, home_order integer, is_active boolean);
-                create table products(company_id text, category_id text, is_active boolean, catalog_visible boolean);
+                create table products(id text, company_id text, category_id text, is_active boolean, catalog_visible boolean);
+                create table product_category_products(company_id text, product_id text, category_id text);
                 create table storefront_sections(id text, company_id text, section_type text, is_enabled boolean);
                 create table storefront_section_categories(company_id text, section_id text, category_id text);
             """)
@@ -169,12 +170,17 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
                 ("diya", True, "tenant"), ("unselected", True, "tenant"), ("inactive", False, "tenant"),
                 ("disabled", True, "tenant"), ("populated", True, "tenant"),
                 ("hidden-product", True, "tenant"), ("foreign", True, "other"),
-                ("cross-tenant", True, "tenant"),
+                ("cross-tenant", True, "tenant"), ("secondary", True, "tenant"),
+                ("foreign-assignment", True, "tenant"),
             ):
                 db.execute("insert into product_categories values(?,?,?,?,?,?,?,?,?)",
                            (category_id, company_id, category_id, category_id, None, None, None, 0, active))
-            db.executemany("insert into products values(?,?,?,?)", [
-                ("tenant", "populated", True, True), ("tenant", "hidden-product", True, False),
+            db.executemany("insert into products values(?,?,?,?,?)", [
+                ("visible", "tenant", "populated", True, True),
+                ("hidden", "tenant", "hidden-product", True, False),
+            ])
+            db.executemany("insert into product_category_products values(?,?,?)", [
+                ("tenant", "visible", "secondary"), ("other", "visible", "foreign-assignment"),
             ])
             db.executemany("insert into storefront_sections values(?,?,?,?)", [
                 ("enabled", "tenant", "categories", True), ("disabled", "tenant", "categories", False),
@@ -186,7 +192,7 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
                 ("tenant", "other", "cross-tenant"),
             ])
             rows = db.execute(_catalog_categories_query(), {"company_id": "tenant"}).fetchall()
-            self.assertEqual([row[0] for row in rows], ["diya", "populated"])
+            self.assertEqual([row[0] for row in rows], ["diya", "populated", "secondary"])
 
     def test_saved_section_mappings_reload_with_the_same_input_field_names_and_order(self):
         company_id = str(uuid4())

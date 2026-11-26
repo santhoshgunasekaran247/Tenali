@@ -74,6 +74,9 @@ class InventoryService:
         result = {}
         for key, table in [("brands", "brands"), ("categories", "product_categories")]:
             result[key] = [dict(row) for row in self.db.execute(text(f"select id, name, code from {table} where company_id=:company and is_active=true order by name"), {"company": self.company_id}).mappings()]
+        result["tags"] = [row["name"] for row in self.db.execute(text(
+            "select name from product_tags where company_id=:company order by name, code"
+        ), {"company": self.company_id}).mappings()]
         result["vendors"] = [dict(row) for row in self.db.execute(text("""select id, legal_name, contact_person, phone, email, address from parties
             where company_id=:company and is_active=true and party_type in ('vendor','customer_vendor') order by legal_name"""), {"company": self.company_id}).mappings()]
         return result
@@ -170,6 +173,13 @@ class InventoryService:
             if values.get(field) and not self.db.execute(text(f"select id from {table} where id=:id and company_id=:company and is_active=true"),
                 {"id": str(values[field]), "company": self.company_id}).scalar_one_or_none():
                 raise HTTPException(422, f"Invalid {field}")
+        if values.get("category_ids"):
+            ids = [str(category_id) for category_id in values["category_ids"]]
+            count = self.db.execute(text("""select count(*) from product_categories
+                where company_id=:company and is_active=true and id=any(cast(:ids as uuid[]))"""),
+                {"company": self.company_id, "ids": ids}).scalar_one()
+            if count != len(ids):
+                raise HTTPException(422, "Select active categories from this company")
         if values.get("hsn_code") and not self.db.execute(text("select id from hsn_masters where company_id=:company and code=:code and is_active=true"),
             {"company": self.company_id, "code": values["hsn_code"]}).scalar_one_or_none():
             raise HTTPException(422, "Select an active HSN/SAC code")
@@ -183,6 +193,11 @@ class InventoryService:
 
     def _data(self, product_ids: list[str] | None = None) -> tuple:
         products = [dict(row) for row in self.db.execute(text("""select p.*, b.name as brand_name, c.name as category_name,
+            coalesce((select array_agg(assignment.category_id order by
+                (assignment.category_id=p.category_id) desc, category.name, category.id)
+                from product_category_products assignment join product_categories category
+                  on category.company_id=assignment.company_id and category.id=assignment.category_id
+                where assignment.company_id=p.company_id and assignment.product_id=p.id), ARRAY[]::uuid[]) as category_ids,
             coalesce((select array_agg(tag.name order by tag.name)
                 from product_tag_products assignment join product_tags tag
                   on tag.company_id=assignment.company_id and tag.id=assignment.tag_id
@@ -325,10 +340,26 @@ class InventoryService:
             self._require_product_hsn(values)
         tag_names = values.pop("tags", None)
         self._validate_item(values, product_id)
+        category_ids = values.pop("category_ids", None)
+        if category_ids is None and (not current or str(current.get("category_id") or "") != str(values.get("category_id") or "")):
+            category_ids = [values["category_id"]] if values.get("category_id") else []
+        background = (values["image_background"] or (current or {}).get("image_background") or "#ffffff").lower()
+        background_changed = bool(current and background != ((current.get("image_background") or "#ffffff").lower()))
+        values["image_background"] = background
         files = FileStore(self.db)
         images, originals = {}, {}
+        current_images = {current.get("image_url"), *((current.get("image_urls") or "").split("|"))} if current else set()
         for source in dict.fromkeys([values["image_url"], *values["image_urls"]]):
-            images[source], original = files.product_image(self.company_id, source)
+            if source and background_changed and source in current_images:
+                from app.services.product_images import display_image
+                original = (current.get("image_originals") or {}).get(source) or source
+                content = files.stored_product_image(self.company_id, original)
+                display = display_image(content, background=background)
+                images[source] = portable_image_url(files.save(self.company_id, display, "image/webp", public=True, kind="image", portable=True))
+            elif source and not background_changed and source in current_images:
+                images[source], original = source, None
+            else:
+                images[source], original = files.product_image(self.company_id, source, background=background)
             if original:
                 originals[images[source]] = original
         values["image_url"] = images[values["image_url"]]
@@ -340,6 +371,13 @@ class InventoryService:
         if not product_id:
             values.update(company_id=self.company_id, portal_product_id=f"PRD-{uuid4().hex[:12].upper()}")
         product_id = self._write("products", values, product_id)
+        if category_ids is not None:
+            self.db.execute(text("delete from product_category_products where company_id=:company and product_id=:product"),
+                            {"company": self.company_id, "product": product_id})
+            for category_id in category_ids:
+                self.db.execute(text("""insert into product_category_products(company_id, product_id, category_id)
+                    values(:company, :product, :category)"""),
+                    {"company": self.company_id, "product": product_id, "category": str(category_id)})
         if tag_names is not None:
             self._save_product_tags(product_id, tag_names)
         self._check_price(product_id)
@@ -387,9 +425,10 @@ class InventoryService:
         original = (product.get("image_originals") or {}).get(image_url)
         content = files.stored_product_image(self.company_id, original or image_url)
         self.db.commit()  # Nothing is written yet; do not hold a transaction open while the models run.
-        display = display_image(content)
+        background = product.get("image_background") or "#ffffff"
+        display = display_image(content, background=background)
         product = self._product(product_id, lock=True)
-        if image_url not in images_of(product):
+        if image_url not in images_of(product) or (product.get("image_background") or "#ffffff") != background:
             raise HTTPException(409, "The product images changed while the photo was being fixed. Reload and try again.")
         enhanced = portable_image_url(files.save(self.company_id, display, "image/webp", public=True, kind="image", portable=True))
         swap = lambda image: enhanced if image == image_url else image

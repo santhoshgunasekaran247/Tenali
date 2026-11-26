@@ -272,7 +272,7 @@ class AssistantUnitTests(unittest.TestCase):
                     if proposal and not permitted:
                         create.assert_not_called()
                         self.assertEqual(answers, [])
-                        self.assertTrue(any(call.args[1].get("error") == "draft_rejected"
+                        self.assertTrue(any(call.args[1].get("error") == "draft_not_permitted"
                                             for call in db.execute.call_args_list if len(call.args) > 1))
                     else:
                         self.assertEqual(len(answers), 1)
@@ -313,6 +313,55 @@ class AssistantUnitTests(unittest.TestCase):
             self.assertEqual(options["text"]["format"]["type"], "json_schema")
             self.assertEqual(result.cached_tokens, 3)
             self.assertEqual(result.output.reply, "Hello")
+
+    def test_catalog_mode_returns_bounded_structured_reply_without_operations(self):
+        from app.ai.catalog_workbook import REPLY_PREFIX
+        product = dict.fromkeys(("sku", "description", "brand", "categories", "hsn_code", "hsn_description",
+                                 "gst_rate", "vendor", "labels", "selling_price", "image_background",
+                                 "image_index", "image_box"), None)
+        product["name"] = "Cup"
+        response = SimpleNamespace(status="completed", id="fixture",
+            output_text=json.dumps({"reply": "Review this workbook.", "clarification": None, "products": [product]}),
+            usage=SimpleNamespace(input_tokens=20, output_tokens=10, input_tokens_details=SimpleNamespace(cached_tokens=0)))
+        config = {"timeout_seconds": 30, "routine_model": "fixture", "max_output_tokens": 200, "_catalog_mode": True}
+        with patch("app.ai.provider.OpenAI") as client:
+            client.return_value.__enter__.return_value.responses.create.return_value = response
+            result = OpenAIProvider().respond("context", "catalog", config)
+        self.assertTrue(result.output.reply.startswith(REPLY_PREFIX))
+        self.assertEqual(json.loads(result.output.reply[len(REPLY_PREFIX):])["products"][0]["name"], "Cup")
+        self.assertIsNone(result.draft)
+
+    def test_catalog_mode_uses_existing_metering_and_requires_administrator(self):
+        from app.ai.catalog_workbook import REQUEST_PREFIX
+        db = MagicMock()
+        db.execute.return_value.mappings.return_value.first.return_value = None
+        db.execute.return_value.first.return_value = None
+        service = AssistantService(db, {"company_id": uuid4(), "user_id": uuid4(), "role": "owner"})
+        config = {"routine_model": "fixture", "timeout_seconds": 30, "max_output_tokens": 200, "version": 1}
+        result = ProviderResult(AssistantOutput(reply="Catalog ready", clarification=None), 20, 0, 10, "fixture")
+        payload = MessageCreate(content=REQUEST_PREFIX + "Create a workbook for a cup", client_key=uuid4())
+        with patch.object(service, "lock_conversation"), patch.object(service, "conversation", return_value={"status": "active"}), \
+                patch.object(service, "require_enabled", return_value=config), patch.object(service, "context", return_value="context"), \
+                patch.object(service, "recheck_before_provider", return_value=config), patch.object(service, "finish"), \
+                patch.object(service, "messages", return_value={"items": []}), patch("app.ai.media.MediaService") as media, \
+                patch("app.ai.service.current_identity", return_value={"role": "owner"}), \
+                patch("app.ai.service.available_actions") as actions, \
+                patch("app.ai.service.available_capabilities") as reads, \
+                patch("app.ai.service.OpenAIProvider.respond", return_value=result) as provider:
+            media.return_value.attachments.return_value = []
+            service.send(uuid4(), payload)
+            self.assertTrue(provider.call_args.args[2]["_catalog_mode"])
+            self.assertIn("reviewable product import workbook", provider.call_args.args[0])
+            self.assertTrue(any("tenali_ai_reserve" in str(call.args[0]) for call in db.execute.call_args_list))
+            actions.assert_not_called()
+            reads.assert_not_called()
+        with patch.object(service, "lock_conversation"), patch.object(service, "conversation", return_value={"status": "active"}), \
+                patch.object(service, "require_enabled", return_value=config), patch("app.ai.media.MediaService") as media, \
+                patch("app.ai.service.current_identity", return_value={"role": "staff"}):
+            media.return_value.attachments.return_value = []
+            with self.assertRaises(HTTPException) as error:
+                service.send(uuid4(), payload)
+            self.assertEqual(error.exception.status_code, 403)
 
     def test_invalid_and_incomplete_provider_output_still_tracks_usage(self):
         for output, status in (('not-json', 'completed'), ('{"reply":"","clarification":null}', 'completed'), ("", "incomplete"),

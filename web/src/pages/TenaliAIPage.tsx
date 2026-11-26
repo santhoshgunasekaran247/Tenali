@@ -12,6 +12,21 @@ import { AIVoiceInput } from "../components/AIVoiceInput";
 import { AssistantMessage } from "../components/AssistantMessage";
 import type { CompanyFeatures } from "../types";
 
+const catalogRequest = "[TENALI_CATALOG_WORKBOOK]\n";
+const catalogReply = "[TENALI_CATALOG_WORKBOOK_V1]\n";
+
+function catalogDescription(content: string): string {
+  try {
+    const parsed: unknown = JSON.parse(content.slice(catalogReply.length));
+    if (parsed && typeof parsed === "object" && "reply" in parsed && typeof parsed.reply === "string") {
+      return parsed.reply + ("clarification" in parsed && typeof parsed.clarification === "string" ? `\n\n${parsed.clarification}` : "");
+    }
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  return "The saved catalog response could not be displayed.";
+}
+
 export function TenaliAIPage() {
   const auth = useAuth();
   const [features, setFeatures] = useState<CompanyFeatures | null>(null);
@@ -36,6 +51,7 @@ export function TenaliAIPage() {
   const [draftRefresh, setDraftRefresh] = useState(0);
   const [submission, setSubmission] = useState<{ id: string; content: string; key: string; attachments: string[] } | null>(null);
   const [attachments, setAttachments] = useState<AIAttachment[]>([]);
+  const [catalogMode, setCatalogMode] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
@@ -157,7 +173,9 @@ export function TenaliAIPage() {
     if (!selected || !canSend || (!text.trim() && !submission)) return;
     if (!(await saveTitle())) return;
     const token = generation.current;
-    const request = submission || { id: selected.id, content: text.trim(), key: crypto.randomUUID(), attachments: attachments.map(file => file.id) };
+    const content = catalogMode ? catalogRequest + text.trim() : text.trim();
+    if (!submission && content.length > 4000) { setError("Shorten the message before preparing a catalog workbook."); return; }
+    const request = submission || { id: selected.id, content, key: crypto.randomUUID(), attachments: attachments.map(file => file.id) };
     setSubmission(request); setBusy(true); setError(""); setNotice("");
     try {
       await ai.send(request.id, request.content, request.key, request.attachments);
@@ -204,7 +222,9 @@ export function TenaliAIPage() {
         reader.onload = () => typeof reader.result === "string" ? resolve(reader.result.split(",")[1]) : reject(new Error("Invalid file."));
         reader.readAsDataURL(file);
       });
-      const uploaded = await ai.upload(selected.id, file.name, file.type || (file.name.toLowerCase().endsWith(".txt") ? "text/plain" : "application/octet-stream"), data);
+      const inferred = file.name.toLowerCase().endsWith(".txt") ? "text/plain" :
+        file.name.toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/octet-stream";
+      const uploaded = await ai.upload(selected.id, file.name, file.name.toLowerCase().endsWith(".xlsx") ? inferred : file.type || inferred, data, catalogMode);
       setAttachments(previous => [...previous, uploaded]);
     } catch (failure) { setError(String(failure)); }
     finally { setBusy(false); }
@@ -283,23 +303,33 @@ export function TenaliAIPage() {
           <div className="ai-message-list" aria-live="polite">
             {loadingMessages ? <p>Loading private messages...</p> : !messages.length ? <p>Describe an operation, or ask how to use Tenali. For example: How do I create a quotation? Where do I add a product?</p> : messages.map(message =>
               <article key={message.id} aria-label={message.role === "user" ? "Your message" : "Assistant reply"} className={`ai-message ai-message-${message.role}`}>
-                {message.role === "assistant" ? <AssistantMessage content={readableMessage(message.content)} /> : <p>{message.content}</p>}{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
+                {message.role === "assistant" ? <>{message.content.startsWith(catalogReply)
+                  ? <AssistantMessage content={catalogDescription(message.content)} />
+                  : <AssistantMessage content={readableMessage(message.content)} />}
+                  {message.content.startsWith(catalogReply) ? <button type="button" disabled={busy} onClick={() => {
+                    setBusy(true); setError(""); void ai.downloadCatalog(selected.id, message.id).catch(failure => setError(String(failure))).finally(() => setBusy(false));
+                  }}>Download catalog workbook ZIP</button> : null}</> : <p>{message.content.startsWith(catalogRequest) ? message.content.slice(catalogRequest.length) : message.content}</p>}{messageStatus(message) ? <p className="ai-message-status" role="status">{messageStatus(message)}</p> : null}</article>)}
             {busy && submission ? <p role="status">Waiting for a reply. Your message reference is preserved for recovery.</p> : null}
             <div ref={messageEnd} />
           </div>
           <form className="ops-form ai-message-form" onSubmit={send}>
             <label><span className="ai-sr-only">Message</span><textarea placeholder="Ask about your business or how to use Tenali..." rows={2} maxLength={4000}
-              disabled={busy || !canSend || selected.status !== "active" || !!submission} value={submission?.content ?? text} onChange={event => setText(event.target.value)}
+              disabled={busy || !canSend || selected.status !== "active" || !!submission} value={submission ? submission.content.replace(catalogRequest, "") : text} onChange={event => setText(event.target.value)}
               onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} /></label>
             {attachments.map(file => <div key={file.id} className="shop-actions"><span>{file.file_name}</span>
               <button type="button" disabled={busy || !!submission} onClick={() => {
                 setBusy(true); void ai.removeAttachment(file.id).then(() => setAttachments(previous => previous.filter(item => item.id !== file.id)))
                   .catch(failure => setError(String(failure))).finally(() => setBusy(false));
               }}>Remove file</button></div>)}
+            {auth.user?.role === "owner" || auth.user?.role === "admin" ? <label>
+              <input type="checkbox" checked={catalogMode} disabled={busy || !!submission} onChange={event => setCatalogMode(event.target.checked)} />
+              Prepare product bulk workbook
+            </label> : null}
+            {catalogMode ? <p>Enable this option before attaching PDF or Excel files to process up to eight embedded images per file. Review the workbook, image associations and catalog-theme notes before upload.</p> : null}
             <div className="ai-compose-actions">
             {features?.document_inputs_enabled ? <label className="ai-attach ai-icon-button" title="Attach file">
               <Paperclip size={19} aria-hidden="true" />
-              <input className="ai-sr-only" aria-label="Attach text PDF, text file or image (2 MB; up to two files)" type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
+              <input className="ai-sr-only" aria-label="Attach text PDF, Excel, text file or image (2 MB; up to two files)" type="file" accept=".txt,.pdf,.xlsx,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
                 onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /></label> : null}
             {canSend && selected.status === "active" ? <AIVoiceInput key={selected.id}
               conversationId={selected.id} available={!!features?.voice_inputs_enabled} disabled={operationBusy || !!submission} onBusy={setVoiceBusy}

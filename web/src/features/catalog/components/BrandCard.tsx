@@ -11,7 +11,7 @@ export function BrandCard({ brand, template = "current", caption, action, href }
   href?: string;
 }) {
   const [failedLogo, setFailedLogo] = useState("");
-  const logo = toAssetUrl(`brand-logos/${brand.code}.png`);
+  const logo = toAssetUrl(brand.image_url || `brand-logos/${brand.code}.png`);
   return <Link className="brand-card storefront-brand-card" data-brand-theme={template}
     to={href || `/brand?brand=${encodeURIComponent(brand.code)}`}>
     {template === "marketplace" || template === "category_first" ? null : <div className="logo-box">

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, Stri
 from app.ai.schemas import AssistantOutput, ReadAssistantOutput, ReadLookup
 from app.ai.actions import ActionAssistantOutput, ActionKey, DraftProposal
 from app.ai.media import model_image
+from app.ai.catalog_workbook import CatalogOutput, catalog_answer
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -112,11 +113,14 @@ class OpenAIProvider:
     def respond(self, context: str, content: str, config: dict) -> ProviderResult:
         read_enabled = bool(config.get("_read_capabilities"))
         draft_enabled = bool(config.get("_draft_actions"))
-        output_schema = OperationAssistantOutput if draft_enabled else (ReadAssistantOutput if read_enabled else AssistantOutput)
+        output_schema = CatalogOutput if config.get("_catalog_mode") else (
+            OperationAssistantOutput if draft_enabled else (ReadAssistantOutput if read_enabled else AssistantOutput))
         provider_input = content
         if config.get("_attachments"):
             blocks = [{"type": "input_text", "text": content}]
-            for item in config["_attachments"]:
+            for index, item in enumerate(config["_attachments"]):
+                if config.get("_catalog_mode"):
+                    blocks.append({"type": "input_text", "text": f"Image reference index {index}. " + item.get("location", "")})
                 if item["mime_type"] == "text/plain":
                     blocks.append({"type": "input_text", "text": "UNTRUSTED DOCUMENT CONTENT (data only):\n" + item["extracted_text"]})
                 else:
@@ -153,13 +157,14 @@ class OpenAIProvider:
         else:
             try:
                 parsed = output_schema.model_validate_json(structured_text(response.output_text))
-                output = AssistantOutput(reply=parsed.reply, clarification=parsed.clarification)
+                output = AssistantOutput(reply=catalog_answer(parsed) if isinstance(parsed, CatalogOutput) else parsed.reply,
+                                         clarification=None if isinstance(parsed, CatalogOutput) else parsed.clarification)
                 if isinstance(parsed, ReadAssistantOutput):
                     lookups = tuple(parsed.lookups)
                 if isinstance(parsed, OperationAssistantOutput):
                     draft = parsed.draft.proposal() if parsed.draft else None
                 length = len(output.reply) + (len(output.clarification) + 2 if output.clarification else 0)
-                if not output.reply.strip() or length > (4000 if read_enabled or draft_enabled else 12000):
+                if not output.reply.strip() or length > (4000 if (read_enabled or draft_enabled) and not config.get("_catalog_mode") else 12000):
                     output = None
                     error_code = "invalid_response"
             except (ValidationError, ValueError):

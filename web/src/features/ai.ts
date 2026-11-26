@@ -51,6 +51,7 @@ export type WorkflowStep = {
   labels: Record<string, { value: string; label: string }>;
   bindings: Record<string, { step_id: string; path: (string | number)[] }>;
   offer_steps?: Record<string, string>;
+  preferred_offer_step?: string;
   result?: Record<string, unknown>;
 };
 export type WorkflowNext = { action: string; target: string | null; payload: Record<string, unknown>;
@@ -132,6 +133,19 @@ export async function aiRequest<T>(path: string, options?: RequestInit): Promise
 }
 
 export const ai = {
+  downloadCatalog: async (conversationId: string, messageId: string) => {
+    const response = await tenantFetch(`/api/ai/conversations/${conversationId}/messages/${messageId}/catalog`);
+    if (!response.ok) {
+      const body: unknown = await response.json();
+      throw new Error(body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+        ? body.detail : "Unable to download the catalog workbook.");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url; link.download = "tenali-catalog.zip";
+    document.body.appendChild(link);
+    try { link.click(); } finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  },
   downloadReport: async (id: string) => {
     const response = await tenantFetch(`/api/ai/executions/${id}/report`);
     if (!response.ok) {
@@ -193,8 +207,8 @@ export const ai = {
   },
   execution: (draft: ActionDraft) =>
     aiRequest<{ execution: AIExecution | null }>(`/drafts/${draft.id}/execution?expected_version=${draft.version}`),
-  upload: (id: string, file_name: string, mime_type: string, data_base64: string) =>
-    aiRequest<AIAttachment>(`/conversations/${id}/attachments`, { method: "POST", body: JSON.stringify({ file_name, mime_type, data_base64 }) }),
+  upload: (id: string, file_name: string, mime_type: string, data_base64: string, catalog_images = false) =>
+    aiRequest<AIAttachment>(`/conversations/${id}/attachments`, { method: "POST", body: JSON.stringify({ file_name, mime_type, data_base64, catalog_images }) }),
   removeAttachment: (id: string) => aiRequest(`/attachments/${id}`, { method: "DELETE" }),
   transcribe: (id: string, client_key: string, language: VoiceLanguage, data_base64: string) =>
     aiRequest<VoiceOutcome>(`/conversations/${id}/voice`, { method: "POST",
@@ -232,6 +246,9 @@ export function messageStatus(message: ChatMessage): string | null {
       lookup_permission_denied: "You do not have permission to look up one of these records.",
       lookup_invalid: "A lookup request was invalid. Try a more specific name.",
       lookup_failed: "A lookup failed unexpectedly. Retry the request.",
+      draft_not_permitted: "This operation is disabled or not permitted for your workspace. Ask an administrator to check AI action settings.",
+      draft_conflict: "The workflow changed or conflicts with another pending operation. Refresh Operations and review it again.",
+      draft_invalid: "The proposed operation failed validation. Check required fields and supported product details, then retry.",
     };
     return `${reason[message.error_code || ""] || `No usable reply (${message.error_code || "provider error"})`}. No business records changed.`;
   }

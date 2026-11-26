@@ -19,6 +19,7 @@ from app.api.routes.settlements import router as settlements_router
 from app.api.routes.stores import router as stores_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.deletions import router as deletions_router
+from app.api.routes.bulk import router as bulk_router
 from app.api.routes.policies import public_router as public_policies_router, tenant_router as tenant_policies_router, platform_router as platform_policies_router
 from app.api.routes.ai_settings import platform_router as ai_platform_router, tenant_router as ai_tenant_router
 from app.ai.router import router as assistant_router
@@ -40,6 +41,7 @@ api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(company_router, prefix="/company", tags=["company"])
 api_router.include_router(reports_router,prefix="/reports",tags=["reports"])
 api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
+api_router.include_router(bulk_router, prefix="/bulk", tags=["bulk workbooks"])
 api_router.include_router(stores_router, prefix="/stores", tags=["stores"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["operations dashboard"])
 api_router.include_router(documents_router, prefix="/documents", tags=["documents"])

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from app.ai.provider import OpenAIProvider, ProviderResult, estimated_cost, response_schema
+from app.ai.catalog_workbook import CATALOG_INSTRUCTIONS, REQUEST_PREFIX, CatalogOutput
 from app.ai.schemas import AssistantOutput, ReadAssistantOutput, ConversationCreate, ConversationUpdate, MessageCreate
 from app.ai.capabilities import available_capabilities, business_today, current_identity, execute_read, is_read_answer, read_context, readable_lookup
 from app.ai.actions import ACTIONS, ActionAssistantOutput
@@ -429,6 +430,8 @@ class AssistantService:
                 contract["choices"] = choices
             if item["key"] in {"purchase_create", "invoice_create"}:
                 contract["fields"] += ",fully_paid"
+            if item["key"] == "product_create":
+                contract["fields"] += ",mrp,buying_price"
             for name, field in schema.get("properties", {}).items():
                 reference = field.get("items", {}).get("$ref", "").split("/")[-1]
                 definition = schema.get("$defs", {}).get(reference, {})
@@ -545,14 +548,24 @@ class AssistantService:
                       or config["document_input_cost_per_million"] <= 0 or config["document_output_cost_per_million"] <= 0):
             raise HTTPException(403, "Document processing needs an enabled, allowlisted document model and configured document pricing.")
         self.identity = current_identity(self.db, self.identity)
+        catalog_mode = payload.content.startswith(REQUEST_PREFIX)
+        if catalog_mode and self.identity.get("role") not in {"owner", "admin"}:
+            raise HTTPException(403, "Only workspace owners and administrators can prepare bulk workbooks.")
+        if catalog_mode:
+            from app.ai.media import catalog_assets
+            provider_files = catalog_assets(files)
+        else:
+            provider_files = files
         help_request = is_app_help_request(payload.content)
-        capabilities = [] if help_request else available_capabilities(self.db, self.identity)
-        actions = available_actions(self.db, self.identity)
+        capabilities = [] if help_request or catalog_mode else available_capabilities(self.db, self.identity)
+        actions = [] if catalog_mode else available_actions(self.db, self.identity)
         # UTF-8 byte length is a conservative token bound, with protocol/schema overhead.
-        output_schema = ActionAssistantOutput if actions else (ReadAssistantOutput if capabilities else AssistantOutput)
+        output_schema = CatalogOutput if catalog_mode else (ActionAssistantOutput if actions else (ReadAssistantOutput if capabilities else AssistantOutput))
         schema_bytes = len(json.dumps(response_schema(output_schema)).encode())
         context_budget = min(MAX_CONTEXT_BYTES, 20000 - schema_bytes - len(payload.content.encode()) - 512)
         context = self.context(conversation_id, capabilities, max_bytes=context_budget, actions=actions)
+        if catalog_mode:
+            context += CATALOG_INSTRUCTIONS
         input_bound = len(context.encode()) + len(payload.content.encode()) + schema_bytes + 512
         if input_bound > 20000:
             raise HTTPException(422, "Message/context is too large. Shorten the message or start a new conversation.")
@@ -590,7 +603,8 @@ class AssistantService:
             config["_read_capabilities"] = capabilities
             config["_draft_actions"] = actions
             config["_selected_model"] = selected_model
-            config["_attachments"] = files
+            config["_attachments"] = provider_files
+            config["_catalog_mode"] = catalog_mode
             result = OpenAIProvider().respond(context, payload.content, config)
             if help_request and result.lookups:
                 logger.warning("AI app-help response unexpectedly proposed a business lookup")
@@ -686,7 +700,9 @@ class AssistantService:
             except HTTPException as error:
                 logger.warning("AI draft rejected (%s, action=%s); provider usage remains charged",
                                error.status_code, result.draft.action)
-                result = replace(result, output=None, error="draft_rejected")
+                error_code = {403: "draft_not_permitted", 409: "draft_conflict",
+                              422: "draft_invalid"}.get(error.status_code, "draft_rejected")
+                result = replace(result, output=None, error=error_code)
             except DBAPIError:
                 logger.exception("AI draft persistence failed; provider usage remains charged")
                 result = replace(result, output=None, error="draft_failed")

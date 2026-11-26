@@ -47,9 +47,11 @@ class ProductInput(ItemDetails):
     minimum_order_quantity: int = Field(default=1, ge=1, le=100, strict=True)
     brand_id: UUID | None = None
     category_id: UUID | None = None
+    category_ids: list[UUID] | None = Field(default=None, max_length=30)
     hsn_code: str | None = Field(default=None, pattern=r"^(?:\d{4}|\d{6}|\d{8})$")
     image_url: str | None = Field(default=None, max_length=1400000)
     image_urls: list[str] = Field(default_factory=list, max_length=12)
+    image_background: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     catalog_visible: bool = True
     best_seller: bool = False
     sru_special: bool = False
@@ -61,6 +63,17 @@ class ProductInput(ItemDetails):
             # AI bill-photo references are resolved and published by the file store when the product is saved.
             if not (image and PHOTO_REFERENCE.match(image)):
                 validate_image_source(image)
+        return self
+
+    @model_validator(mode="after")
+    def validate_categories(self):
+        if self.category_ids is not None:
+            if len(self.category_ids) != len(set(self.category_ids)):
+                raise ValueError("Categories must be unique")
+            if self.category_id and self.category_id not in self.category_ids:
+                raise ValueError("The primary category must be one of the selected categories")
+            if not self.category_id and self.category_ids:
+                self.category_id = self.category_ids[0]
         return self
 
 

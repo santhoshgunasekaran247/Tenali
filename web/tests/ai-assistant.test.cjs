@@ -23,16 +23,58 @@ test("assistant history has compact accessible controls and an actionable empty 
   assert.match(css, /@media \(max-width: 900px\)\s*\{\s*\.ai-workspace, \.ai-workspace.ai-history-open \{ grid-template-columns: minmax\(0, 1fr\)/);
 });
 
-function loadUI(file) {
+function loadUI(file, features = {}) {
   const exports = {};
-  vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, actionLabel, waitingForPrerequisites, WorkflowDocumentDownload };" : ""), {
+  vm.runInNewContext(ts.transpileModule(src(file) + (file.endsWith("AIDrafts.tsx") ? "\nexport { Fields, DraftCard, WorkflowFields, actionLabel, waitingForPrerequisites, WorkflowDocumentDownload };" : ""), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports, require: name =>
-    name === "../features/ai" || name === "../api" ? {} :
+    name === "../features/ai" ? features : name === "../api" ? {} :
     name === "./WorkflowReference" ? loadUI("components/WorkflowReference.tsx") :
     name === "./Notifications" ? {} : require(name) });
   return exports;
 }
+
+test("vendor offer drafts and workflow forms show optional prices without expanding all fields", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { DraftCard, WorkflowFields } = loadUI("components/AIDrafts.tsx", { draftDescription: () => "Vendor offer" });
+  const schema = { type: "object", properties: {
+    vendor_id: { type: "string" }, product_id: { type: "string" },
+    mrp: { type: "number" }, buying_price: { type: "number" }, vendor_reference: { type: "string" },
+  } };
+  const action = { schema }, payload = { vendor_id: "vendor", product_id: "product" };
+  const draft = { action_key: "offer_create", payload, status: "editing", version: 1 };
+  const step = { id: "offer", action: "offer_create", payload, labels: {}, issues: [], choices: [] };
+  for (const html of [
+    renderToStaticMarkup(React.createElement(DraftCard, { draft, action, writable: true, onRun() {} })),
+    renderToStaticMarkup(React.createElement(WorkflowFields, { step, action, workflow: { version: 1 }, onRun() {} })),
+  ]) {
+    assert.match(html, /Vendor MRP \(INR\)/);
+    assert.match(html, /Buying price \(INR\)/);
+    assert.doesNotMatch(html, /vendor reference/);
+    assert.match(html, /Show all fields/);
+  }
+});
+
+test("product review retains vendor offer inputs outside the product business draft", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { DraftCard } = loadUI("components/AIDrafts.tsx", { draftDescription: () => "New product" });
+  const schema = { type: "object", properties: { name: { type: "string" } } };
+  const workflow_schema = { type: "object", properties: { ...schema.properties,
+    mrp: { type: "number" }, buying_price: { type: "number" }, preferred_vendor_id: { type: "string" },
+  } };
+  const html = renderToStaticMarkup(React.createElement(DraftCard, {
+    draft: { action_key: "product_create", payload: { name: "Tumbler" }, status: "editing", version: 1 },
+    action: { schema, workflow_schema }, writable: true, workflowStep: true, vendorOfferPending: true,
+    workflowValues: { preferred_vendor_id: "vendor-id", mrp: "1000", buying_price: "100" },
+    referenceLabels: { preferred_vendor_id: { value: "vendor-id", label: "Copper Raja" } }, onRun() {},
+  }));
+  assert.match(html, /Save the product first, then review and save its vendor offer/);
+  assert.match(html, /value="1000"/);
+  assert.match(html, /value="100"/);
+  assert.match(html, /value="Copper Raja"/);
+  assert.match(html, /Review &amp; check/);
+  assert.doesNotMatch(html, /Save changes for review/);
+});
 
 test("forms mark filled and missing required fields without redundant selected captions", () => {
   const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
@@ -296,6 +338,8 @@ test("history searches are encoded, edits use versions, and unknown calls remain
   assert.equal(JSON.parse(calls[1].options.body).expected_version, 4);
   assert.match(messageStatus({ role: "user", status: "unknown" }), /will not be automatically resent/);
   assert.match(messageStatus({ role: "user", status: "failed", error_code: "lookup_capability_changed" }), /lookup permission changed or is unavailable/);
+  assert.match(messageStatus({ role: "user", status: "failed", error_code: "draft_invalid" }), /failed validation.*supported product details/);
+  assert.match(messageStatus({ role: "user", status: "failed", error_code: "draft_not_permitted" }), /disabled or not permitted/);
   assert.equal(messageStatus({ role: "assistant", status: "completed" }), null);
 });
 
@@ -449,6 +493,158 @@ test("capability discovery uses tenant transport and platform approval uses vers
   assert.match(controls, /No financial writes/);
   assert.match(controls, /unrestricted store access/);
   assert.match(src("pages/TenaliAIPage.tsx"), /not complete catalogues or company financial totals/);
+});
+
+test("enabled stale lookups can review their contract without disabling or changing tenant grants", async () => {
+  const state = [], effects = [], calls = [], confirmations = [];
+  let cursor = 0, confirmed = false;
+  let item = { key: "products", description: "Read products", module_path: "/inventory",
+    enabled: true, compatible: false, tenant_allowed: true, version: 7, tenant_version: 3 };
+  const element = (type, props) => ({ type, props });
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(src("components/PlatformAICapabilities.tsx"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, window: { confirm: prompt => { confirmations.push(prompt); return confirmed; } },
+    require: name => name === "react" ? {
+      useState(initial) { const i = cursor++; if (!(i in state)) state[i] = initial;
+        return [state[i], value => { state[i] = value; }]; },
+      useEffect(callback) { effects.push(callback); },
+    } : name === "react/jsx-runtime" ? { jsx: element, jsxs: element } :
+      name === "./Notifications" ? { FloatingAlert: "alert" } :
+      name === "../features/shop" ? { accountRequest: async (url, options, scope) => {
+        if (options) {
+          calls.push({ url, body: JSON.parse(options.body), scope });
+          item = { ...item, compatible: true, version: 8 };
+        }
+        return { items: [item] };
+      } } : require(name) });
+  const render = () => { cursor = 0; return exports.PlatformAICapabilities({ companyId: "tenant" }); };
+  function nodes(node) {
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    if (!node || typeof node !== "object") return [];
+    return [node, ...nodes(node.props?.children)];
+  }
+  const review = tree => nodes(tree).find(node => node.type === "button" &&
+    node.props.children === "Review updated contract");
+  render(); effects.splice(0).forEach(effect => effect());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(review(render()).props.disabled, false);
+  review(render()).props.onClick();
+  assert.equal(calls.length, 0, "Cancelling review must not write policy");
+  confirmed = true;
+  review(render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(confirmations.length, 2);
+  assert.deepEqual(calls, [{ url: "/ai/capabilities/products",
+    body: { enabled: true, approve_contract: true, expected_version: 7 }, scope: "platform" }]);
+  assert.equal(review(render()), undefined);
+  assert.equal(nodes(render()).filter(node => node.type === "input").at(-1).props.checked, true);
+});
+
+function policyControls(component, initial, { rejectKey, confirm = true } = {}) {
+  const state = [], effects = [], calls = [], prompts = [];
+  let cursor = 0, items = initial.map(item => ({ ...item }));
+  const element = (type, props) => ({ type, props });
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(src(`components/${component}.tsx`), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, window: { confirm: prompt => { prompts.push(prompt); return confirm; } },
+    require: name => name === "react" ? {
+      useState(initial) { const i = cursor++; if (!(i in state)) state[i] = initial;
+        return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; },
+      useEffect(callback) { effects.push(callback); },
+    } : name === "react/jsx-runtime" ? { jsx: element, jsxs: element } :
+      name === "./Notifications" ? { FloatingAlert: "alert" } :
+      name === "../features/ai" ? {} :
+      name === "../features/shop" ? { accountRequest: async (url, options, scope) => {
+        if (options) {
+          const body = JSON.parse(options.body), key = url.split("/").at(-1);
+          calls.push({ key, body, scope });
+          if (key === rejectKey) throw new Error("Policy changed. Refresh.");
+          items = items.map(item => item.key === key
+            ? { ...item, ...body, compatible: true, version: item.version + 1 } : item);
+        }
+        return { items };
+      } } : require(name) });
+  function nodes(node) {
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    if (!node || typeof node !== "object") return [];
+    return [node, ...nodes(node.props?.children)];
+  }
+  const render = () => { cursor = 0; return exports[component]({ companyId: "tenant" }); };
+  const all = () => nodes(render());
+  const button = label => all().find(node => node.type === "button" && node.props.children === label);
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  render(); effects.splice(0).forEach(effect => effect());
+  return { calls, prompts, flush, all, button,
+    selectAll() { all().find(node => node.type === "input").props.onChange({ target: { checked: true } }); } };
+}
+
+test("bulk lookup review uses each version, respects filtering and does not change tenant grants", async () => {
+  const ui = policyControls("PlatformAICapabilities", [
+    { key: "products", module_path: "/inventory", version: 4, enabled: true, compatible: false, tenant_allowed: true },
+    { key: "hsn", module_path: "/inventory", version: 8, enabled: false, compatible: false, tenant_allowed: false },
+    { key: "accounts", module_path: "/accounts", version: 2, enabled: false, compatible: false },
+  ]);
+  await ui.flush();
+  ui.all().find(node => node.type === "select").props.onChange({ target: { value: "inventory" } });
+  ui.selectAll();
+  ui.button("Review & enable selected lookups").props.onClick();
+  await ui.flush();
+  assert.deepEqual(ui.calls, [
+    { key: "products", body: { enabled: true, approve_contract: true, expected_version: 4 }, scope: "platform" },
+    { key: "hsn", body: { enabled: true, approve_contract: true, expected_version: 8 }, scope: "platform" },
+  ]);
+  assert.match(ui.prompts[0], /products/);
+  assert.match(ui.prompts[0], /hsn/);
+  assert.doesNotMatch(ui.prompts[0], /accounts/);
+  assert.equal(ui.button("Review & enable selected lookups").props.disabled, true);
+});
+
+test("bulk action review keeps posting separate and uses refreshed versions for posting", async () => {
+  const ui = policyControls("PlatformAIActions", [
+    { key: "product_create", description: "Create product", schema: { type: "object" }, version: 4,
+      enabled: true, compatible: false, execution_enabled: true },
+    { key: "party_create", schema: {}, version: 8, enabled: false, compatible: false },
+    { key: "product_delete", schema: {}, version: 2, enabled: false, compatible: false, high_impact: true },
+  ]);
+  await ui.flush();
+  ui.selectAll();
+  assert.equal(ui.button("Enable selected posting").props.disabled, true);
+  ui.button("Review & enable selected drafts").props.onClick();
+  await ui.flush();
+  assert.deepEqual(ui.calls.map(call => call.body), [
+    { enabled: true, execution_enabled: false, approve_contract: true, expected_version: 4 },
+    { enabled: true, execution_enabled: false, approve_contract: true, expected_version: 8 },
+  ]);
+  assert.equal(ui.button("Enable selected posting").props.disabled, false);
+  ui.button("Enable selected posting").props.onClick();
+  await ui.flush();
+  assert.deepEqual(ui.calls.slice(2).map(call => call.body), [
+    { enabled: true, execution_enabled: true, approve_contract: false, expected_version: 5 },
+    { enabled: true, execution_enabled: true, approve_contract: false, expected_version: 9 },
+  ]);
+  assert.match(ui.prompts[0], /Posting will be OFF/);
+  assert.match(ui.prompts[0], /"type": "object"/);
+  assert.match(ui.prompts[1], /BUSINESS POSTING/);
+  assert.ok(ui.calls.every(call => call.key !== "product_delete"));
+});
+
+test("bulk review cancellation writes nothing; a partial failure stops and reports saved progress", async () => {
+  for (const component of ["PlatformAICapabilities", "PlatformAIActions"]) {
+    const items = ["first", "second", "third"].map(key => ({ key, schema: {}, version: 1, enabled: true, compatible: false }));
+    const label = component === "PlatformAICapabilities" ? "Review & enable selected lookups" : "Review & enable selected drafts";
+    const cancelled = policyControls(component, items, { confirm: false });
+    await cancelled.flush(); cancelled.selectAll(); cancelled.button(label).props.onClick();
+    assert.equal(cancelled.calls.length, 0);
+    const ui = policyControls(component, items, { rejectKey: "second" });
+    await ui.flush(); ui.selectAll(); ui.button(label).props.onClick(); await ui.flush();
+    assert.deepEqual(ui.calls.map(call => call.key), ["first", "second"]);
+    assert.ok(ui.all().some(node => node.type === "alert" &&
+      /1 of 3.*Stopped at second.*Policy changed/.test(node.props.children)));
+    const selection = ui.all().filter(node => node.props["aria-label"]?.startsWith("Select "));
+    assert.deepEqual(selection.map(node => node.props.checked), [false, true, true]);
+  }
 });
 
 test("older JSON lookup replies are shown as plain, readable records", () => {

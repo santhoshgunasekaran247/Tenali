@@ -262,15 +262,17 @@ class FileStore:
             raise HTTPException(422, "This photo is not stored for this workspace. Upload the photo file again.")
         return storage.read(PUBLIC_BUCKET, path)
 
-    def product_image(self, company_id, source):
+    def product_image(self, company_id, source, *, background="#ffffff"):
         """Publish an uploaded product photo as an enhanced website display image and keep the original.
         Returns (display_url, original_url); URLs and catalog assets are already published, so original is None."""
         photo = self.product_photo(company_id, source)
         if not photo:
+            if source and background.lower() != "#ffffff":
+                raise HTTPException(422, "Upload this image to apply a custom product background; external links cannot be processed.")
             return self.image(company_id, source), None
         content, mime_type = photo
         from app.services.product_images import display_image
-        display = display_image(content)
+        display = display_image(content, background=background)
         original = self.save(company_id, content, mime_type, public=True, kind="image", portable=True)
         enhanced = self.save(company_id, display, "image/webp", public=True, kind="image", portable=True)
         return portable_image_url(enhanced), portable_image_url(original)

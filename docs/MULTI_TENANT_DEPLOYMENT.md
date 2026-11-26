@@ -23,6 +23,50 @@ customer-facing text for navigation, home, catalogue and product pages. The URL 
 the editable workspace address rather than the registered company name. Changing it
 keeps the previous path as an alias and directs visitors to the current address.
 
+## Bulk workbooks and AI catalog drafts
+
+After applying migrations through `068_bulk_import_jobs`, owners and administrators can
+open **Bulk Excel workbooks** in Inventory. Download a template for products,
+variants, HSN, contacts, brands, categories or images; suggestions are read from
+the current workspace at download time, so downloading again refreshes them.
+Each workbook includes a README and sample row. Select products in the register or
+brands/categories in the bulk panel to export editable records. Retain their IDs
+for updates; blank update cells leave values unchanged and `<clear>` clears an
+optional value. For HSN, contacts and variants, selected exports accept record IDs.
+Product rows can create missing brands, categories, HSN and vendors as described
+in the workbook. Review GST classifications and rates before importing.
+
+Uploads create a private saved import. The browser advances it in small batches;
+each row's changes and progress are committed together. If a request or browser
+is interrupted, use **Refresh saved imports** and **Resume** rather than uploading
+the original again. Processing pauses while the page is closed. Completed jobs
+offer a ZIP containing separate success and failure workbooks; correct and
+re-upload failures. Saved inputs and results expire after seven days and can be
+removed manually; expired jobs are removed when that user next lists or creates
+an import. The API processes rows on the application server, including on Render;
+deploy the Python requirements and image-processing dependencies there.
+
+For product, brand and category photos, the image template accepts URLs or a ZIP
+with `manifest.xlsx` and files directly under `images/`. Product workbooks can
+also use that ZIP format with the `image_file` column. Each file must be a single
+PNG, JPEG or WebP of at most 1 MiB and 16 million pixels; all image files in a
+package must total at most 8 MiB. Failure ZIPs retain referenced files for retry.
+Excel uploads are limited to 10 MiB and 2,000 rows; image ZIPs to 20 MiB.
+For non-white product backgrounds, transparent source images or enabled image
+segmentation are required.
+
+In Tenali AI, owners/admins can select **Prepare product bulk workbook** before
+attaching PDF/Excel files, then send text and/or private attachments. The assistant prepares a reviewable product ZIP
+without importing records; download it, check and correct the manifest, then
+upload it in Inventory. Separate images and embedded PDF/Excel images can be
+cropped into product images; the workbook README records the AI's description
+of the catalog theme. AI input limits are 2 MiB per file, two files per message,
+five PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to
+40 products per reply and can be further limited by the configured output budget.
+AI may omit or misread values and image associations; verify all fields and
+images, including HSN and GST. Private attachments must remain available until
+the workbook is downloaded.
+
 ## Shopper accounts and checkout
 
 The storefront's **Shopper Account** opens `/account`, with store-specific signup at
@@ -260,7 +304,10 @@ In **Platform -> Tenali AI -> Reviewed business lookups**:
 
 1. Review and enable the deployed stores/products/parties/HSN/brands/categories
    contracts. A schema/projection/adapter-version change blocks only its capability
-   until reviewed again; disable then review/re-enable an outdated enabled contract.
+   until reviewed again. For an outdated enabled lookup, use **Review updated contract**
+   and confirm the review; no disable/re-enable cycle is needed and tenant grants stay unchanged.
+   To review several contracts, select individual lookups or **Select all visible lookups**,
+   then **Review & enable selected lookups**. Module filters limit the visible selection.
 2. Select the pilot tenant and grant individual lookups. Missing grants deny access.
 3. Keep global/tenant AI permission, tenant opt-in, key/model/pricing and budgets
    configured as for Phase 1B. Users only receive their permitted modules/stores;
@@ -374,6 +421,11 @@ document/image uploads remain subsequent phases.
 2. In **Platform > AI**, review each current action contract. Draft preparation,
    **Enable approved posting**, and each tenant grant are separate controls.
    Posting defaults off; old contracts/intent approvals cannot silently authorize it.
+   For multiple updates, select actions (or **Select all visible actions**) and choose
+   **Review & enable selected drafts**, then **Enable selected posting** with a separate
+   confirmation. Review turns posting off for those actions; workspace grants are unchanged.
+   Selections are cleared when switching modules or action groups. Bulk changes save one
+   policy at a time; a failure stops the batch and reports completed updates without undoing them.
    Cancellation/deletion are separately marked high impact, require unrestricted
    owner/admin access and exact typed confirmation, and retain existing dependencies.
    Administrative changes, reopening periods, invoice deletion and reset-all are excluded.
@@ -526,6 +578,31 @@ deploying the API, because line resolution and the inventory list read it.
   Purchase bills still record vendor GST. For legacy products without an HSN, a
   code selected on a sales or purchase line is saved to the product. Products
   that already have a code always use their own.
+- **Product brands and labels:** type a new brand in the product editor and
+  optionally provide its description; the brand is created when the product is
+  saved. AI product workflows can create a missing brand as a reviewed prerequisite.
+  Existing product labels can be selected together, and new labels are created
+  when the product is saved.
+- **Product categories:** apply migration `064_product_categories` before deploying.
+  Products can belong to multiple active categories while retaining one primary
+  category. The storefront includes products in each assigned category. Existing
+  products are migrated to their primary category, and older clients retain
+  additional assignments when updating without changing the primary category.
+- **AI preferred vendors:** a new product is saved before its vendor offer, rather
+  than trying to select a preferred vendor before a mapping exists. Review and
+  confirm each step separately; the first active offer sets the preferred vendor.
+  Product workflows retain the requested vendor, MRP and buying price for the
+  offer step, whose price fields are visible without expanding all fields.
+  Use **Refresh workflow** to recover an older unposted product draft blocked by
+  the missing-offer error. Product and offer creation do not record a purchase or
+  add stock. Both actions must be allowed by platform and tenant policies.
+- **Product photo backgrounds:** apply migration `065_product_image_background`.
+  The product editor and reviewed AI product drafts can choose a background color;
+  white remains the default. Changing it re-renders saved product photos from their
+  retained originals. A non-white background requires transparency or successful
+  AI segmentation (`TENALI_IMAGE_AI`); otherwise saving reports an error. Upload
+  external linked photos first to change their background. Variant images retain
+  their existing independent image processing.
 - **New items on a purchase bill:** choose "New item - add to inventory as draft".
   Posting creates a product named after the line description, with the chosen
   HSN, mapped to the bill's vendor at the line's taxable unit rate. It is hidden

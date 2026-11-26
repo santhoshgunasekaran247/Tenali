@@ -261,7 +261,7 @@ export function BrandPage() {
   const firstProductImage = isCategoryView ? data.products.map((item) => item.image_urls?.split("|").map((image) => image.trim()).find(Boolean) || item.image_url).find(Boolean) : undefined;
   const heroImage = isCategoryView
     ? toAssetUrl(firstProductImage || data.selected_category!.image_url)
-    : toAssetUrl(`brand-logos/${data.selected_brand!.code}.png`);
+    : toAssetUrl(data.selected_brand!.image_url || `brand-logos/${data.selected_brand!.code}.png`);
   const heroAlt = isCategoryView ? heading : `${heading} logo`;
   const productGroups = groupProducts(data.products, (product) => (isCategoryView ? product.brand_name : product.category_title) || heading);
 

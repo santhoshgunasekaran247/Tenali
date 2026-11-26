@@ -79,6 +79,30 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(item["bindings"][field]["step_id"], steps[1]["id"])
                 service.drafts.create.assert_not_called()
 
+    def test_product_missing_brand_creates_editable_brand_prerequisite(self):
+        service = self.service()
+        product = step("product_create", {"name": "Kettle", "brand_id": "New brand"})
+        steps = [product]
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            service.resolve(product, ("brand_id",), "New brand", REFERENCES["brand_id"], steps)
+        brand = steps[1]
+        self.assertEqual((brand["action"], brand["payload"]), ("brand_create", {"name": "New brand"}))
+        self.assertEqual(product["bindings"]["brand_id"]["step_id"], brand["id"])
+        brand["payload"]["description"] = "Manufacturer details"
+        self.assertEqual(ACTIONS["brand_create"].schema.model_validate(brand["payload"]).description, "Manufacturer details")
+
+    def test_multiple_product_categories_are_searchable_and_create_prerequisites(self):
+        from app.ai.workflows import search_reference
+        service = self.service()
+        product = step("product_create", {"name": "Kettle", "category_ids": ["Kitchen", "Gifts"]})
+        steps = [product]
+        self.assertEqual(search_reference("product_create", "category_ids.0"), REFERENCES["category_id"])
+        with patch.object(service, "lookup", return_value={"items": [], "more_matches": False}):
+            for path, value, spec in reference_fields(product["payload"]):
+                service.resolve(product, path, value, spec, steps)
+        self.assertEqual([child["payload"]["name"] for child in steps[1:]], ["Kitchen", "Gifts"])
+        self.assertEqual(set(product["bindings"]), {"category_ids.0", "category_ids.1"})
+
     def test_existing_prerequisite_can_be_reused_at_the_step_limit(self):
         service = self.service()
         item = step("invoice_create", {"customer_party_id": "New party"})
@@ -601,6 +625,102 @@ class WorkflowTests(unittest.TestCase):
         root["issues"] = []
         service.purchase_offers(root, steps)
         self.assertEqual(root["issues"], [])
+
+    def test_new_product_saves_before_its_preferred_offer_and_retains_prices_on_resume(self):
+        service = self.service()
+        service.db.execute.return_value.scalar_one.return_value = False
+        vendor, product = str(uuid4()), str(uuid4())
+        payload = {"name": "Copper tumbler 500 ml", "selling_price": "200",
+                   "preferred_vendor_id": vendor, "mrp": "1000", "buying_price": "100"}
+        saved = {}
+
+        def create(conversation, request, **kwargs):
+            draft = {"id": str(uuid4()), "version": 1, "status": "editing",
+                     "payload": request.payload}
+            saved[draft["id"]] = draft
+            return draft
+
+        service.drafts.create.side_effect = create
+        service.drafts.get.side_effect = lambda identifier: saved[str(identifier)]
+        row = service.prepare(self.workflow("product_create", payload))
+        root, offer = row["plan"]["steps"]
+        self.assertEqual(root["issues"], [])
+        self.assertEqual(saved[root["draft_id"]]["payload"], {"name": payload["name"], "selling_price": "200"})
+        self.assertEqual(root["preferred_offer_step"], offer["id"])
+        self.assertEqual(offer["bindings"]["product_id"]["step_id"], root["id"])
+        self.assertFalse(root["bindings"])
+        self.assertIsNone(offer["draft_id"])
+        self.assertEqual(offer["payload"]["vendor_id"], vendor)
+        self.assertEqual(offer["payload"]["buying_price"], "100")
+        self.assertEqual(offer["payload"]["mrp"], "1000")
+        service.prepare(row)
+        self.assertEqual(len(row["plan"]["steps"]), 2)
+        self.assertEqual(service.drafts.create.call_count, 1)
+        saved[root["draft_id"]]["status"] = "executed"
+        service.db.execute.return_value.mappings.return_value.one.return_value = {"result": {"id": product}}
+        service.prepare(row)
+        self.assertEqual(saved[offer["draft_id"]]["payload"],
+                         {"product_id": product, "vendor_id": vendor, "buying_price": "100", "mrp": "1000"})
+        self.assertEqual(row["status"], "active")
+        service.prepare(row)
+        self.assertEqual(service.drafts.create.call_count, 2)
+        saved[offer["draft_id"]]["status"] = "executed"
+        service.prepare(row)
+        self.assertEqual(row["status"], "completed")
+        self.assertEqual(service.drafts.create.call_count, 2)
+
+    def test_new_product_never_drops_vendor_when_offer_action_is_denied(self):
+        service = self.service()
+        service.actions.remove("offer_create")
+        service.db.execute.return_value.scalar_one.return_value = False
+        row = service.prepare(self.workflow("product_create",
+            {"name": "Tumbler", "selling_price": 200, "preferred_vendor_id": str(uuid4())}))
+        self.assertEqual(len(row["plan"]["steps"]), 1)
+        self.assertIn("preferred_vendor_id", {issue["field"] for issue in row["plan"]["steps"][0]["issues"]})
+        service.drafts.create.assert_not_called()
+
+    def test_refresh_replaces_unposted_legacy_product_draft_without_premature_preference(self):
+        service = self.service()
+        service.db.execute.return_value.scalar_one.return_value = False
+        payload = {"name": "Tumbler", "selling_price": 200, "preferred_vendor_id": str(uuid4())}
+        row = self.workflow("product_create", payload)
+        root = row["plan"]["steps"][0]
+        previous_step, previous_draft = root["id"], str(uuid4())
+        root["draft_id"] = previous_draft
+        service.drafts.get.return_value = {"id": previous_draft, "version": 4,
+                                         "status": "validated", "payload": deepcopy(payload)}
+        service.prepare(row)
+        service.drafts.lock.assert_called_once_with(previous_draft, 4)
+        self.assertNotEqual(root["id"], previous_step)
+        self.assertNotEqual(root["draft_id"], previous_draft)
+        self.assertNotIn("preferred_vendor_id", service.drafts.create.call_args.args[1].payload)
+        self.assertEqual(row["plan"]["steps"][1]["bindings"]["product_id"]["step_id"], root["id"])
+        self.assertEqual(root["payload"]["preferred_vendor_id"], payload["preferred_vendor_id"])
+
+    def test_product_offer_prices_are_validated_and_require_a_vendor(self):
+        payload = {"name": "Tumbler", "selling_price": 200, "mrp": "1000", "buying_price": "100"}
+        self.assertIn("preferred_vendor_id", {issue["field"] for issue in missing_fields("product_create", payload, False)})
+        for value in ("-1", "1.001", "NaN", "Infinity"):
+            with self.subTest(value=value), self.assertRaises(HTTPException):
+                validate_workflow_payload("product_create", {**payload, "buying_price": value})
+        validate_workflow_payload("product_create", {**payload, "preferred_vendor_id": str(uuid4())})
+
+    def test_linked_preferred_offer_cannot_change_vendor_or_be_made_inactive(self):
+        from app.ai.workflows import preserve_bindings
+        service = self.service()
+        row = self.workflow("product_create", {"preferred_vendor_id": str(uuid4())})
+        root = row["plan"]["steps"][0]
+        child = step("offer_create", {"product_id": str(uuid4()), "vendor_id": root["payload"]["preferred_vendor_id"]})
+        root["preferred_offer_step"] = child["id"]
+        row["plan"]["steps"].append(child)
+        with self.assertRaises(HTTPException):
+            preserve_bindings(root, {"preferred_vendor_id": str(uuid4())})
+        service.get = Mock(return_value=row)
+        service.policies = Mock()
+        for values in ({"vendor_id": str(uuid4())}, {"is_active": False}):
+            with self.subTest(values=values), self.assertRaises(HTTPException):
+                service.advance(row["id"], 1, WorkflowEdit(expected_version=1, step_id=child["id"],
+                    payload={**child["payload"], **values}))
 
     def test_unavailable_or_truncated_offer_lookup_never_creates_mapping(self):
         service = self.service()
