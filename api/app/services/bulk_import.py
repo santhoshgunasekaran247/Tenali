@@ -2,6 +2,8 @@
 import base64
 import io
 import warnings
+from ipaddress import ip_address
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -11,7 +13,6 @@ from sqlalchemy import bindparam, text
 from app.schemas.inventory import InventoryLookupCreate, ProductInput, VariantImageInput, VendorOfferInput
 from app.schemas.masters import HsnMasterCreate, HsnMasterUpdate
 from app.schemas.parties import PartyCreate, PartyUpdate
-from app.schemas.company import validate_image_source
 from app.services.bulk_workbooks import FIELDS, MAX_LOOKUPS, MAX_ROWS
 from app.services.inventory_service import InventoryService
 from app.services.masters_service import MastersService
@@ -48,6 +49,33 @@ def _names(value):
     return names
 
 
+def _image_url(value):
+    message = "Use a public HTTPS image URL or an existing Tenali image URL."
+    if not isinstance(value, str):
+        raise HTTPException(422, message)
+    source = value.strip()
+    if source.startswith(("/api/public-images/", "/api/catalog-assets/", "/catalog-assets/", "assets/")):
+        return source
+    try:
+        parsed = urlsplit(source)
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
+            raise ValueError(message)
+        parsed.port
+        try:
+            address = ip_address(hostname)
+        except ValueError:
+            if ("." not in hostname or hostname.endswith((".localhost", ".local", ".internal"))
+                    or hostname.rsplit(".", 1)[-1].isdigit()):
+                raise ValueError(message) from None
+        else:
+            if not address.is_global or address.is_multicast:
+                raise ValueError(message)
+    except ValueError as error:
+        raise HTTPException(422, message) from error
+    return source
+
+
 def image_file_source(images, name):
     if name not in images:
         raise HTTPException(422, f"Image file '{name}' is missing from the ZIP.")
@@ -77,17 +105,22 @@ class BulkImport:
 
     def suggestions(self):
         queries = {
-            "brands": "select name from brands where company_id=:company and is_active order by name",
-            "categories": "select name from product_categories where company_id=:company and is_active order by name",
-            "hsn": "select code from hsn_masters where company_id=:company and is_active order by code",
-            "vendors": "select legal_name from parties where company_id=:company and is_active and party_type in ('vendor','customer_vendor') order by legal_name",
+            "brands": "select name,description from brands where company_id=:company and is_active order by name,id",
+            "categories": "select name from product_categories where company_id=:company and is_active order by name,id",
+            "hsn": "select code,description,gst_rate from hsn_masters where company_id=:company and is_active order by code",
+            "vendors": "select legal_name from parties where company_id=:company and is_active and party_type in ('vendor','customer_vendor') order by legal_name,id",
         }
         result = {}
         for key, query in queries.items():
-            values = self.db.execute(text(query + " limit :limit"), {"company": self.company_id, "limit": MAX_LOOKUPS + 1}).scalars().all()
+            values = self.db.execute(text(query + " limit :limit"), {"company": self.company_id, "limit": MAX_LOOKUPS + 1}).mappings().all()
             if len(values) > MAX_LOOKUPS:
                 raise HTTPException(422, f"Too many {key} suggestions to generate a workbook.")
-            result[key] = [str(value) for value in values]
+            result[key] = [str(next(iter(value.values()))) for value in values]
+            if key == "brands":
+                result["brand_descriptions"] = [value["description"] or "" for value in values]
+            elif key == "hsn":
+                result["hsn_descriptions"] = [value["description"] for value in values]
+                result["hsn_gst_rates"] = [float(value["gst_rate"]) for value in values]
         result.update(party_types=["customer", "vendor", "customer_vendor", "friend", "employee", "other"],
                       pricing_modes=["price", "discount", "inherit"], booleans=["TRUE", "FALSE"],
                       image_entities=["product", "brand", "category"])
@@ -145,6 +178,8 @@ class BulkImport:
         fields = ("name", "sku", "description", "image_url", "image_background", "selling_price",
                   "discount_percent", "pricing_mode", "is_active", "catalog_visible")
         values.update(_changes(row, fields))
+        if _changes(row, ("image_url",)).get("image_url") is not None:
+            values["image_url"] = _image_url(row["image_url"])
         filename = _text(row.get("image_file"))
         if filename:
             if row.get("image_url") not in (None, ""):
@@ -191,6 +226,8 @@ class BulkImport:
             raise HTTPException(404, "Variant does not belong to this product.")
         values = {key: current[key] for key in VariantImageInput.model_fields if current and key in current}
         values.update(_changes(row, FIELDS["variants"][2:]))
+        if _changes(row, ("image_url",)).get("image_url") is not None:
+            values["image_url"] = _image_url(row["image_url"])
         result = self.inventory.save_variant(product_id, VariantImageInput.model_validate(values), variant_id, commit=False)
         return str(result["saved_variant_id"])
 
@@ -256,11 +293,7 @@ class BulkImport:
         if name:
             content, mime, source = image_file_source(images, name)
         else:
-            try:
-                validate_image_source(url)
-            except ValueError as error:
-                raise HTTPException(422, str(error)) from error
-            source = url
+            source = _image_url(url)
         if entity == "product":
             product = self.inventory.detail(record_id)
             values = self._product_values(product)

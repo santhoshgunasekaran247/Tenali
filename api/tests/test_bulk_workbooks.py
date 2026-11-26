@@ -10,12 +10,81 @@ from openpyxl import load_workbook
 from PIL import Image
 
 from app.schemas.inventory import ProductInput
-from app.services.bulk_import import BulkImport
+from app.services.bulk_import import BulkImport, _image_url
 from app.services.bulk_workbooks import read_workbook, workbook
 from test_tenancy import TenantDatabaseCase
 
 
 class BulkWorkbookTests(unittest.TestCase):
+    def test_bulk_image_urls_require_public_https_or_existing_tenali_paths(self):
+        for value in ("http://example.com/p.png", "https://127.0.0.1/p.png", "https://192.168.1.1/p.png",
+                      "https://[::1]/p.png", "https://224.0.0.1/p.png", "https://localhost/p.png",
+                      "https://shop.local/p.png", "https://user:pass@example.com/p.png", "https://",
+                      "https://127.1/p.png", "https://example.com:bad/p.png", "//example.com/p.png", 123):
+            with self.subTest(value=value), self.assertRaises(HTTPException):
+                _image_url(value)
+        for value in ("https://images.example.com/p.png", "https://8.8.8.8/p.png",
+                      f"/api/public-images/{uuid4()}/{uuid4()}", "/api/catalog-assets/photo.png"):
+            self.assertEqual(_image_url(value), value)
+        service = object.__new__(BulkImport)
+        service.inventory = MagicMock()
+        service.inventory.detail.return_value = {"variants": []}
+        with self.assertRaises(HTTPException):
+            service.product({"name": "Bad URL", "image_url": "http://example.com/p.png"})
+        with self.assertRaises(HTTPException):
+            service.variant({"product_id": str(uuid4()), "variant_name": "Bad URL",
+                             "image_url": "https://127.0.0.1/p.png"})
+        service.inventory.save_product.assert_not_called()
+        service.inventory.save_variant.assert_not_called()
+
+    def test_product_template_autofills_related_fields_without_importing_empty_rows(self):
+        content = workbook("products", lookups={
+            "brands": ["Acme"], "brand_descriptions": ["Handmade"],
+            "hsn": ["0418"], "hsn_descriptions": ["Goods"], "hsn_gst_rates": [0],
+        })
+        book = load_workbook(io.BytesIO(content))
+        data = book["Data"]
+        self.assertEqual(data["I2"].data_type, "f")
+        self.assertIn("$H2", data["I2"].value)
+        self.assertIn("$H2001", data["J2001"].value)
+        self.assertIn("$E2", data["F2"].value)
+        self.assertEqual(book["References"]["D2"].value, "0418")
+        self.assertEqual(book["References"]["F2"].value, 0)
+        self.assertEqual(data["H2"].number_format, "@")
+        self.assertNotEqual(data["H1"].fill.fgColor.rgb, data["I1"].fill.fgColor.rgb)
+        self.assertEqual(read_workbook("products", content), [])
+        data["I2"] = data["I2"].value.replace("References!", "'References'!")
+        data["B2"] = "Cup"
+        data["H2"] = "0418"
+        output = io.BytesIO()
+        book.save(output)
+        row = read_workbook("products", output.getvalue())[0]
+        self.assertEqual(row["hsn_code"], "0418")
+        self.assertIsNone(row["gst_rate"])
+        self.assertIsNone(row["hsn_description"])
+
+    def test_autofill_allows_literals_but_rejects_modified_and_misplaced_formulas(self):
+        book = load_workbook(io.BytesIO(workbook("products")))
+        sheet = book["Data"]
+        sheet["B2"] = "New HSN product"
+        sheet["H2"] = "1234"
+        sheet["I2"] = "New goods"
+        sheet["J2"] = 18
+        output = io.BytesIO()
+        book.save(output)
+        self.assertEqual(read_workbook("products", output.getvalue())[0]["gst_rate"], 18)
+        sheet["I2"] = '=HYPERLINK("https://example.com","bad")'
+        output = io.BytesIO()
+        book.save(output)
+        with self.assertRaisesRegex(HTTPException, "Formulas"):
+            read_workbook("products", output.getvalue())
+        sheet["I2"] = None
+        sheet["B2"] = sheet["F2"].value
+        output = io.BytesIO()
+        book.save(output)
+        with self.assertRaisesRegex(HTTPException, "Formulas"):
+            read_workbook("products", output.getvalue())
+
     def test_template_has_fresh_suggestions_sample_and_free_text_validation(self):
         content = workbook("products", lookups={"brands": ["Acme", "New brand"], "booleans": ["TRUE", "FALSE"]})
         book = load_workbook(io.BytesIO(content))
@@ -270,6 +339,22 @@ class BulkWorkbookTests(unittest.TestCase):
 
 
 class BulkDatabaseTests(TenantDatabaseCase):
+    def setUp(self):
+        from dotenv import load_dotenv
+        load_dotenv("api/.env")
+        # The rollback fixture shares one connection; hosting workers must not use it concurrently.
+        worker = patch("app.services.domain_onboarding.custom_domains_enabled", return_value=False)
+        worker.start()
+        self.addCleanup(worker.stop)
+        super().setUp()
+        from app.services.tenant_auth import TenantAuth
+        throttle = TenantAuth.throttle
+        prefix = f"bulk-{self.suffix}:"
+        isolated = patch.object(TenantAuth, "throttle", autospec=True,
+                                side_effect=lambda auth, bucket, limit=20: throttle(auth, prefix + bucket, limit))
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
     def test_resumable_jobs_are_idempotent_private_and_return_retryable_rows(self):
         _, cookies, _ = self.register("bulk-a")
         key = str(uuid4())

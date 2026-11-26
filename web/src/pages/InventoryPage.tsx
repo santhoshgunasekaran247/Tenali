@@ -18,7 +18,6 @@ import { StockCheckPanel } from "../components/StockCheckPanel";
 import { inventoryStockRows } from "../features/inventoryStockRows";
 import { useAuth } from "../features/auth";
 import { DeleteTransactionDialog } from "../components/DeleteTransactionDialog";
-import { BulkWorkbookPanel } from "../components/BulkWorkbookPanel";
 
 function inventoryViewFrom(search: string): 'alerts'|'check'|null {
   const view=new URLSearchParams(search).get('view');
@@ -67,7 +66,6 @@ export function InventoryPage() {
   const {user}=useAuth();
   const canDelete=!!user&&['owner','admin'].includes(user.role);
   const [deleteConfirm,setDeleteConfirm]=useState(false);
-  const [showBulk,setShowBulk]=useState(false);
   const [deleteName,setDeleteName]=useState("");
   const [merge,setMerge]=useState({target:"",variant:""});
   const load=async()=>{setLoading(true);setError("");try{const[options,codes,notifications,stockCheck,missing,company]=await Promise.all([api.inventoryLookups(),api.hsnMasters(),api.inventoryAlerts(),api.inventoryReconciliation(),api.inventoryMissingSources(),api.company()]);setLookups(options);setHsn(codes.items);setGstRegistered(company.gst_registered !== false);setAlerts(notifications.items);setReconciliation(stockCheck.items);setMissingSources(missing.items);setAllProducts(null);setRevision(previous=>previous+1);return true;}catch(failure){setError(failure instanceof Error?failure.message:"Unable to load inventory.");return false;}finally{setLoading(false);}};
@@ -102,7 +100,7 @@ export function InventoryPage() {
   return <main className="ops-page inventory-page">
     <header className="inventory-heading"><PortalHomeLink/><div className="inventory-section-head"><h1>Product Inventory</h1><div className="inventory-actions">
       <button className="btn" type="button" disabled={busy||loading||!!error} onClick={()=>{openVersion.current++;setView('products');setNewProduct(true);setEditor('product');setSelectedId(null);}}><Plus size={16}/>Add Product</button>
-      {canDelete?<button className="btn light" type="button" aria-expanded={showBulk} onClick={()=>setShowBulk(previous=>!previous)}>Bulk Excel</button>:null}
+      {canDelete?<Link className="btn light" to="/portal/bulk-upload" state={{selectedProducts:selectedIds}}>Bulk Excel</Link>:null}
       <button className="ops-link-btn" type="button" title="Refresh inventory" aria-label="Refresh inventory" disabled={loading||busy} onClick={()=>void load()}><RefreshCw size={18}/></button>
     </div></div><div className="inventory-tabs" role="tablist" aria-label="Inventory views">
       <button role="tab" type="button" aria-selected={view==='products'} onClick={()=>setView('products')}>Products</button>
@@ -110,7 +108,6 @@ export function InventoryPage() {
       <button role="tab" type="button" aria-selected={view==='check'} onClick={()=>setView('check')}>Stock check ({reconciliation.filter(row=>Number(row.difference)!==0||Number(row.missing_document_references)>0).length})</button>
     </div></header>
     {!selected&&!newProduct&&error?<FloatingAlert>{error}</FloatingAlert>:null}{!selected&&!newProduct&&message?<FloatingAlert tone="success">{message}</FloatingAlert>:null}{loading?<p className="inventory-feedback" role="status">Loading inventory...</p>:null}
-    {showBulk&&!selected&&!newProduct?<BulkWorkbookPanel selectedProducts={selectedIds} onImported={()=>{void load();}}/>:null}
     {view==='check'&&!selected&&!newProduct&&!loading&&!error?<StockCheckPanel rows={reconciliation} missingSources={missingSources} busy={busy}
       onOpen={id=>void openById(id)}
       onAttribute={(id,reference,notes)=>perform(()=>api.inventoryAttributeExternalSource(id,reference,notes),"Document reference saved. Stock quantities were not changed.")}/>:null}

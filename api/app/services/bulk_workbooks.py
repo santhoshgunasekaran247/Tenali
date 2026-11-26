@@ -5,7 +5,10 @@ from zipfile import BadZipFile, ZipFile
 from fastapi import HTTPException
 from defusedxml.common import DefusedXmlException
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font
+from openpyxl.comments import Comment
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.workbook.properties import CalcProperties
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 
@@ -78,6 +81,114 @@ LOOKUP_FIELDS = {
     "catalog_visible": "booleans",
     "entity": "image_entities",
 }
+AUTOFILL = {
+    "brand_description": ("brand", "$A$2:$B$5001", 2),
+    "hsn_description": ("hsn_code", "$D$2:$F$5001", 2),
+    "gst_rate": ("hsn_code", "$D$2:$F$5001", 3),
+}
+REQUIRED_FIELDS = {
+    "products": {"name"}, "variants": {"product_id", "variant_name"},
+    "hsn": {"code", "description", "gst_rate"}, "parties": {"party_type", "legal_name"},
+    "brands": {"name"}, "categories": {"name"}, "images": {"id", "entity"},
+}
+FIELD_HELP = {
+    "id": "Leave blank to create. Keep an exported ID to update a record in this workspace.",
+    "hsn_code": "Choose an existing HSN to fill description and GST. For a new code, overwrite both related cells with literal values.",
+    "brand": "Choose an existing brand to fill its description, or type a new name.",
+    "brand_description": "Auto-filled for an existing brand. For a new brand, replace the formula with its description.",
+    "hsn_description": "Auto-filled from the selected HSN. For a new code, replace the formula with a description.",
+    "gst_rate": "Auto-filled from the selected HSN. For a new code, replace the formula with a rate from 0 to 100 (for example 18, not 18%).",
+    "categories": "Separate names with |. The first is primary. Existing names or new names are accepted.",
+    "image_url": "Public HTTPS or an existing Tenali image URL. Leave image_file blank when using a URL.",
+    "image_file": "Filename in the ZIP images/ folder. Leave image_url blank when using a file.",
+    "failure_reason": "Correct the described error and re-upload only failed rows. This column is ignored during import.",
+}
+
+
+def _autofill_formula(field, number, fields):
+    source, reference, index = AUTOFILL[field]
+    cell = f"${get_column_letter(fields.index(source) + 1)}{number}"
+    # Escape Excel lookup wildcards so brand names are matched literally.
+    key = f'SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({cell}&"","~","~~"),"*","~*"),"?","~?")'
+    lookup = f"VLOOKUP({key},References!{reference},{index},FALSE)"
+    if field != "gst_rate":
+        lookup += '&""'
+    return f'=IF({cell}="","",IFERROR({lookup},""))'
+
+
+def _style_header(sheet, fields, kind):
+    for column, field in enumerate(fields, 1):
+        cell = _write_cell(sheet, 1, column, field)
+        color = "147D78" if kind == "products" and field in AUTOFILL else (
+            "9B3B30" if field == "failure_reason" else "193D67")
+        cell.fill = PatternFill("solid", fgColor=color)
+        cell.font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        hint = FIELD_HELP.get(field, "Enter a value. Blank update cells leave this field unchanged.")
+        if field in REQUIRED_FIELDS[kind]:
+            hint = "Required for new records. " + hint
+        cell.comment = Comment(hint, "Tenali")
+        width = 42 if field in {"description", "hsn_description", "brand_description", "failure_reason", "image_url", "address"} else (
+            38 if field in {"id", "product_id"} else max(20, len(field) + 4))
+        dimension = sheet.column_dimensions[get_column_letter(column)]
+        dimension.width = width
+        if field in {"id", "product_id", "sku", "hsn_code", "code", "phone", "gst_number"}:
+            dimension.number_format = "@"
+    sheet.row_dimensions[1].height = 34
+
+
+def _readme(book, kind, notes):
+    sheet = book.create_sheet("README")
+    sheet.sheet_view.showGridLines = False
+    for column in range(1, 9):
+        sheet.column_dimensions[get_column_letter(column)].width = 15
+    lines = [
+        ("TENALI | BULK WORKBOOK", "title"),
+        (f"{kind.upper()} - Quick start", "section"),
+        ("1. Fill in Data. Leave id blank for new records; keep exported IDs to update.", ""),
+        ("2. Use dropdowns for existing records, or type new names. Suggestions belong to this workspace at download time.", ""),
+        ("3. Upload your completed workbook on Bulk upload. Each row saves independently.", ""),
+        ("4. Download the results ZIP. Correct failure.xlsx and upload only failed rows again.", ""),
+        ("Working with your data", "section"),
+        ("Blank update cells keep existing values. Use <clear> to clear an optional field.", ""),
+        ("Dark blue headers are inputs; teal headers auto-fill related values. Hover over headers for field guidance.", ""),
+        ("Products: selecting an HSN fills its description and GST; selecting a brand fills its description.", "") if kind == "products" else
+        ("Only the Data sheet is imported. This guide and the example below are not imported.", ""),
+        ("For a new HSN or brand, replace its auto-filled cells with your own values. Existing HSN/GST values are verified from the live master on upload.", "") if kind == "products" else
+        ("Do not remove or rename the Data sheet or its column headers.", ""),
+        ("Use text for HSN codes, SKUs and phone numbers to preserve leading zeroes.", ""),
+        ("Keep the built-in lookup formulas, or replace them with literal values. Other formulas are rejected.", ""),
+        (f"Limits: {MAX_ROWS:,} data rows; XLSX 10 MiB; image ZIP 20 MiB.", ""),
+        ("Record-specific guidance", "section"),
+        *((line, "") for line in INSTRUCTIONS[kind]),
+        ("Example only - copy values into Data if needed", "section"),
+    ]
+    for number, (line, style) in enumerate(lines, 1):
+        sheet.merge_cells(start_row=number, start_column=1, end_row=number, end_column=8)
+        cell = _write_cell(sheet, number, 1, line)
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        cell.font = Font(name="Calibri", size=11, color="172D4A")
+        sheet.row_dimensions[number].height = 34 if len(line) > 115 else 28
+        if style:
+            cell.fill = PatternFill("solid", fgColor="193D67" if style == "title" else "E5EFF8")
+            cell.font = Font(name="Calibri", size=16 if style == "title" else 12, bold=True,
+                             color="FFFFFF" if style == "title" else "193D67")
+    number = len(lines)
+    for field, value in SAMPLES[kind].items():
+        number += 1
+        sheet.merge_cells(start_row=number, start_column=1, end_row=number, end_column=2)
+        sheet.merge_cells(start_row=number, start_column=3, end_row=number, end_column=8)
+        _write_cell(sheet, number, 1, field).font = Font(bold=True, color="193D67")
+        _write_cell(sheet, number, 3, value).alignment = Alignment(wrap_text=True, vertical="center")
+        sheet.row_dimensions[number].height = 25
+    if notes:
+        for line in ("AI catalog notes (review against the source):", notes):
+            number += 1
+            sheet.merge_cells(start_row=number, start_column=1, end_row=number, end_column=8)
+            _write_cell(sheet, number, 1, line).alignment = Alignment(wrap_text=True, vertical="top")
+            sheet.row_dimensions[number].height = 90 if line == notes else 28
+    sheet.freeze_panes = "A3"
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
 
 
 def _write_cell(sheet, row, column, value):
@@ -92,49 +203,52 @@ def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> 
         raise HTTPException(422, "Unknown bulk workbook type.")
     lookups = lookups or {}
     book = Workbook()
+    book.calculation = CalcProperties(calcMode="auto")
     sheet = book.active
     sheet.title = "Data"
     fields = (*FIELDS[kind], "failure_reason") if reasons else FIELDS[kind]
-    for column, field in enumerate(fields, 1):
-        _write_cell(sheet, 1, column, field).font = Font(bold=True)
+    _style_header(sheet, fields, kind)
     for number, row in enumerate(rows, 2):
         for column, field in enumerate(fields, 1):
             _write_cell(sheet, number, column, row.get(field))
     sheet.freeze_panes = "B2"
-    sheet.auto_filter.ref = f"A1:{get_column_letter(len(fields))}{max(1, sheet.max_row)}"
-    for column in range(1, len(fields) + 1):
-        sheet.column_dimensions[get_column_letter(column)].width = 22
+    last_row = max(2, sheet.max_row)
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(fields))}{last_row}"
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_view.zoomScale = 85
+    sheet.sheet_properties.tabColor = "193D67"
+    sheet.print_title_rows = "1:1"
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.conditional_formatting.add(f"A2:{get_column_letter(len(fields))}{MAX_ROWS + 1}",
+        FormulaRule(formula=["MOD(ROW(),2)=0"], fill=PatternFill("solid", fgColor="F0F5FA")))
+    _readme(book, kind, notes)
 
-    readme = book.create_sheet("README")
-    instructions = (
-        "Tenali bulk workbook",
-        f"Record type: {kind}. Only rows on the Data sheet are imported.",
-        "Leave id empty to create; retain an exported id to update that record in this workspace.",
-        "Downloaded existing rows are full records. Edit them and upload the workbook again.",
-        "Blank cells on an existing row leave that field unchanged. Use <clear> to clear an optional field.",
-        "Categories and labels are separated with |. The first category is the primary category.",
-        "Type new brand, category or vendor names directly; new HSN codes require a description and GST rate.",
-        "Use text for HSN codes and phone numbers to preserve leading zeroes.",
-        "Image URLs must be public HTTPS links or existing Tenali image URLs. File images use the separate image workflow.",
-        "After upload, successes and failures are separate workbooks. Correct failure_reason rows and upload again.",
-        "Dropdown suggestions are refreshed whenever a workbook is downloaded; free text is allowed.",
-        f"Maximum {MAX_ROWS} data rows per upload; maximum upload size is 10 MiB.",
-        *INSTRUCTIONS[kind],
-        "Each row is committed independently; a failure does not undo successful rows.",
-        "Do not upload formulas. Use literal values; do not remove or rename the Data sheet.",
-        "The sample below is illustrative and is not imported automatically.",
-        "Sample row (copy values to Data to use):",
-    )
-    for number, line in enumerate(instructions, 1):
-        _write_cell(readme, number, 1, line)
-    if notes:
-        _write_cell(readme, len(instructions) + 3, 1, "AI catalog notes (review against the source):")
-        _write_cell(readme, len(instructions) + 4, 1, notes)
-    readme.column_dimensions["A"].width = 110
-    header_row = len(instructions) + 1
-    for column, field in enumerate(FIELDS[kind], 1):
-        _write_cell(readme, header_row, column, field).font = Font(bold=True)
-        _write_cell(readme, header_row + 1, column, SAMPLES[kind].get(field))
+    references = book.create_sheet("References")
+    references.sheet_state = "hidden"
+    for column, key in enumerate(("brands", "brand_descriptions", None, "hsn", "hsn_descriptions", "hsn_gst_rates"), 1):
+        if key:
+            _write_cell(references, 1, column, key)
+            for number, value in enumerate(lookups.get(key, []), 2):
+                _write_cell(references, number, column, value)
+    if kind == "products":
+        for field in AUTOFILL:
+            column = fields.index(field) + 1
+            source = AUTOFILL[field][0]
+            source_column = fields.index(source) + 1
+            names = lookups.get("brands" if source == "brand" else "hsn", [])
+            for number in range(2, MAX_ROWS + 2):
+                cell = sheet.cell(number, column)
+                if cell.value is None or str(sheet.cell(number, source_column).value) in names:
+                    cell.value = _autofill_formula(field, number, fields)
+                    cell.font = Font(name="Calibri", color="147D78")
+                    cell.number_format = "0.##" if field == "gst_rate" else "General"
+        # Column formatting alone is not honored by every spreadsheet editor.
+        for number in range(2, MAX_ROWS + 2):
+            sheet.cell(number, fields.index("hsn_code") + 1).number_format = "@"
 
     lists = book.create_sheet("Suggestions")
     lists.sheet_state = "hidden"
@@ -143,7 +257,7 @@ def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> 
             raise HTTPException(422, f"Too many {key} suggestions to generate a workbook.")
         _write_cell(lists, 1, column, key)
         for row, value in enumerate(values, 2):
-            _write_cell(lists, row, column, str(value))
+            _write_cell(lists, row, column, value)
         if not values:
             continue
         letter = get_column_letter(column)
@@ -194,9 +308,19 @@ def read_workbook(kind: str, content: bytes) -> list[dict]:
         for number, cells in enumerate(iterator, 1):
             if number > MAX_ROWS or len(cells) > len(names):
                 raise HTTPException(422, "Workbook has too many rows or cells outside the header.")
-            if any(cell.data_type == "f" for cell in cells):
-                raise HTTPException(422, "Formulas are not supported in bulk workbooks; paste values instead.")
-            values = {name: cell.value for name, cell in zip(names, cells) if name != "failure_reason"}
+            values = {}
+            for name, cell in zip(names, cells):
+                if cell.data_type == "f":
+                    if (kind != "products" or name not in AUTOFILL or AUTOFILL[name][0] not in names
+                            or cell.value.replace("'References'!", "References!") != _autofill_formula(name, number + 1, names)):
+                        raise HTTPException(422, "Formulas other than built-in dependent-field lookups are not supported; paste values instead.")
+                    # Do not execute uploaded formulas or trust their cached values/snapshot.
+                    # Existing dependencies are resolved against this tenant's live masters.
+                    value = None
+                else:
+                    value = cell.value
+                if name != "failure_reason":
+                    values[name] = value
             if any(value is not None and value != "" for value in values.values()):
                 rows.append(values)
         return rows

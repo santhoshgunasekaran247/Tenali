@@ -1,3 +1,74 @@
+.bulk-page .bulk-hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.bulk-hero .eyebrow, .bulk-back { display: inline-flex; align-items: center; gap: 8px; }
+.bulk-hero h1 { margin: 8px 0; }
+.bulk-hero p { margin: 0; }
+.bulk-back { color: #325f8b; text-decoration: none; font-size: 13px; white-space: nowrap; }
+.bulk-content { max-width: 1440px; margin: auto; padding: 28px clamp(16px, 3vw, 40px) 48px; }
+.bulk-content h2 { font-size: 19px; margin: 0 0 8px; line-height: 1.3; }
+.bulk-content h3 { font-size: 14px; margin: 0 0 10px; }
+.bulk-content p, .bulk-content li { font-size: 13px; line-height: 1.65; }
+.bulk-type-section > p { color: #526b87; margin: 0 0 18px; }
+.bulk-types { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 24px; }
+.bulk-types button { display: flex; flex-direction: column; align-items: start; gap: 10px; padding: 16px; border: 1px solid #dce7f3; border-radius: 10px; text-align: left; background: #fff; color: #425f7d; font: inherit; cursor: pointer; }
+.bulk-types strong { font-size: 14px; color: #172d4a; }
+.bulk-types span { font-size: 12px; line-height: 1.5; }
+.bulk-types button[aria-pressed="true"] { border-color: #325f8b; background: #eaf2fb; box-shadow: inset 0 3px #193d67; }
+.bulk-content button:focus-visible, .bulk-content summary:focus-visible, .bulk-back:focus-visible { outline: 3px solid #b88959; outline-offset: 3px; }
+.bulk-content button:disabled { opacity: .55; cursor: not-allowed; }
+.bulk-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.bulk-card { background: #fff; border: 1px solid #dce7f3; border-radius: 12px; padding: clamp(18px, 2.4vw, 30px); min-width: 0; box-shadow: 0 4px 18px #17385f08; }
+.bulk-step-heading { display: flex; align-items: start; gap: 12px; margin-bottom: 22px; }
+.bulk-step-heading p { margin: 0; color: #526b87; }
+.bulk-step-heading h2 { margin: 0 0 4px; }
+.bulk-step { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; background: #eaf2fb; color: #193d67; border-radius: 50%; font-size: 14px; font-weight: 700; }
+.bulk-content .btn { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 42px; padding: 11px 16px; border: 1px solid #193d67; border-radius: 6px; background: #193d67; color: #fff; font-size: 12px; white-space: normal; }
+.bulk-content .btn.light { background: #fff; color: #193d67; border-color: #cddceb; }
+.bulk-tips { padding-left: 18px; margin: 22px 0; color: #425f7d; }
+.bulk-tips li + li { margin-top: 10px; }
+.bulk-export { border-top: 1px solid #e4edf7; padding-top: 18px; font-size: 13px; }
+.bulk-export summary { cursor: pointer; font-weight: 600; color: #193d67; }
+.bulk-export label { display: grid; gap: 8px; margin: 16px 0; color: #526b87; }
+.bulk-export select, .bulk-export textarea { width: 100%; min-width: 0; border: 1px solid #cddceb; border-radius: 6px; padding: 10px; font: inherit; background: #fff; color: #172d4a; }
+.bulk-export textarea { min-height: 90px; resize: vertical; }
+.bulk-file-picker { display: flex; flex-direction: column; align-items: center; gap: 12px; border: 1px dashed #9fb6cf; border-radius: 10px; padding: 24px 16px; background: #f7fafd; text-align: center; color: #325f8b; }
+.bulk-file-picker label { font-size: 14px; font-weight: 600; }
+.bulk-file-picker span { color: #526b87; font-size: 12px; }
+.bulk-file-picker input { max-width: 100%; font: inherit; font-size: 12px; }
+.bulk-file-picker input::file-selector-button { padding: 8px 12px; background: #fff; color: #193d67; border: 1px solid #cddceb; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+.bulk-file-picker strong { font-size: 12px; overflow-wrap: anywhere; }
+.bulk-image-guide { margin: 20px 0; padding: 16px; border-radius: 8px; background: #f3f7fc; color: #425f7d; }
+.bulk-image-guide h3 { display: flex; align-items: center; gap: 8px; color: #193d67; }
+.bulk-image-guide p { margin: 8px 0 0; }
+.bulk-image-guide code { overflow-wrap: anywhere; }
+.bulk-image-guide pre { padding: 12px; border: 1px solid #dce7f3; border-radius: 6px; background: #fff; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.bulk-upload-button { width: 100%; margin-top: 16px; }
+.bulk-muted { color: #526b87; margin: 14px 0 0; }
+.bulk-history { margin-top: 24px; }
+.bulk-history-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; flex-wrap: wrap; }
+.bulk-resume-note { color: #425f7d; background: #f3f7fc; border-left: 3px solid #9fb6cf; padding: 12px 16px; margin: 0 0 20px; }
+.bulk-empty { display: flex; flex-direction: column; align-items: center; padding: 24px; text-align: center; color: #627f9e; }
+.bulk-job { display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e4edf7; padding: 20px 0; }
+.bulk-job > div:first-child { flex: 1; min-width: 0; }
+.bulk-job strong { font-size: 14px; }
+.bulk-job p { margin: 8px 0; }
+.bulk-job small { display: block; color: #526b87; font-size: 11px; margin-top: 8px; }
+.bulk-job progress { display: block; width: min(100%, 340px); height: 7px; accent-color: #325f8b; }
+.bulk-job-status { display: inline-block; font-size: 11px; padding: 4px 8px; border-radius: 20px; margin-left: 12px; background: #fff3da; color: #76520d; }
+.bulk-job-status.is-complete { background: #e4f3ec; color: #246548; }
+.bulk-job-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.bulk-remove { border: 0; background: transparent; color: #526b87; text-decoration: underline; font: inherit; font-size: 12px; cursor: pointer; }
+.bulk-feedback { background: #e4f3ec; border: 1px solid #b5d8c6; border-radius: 8px; padding: 14px 18px; color: #246548; margin: 0 0 20px; overflow-wrap: anywhere; }
+.bulk-feedback.bulk-error { background: #fff1ef; border-color: #efc3bc; color: #963b31; }
+@media (min-width: 1500px) {
+  .bulk-types { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .bulk-page .bulk-hero { flex-direction: column; align-items: start; gap: 16px; }
+  .bulk-workspace { grid-template-columns: minmax(0, 1fr); }
+  .bulk-types { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bulk-types button { padding: 12px; }
+  .bulk-job { flex-direction: column; }
+}
 .header-portal, .portal-shell {
   --site-primary: #193d67;
   --site-accent: #b88959;

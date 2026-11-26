@@ -30,6 +30,7 @@ const operationsLinks: (PortalLink & { module: string })[] = [
   { label: "Sales & Quotations", path: "/portal/billing", status: "live", module: "billing" },
   { label: "Purchases", path: "/portal/purchases", status: "live", module: "purchases" },
   { label: "Product Inventory", path: "/portal/inventory", status: "live", module: "inventory" },
+  { label: "Bulk Upload", path: "/portal/bulk-upload", status: "live", module: "inventory", admin: true },
   { label: "Brands", path: "/portal/masters/brands", status: "live", module: "inventory" },
   { label: "Categories", path: "/portal/masters/categories", status: "live", module: "inventory" },
   { label: "HSN / GST", path: "/portal/masters/hsn", status: "live", module: "masters" },

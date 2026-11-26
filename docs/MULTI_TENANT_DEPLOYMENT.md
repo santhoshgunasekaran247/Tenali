@@ -26,11 +26,23 @@ keeps the previous path as an alias and directs visitors to the current address.
 ## Bulk workbooks and AI catalog drafts
 
 After applying migrations through `068_bulk_import_jobs`, owners and administrators can
-open **Bulk Excel workbooks** in Inventory. Download a template for products,
+open **Bulk Upload** from the Operations menu, or **Bulk Excel** in Inventory
+(`/portal/bulk-upload`). Choose a record type, prepare its workbook, upload it,
+then download results in **Saved imports & results**. Download a template for products,
 variants, HSN, contacts, brands, categories or images; suggestions are read from
 the current workspace at download time, so downloading again refreshes them.
-Each workbook includes a README and sample row. Select products in the register or
-brands/categories in the bulk panel to export editable records. Retain their IDs
+Each workbook includes styled headers, alternating row shading, field guidance,
+a readable README and an example. In product workbooks, choosing an existing HSN
+auto-fills its description and GST rate; choosing a brand auto-fills its description.
+Teal headers identify these dependent columns. Lookups cover all 2,000 input rows.
+For a new HSN or brand, overwrite its dependent cells with literal values.
+Only the exact built-in lookup formulas are accepted on import; their cached
+values and hidden reference sheets are never executed or trusted by the server.
+Existing HSN/GST values are resolved from the current workspace's live masters.
+Use automatic calculation in Excel to see lookups update; download again for fresh suggestions.
+Select products in the register before opening Bulk Excel, or
+brands/categories in the export section to export editable records. Product IDs
+can also be pasted on the bulk page if the inventory selection is unavailable. Retain their IDs
 for updates; blank update cells leave values unchanged and `<clear>` clears an
 optional value. For HSN, contacts and variants, selected exports accept record IDs.
 Product rows can create missing brands, categories, HSN and vendors as described
@@ -54,11 +66,16 @@ package must total at most 8 MiB. Failure ZIPs retain referenced files for retry
 Excel uploads are limited to 10 MiB and 2,000 rows; image ZIPs to 20 MiB.
 For non-white product backgrounds, transparent source images or enabled image
 segmentation are required.
+Bulk image URL cells (including products and variants) accept public HTTPS links
+or existing Tenali image paths. HTTP links, credentials in URLs, local hostnames
+and private/loopback IP literals are rejected with a row failure. External links
+are stored, not downloaded or checked for availability; ensure shoppers can open
+them. Use the image-file ZIP workflow rather than embedding image data in a URL cell.
 
 In Tenali AI, owners/admins can select **Prepare product bulk workbook** before
 attaching PDF/Excel files, then send text and/or private attachments. The assistant prepares a reviewable product ZIP
 without importing records; download it, check and correct the manifest, then
-upload it in Inventory. Separate images and embedded PDF/Excel images can be
+upload it on Bulk Upload. Separate images and embedded PDF/Excel images can be
 cropped into product images; the workbook README records the AI's description
 of the catalog theme. AI input limits are 2 MiB per file, two files per message,
 five PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to

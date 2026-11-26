@@ -23,6 +23,7 @@ import { PlatformAdminPage } from "./pages/PlatformAdminPage";
 import { TenaliAIPage } from "./pages/TenaliAIPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { BulkUploadPage } from "./pages/BulkUploadPage";
 import { InventoryMasterPage } from "./pages/InventoryMasterPage";
 import { AuditPage } from "./pages/AuditPage";
 import { HomePage } from "./pages/HomePage";
@@ -127,6 +128,7 @@ export default function App() {
         <Route path="/portal/checkout-setup" element={<CheckoutAdminPage key="setup" setupOnly />} />
         <Route path="/portal/masters" element={<MasterDataPage />} />
         <Route path="/portal/inventory" element={<InventoryPage />} />
+        <Route path="/portal/bulk-upload" element={<BulkUploadPage />} />
         <Route path="/portal/masters/hsn" element={<MasterDataPage />} />
         <Route path="/portal/masters/brands" element={<InventoryMasterPage key="brands" kind="brands" />} />
         <Route path="/portal/masters/categories" element={<InventoryMasterPage key="categories" kind="categories" />} />

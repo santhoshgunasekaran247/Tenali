@@ -12,6 +12,7 @@ export const portalEntries: PortalEntry[] = [
   { label: "Sales & Quotations", path: "/portal/billing", module: "billing", group: "Operations" },
   { label: "Purchases", path: "/portal/purchases", module: "purchases", group: "Operations" },
   { label: "Product Inventory", path: "/portal/inventory", module: "inventory", group: "Operations" },
+  { label: "Bulk Upload", path: "/portal/bulk-upload", admin: true, group: "Operations" },
   { label: "Brands", path: "/portal/masters/brands", module: "inventory", group: "Operations" },
   { label: "Categories", path: "/portal/masters/categories", module: "inventory", group: "Operations" },
   { label: "HSN / GST", path: "/portal/masters/hsn", module: "masters", group: "Operations" },
