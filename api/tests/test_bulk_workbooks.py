@@ -239,6 +239,75 @@ class BulkWorkbookTests(unittest.TestCase):
         self.assertEqual(rows[0]["image_file"], "product-1.jpg")
         self.assertIn("product-1.jpg", images)
 
+    def test_ai_catalog_uses_numbered_photo_panels_not_estimated_grid_coordinates(self):
+        from PIL import ImageDraw
+        from app.ai.catalog_workbook import CATALOG_INSTRUCTIONS, CatalogOutput, catalog_answer, download_catalog
+        from app.ai.provider import OpenAIProvider
+        source = Image.new("RGB", (1000, 700), "white")
+        draw = ImageDraw.Draw(source)
+        centers = []
+        for index in range(10):
+            left, top = 12 + index % 5 * 115, 12 + index // 5 * 260
+            for y in range(100):
+                draw.line((left, top + y, left + 99, top + y),
+                          fill=(40 + 2 * y, 35 + index * 4 + y, 25 + index * 5 + y // 2))
+            draw.text((left, top + 115), "Price Rs 1500", fill="black")
+            draw.text((left, top + 140), "MRP Rs 2499", fill="gray")
+            centers.append(source.getpixel((left + 50, top + 50)))
+        image = io.BytesIO()
+        source.save(image, format="PNG")
+        products = []
+        for index in range(10):
+            product = dict.fromkeys(("sku", "description", "brand", "categories", "hsn_code", "hsn_description",
+                                    "gst_rate", "vendor", "labels", "selling_price", "image_background"), None)
+            products.append({**product, "name": f"Product {index + 1}", "image_index": 0,
+                             "image_box": f"region:{index + 1}"})
+        parsed = CatalogOutput.model_validate({"reply": "Review the images.", "clarification": None, "products": products})
+        response = MagicMock(status="completed", id="fixture", output_text=parsed.model_dump_json(),
+            usage=MagicMock(input_tokens=100, output_tokens=100, input_tokens_details=MagicMock(cached_tokens=0)))
+        with patch("app.ai.provider.OpenAI") as client:
+            client.return_value.__enter__.return_value.responses.create.return_value = response
+            result = OpenAIProvider().respond(CATALOG_INSTRUCTIONS, "Prepare a product workbook.", {
+                "timeout_seconds": 30, "routine_model": "fixture", "max_output_tokens": 2000, "_catalog_mode": True,
+                "_attachments": [{"mime_type": "image/png", "content": image.getvalue()}]})
+            client.return_value.__enter__.return_value.responses.create.assert_called_once()
+            request = client.return_value.__enter__.return_value.responses.create.call_args.kwargs
+        blocks = request["input"][0]["content"]
+        self.assertTrue(any("region:1" in block.get("text", "") and "region:10" in block.get("text", "")
+                            for block in blocks))
+        sent_images = [block for block in blocks if block["type"] == "input_image"]
+        self.assertEqual(len(sent_images), 1)
+        with Image.open(io.BytesIO(base64.b64decode(sent_images[0]["image_url"].split(",", 1)[1]))) as sent:
+            self.assertLessEqual(max(sent.size), 1024)
+            self.assertNotEqual(sent.getpixel((12, 12)), source.getpixel((12, 12)))
+        self.assertIsNone(result.error)
+        assistant = MagicMock()
+        assistant.scope = {"company": str(uuid4()), "user": str(uuid4())}
+        assistant.identity = {"role": "owner"}
+        saved = {"content": result.output.reply, "attachment_ids": [uuid4()]}
+        assistant.db.execute.return_value.mappings.return_value.first.return_value = saved
+        with patch("app.ai.capabilities.current_identity", return_value={"role": "owner"}), \
+                patch("app.ai.catalog_workbook.MediaService") as media, \
+                patch("app.ai.catalog_workbook.BulkImport") as bulk:
+            media.return_value.attachments.return_value = [{"mime_type": "image/png", "content": image.getvalue()}]
+            bulk.return_value.suggestions.return_value = {}
+            package = download_catalog(assistant, uuid4(), uuid4())
+            with ZipFile(io.BytesIO(package)) as archive:
+                rows = read_workbook("products", archive.read("manifest.xlsx"))
+                self.assertEqual(len(rows), 10)
+                self.assertEqual(len([name for name in archive.namelist() if name.startswith("images/")]), 10)
+                for index, row in enumerate(rows):
+                    self.assertEqual(row["image_file"], f"product-{index + 1}.jpg")
+                    with Image.open(io.BytesIO(archive.read("images/" + row["image_file"]))) as crop:
+                        self.assertTrue(98 <= crop.width <= 106 and 98 <= crop.height <= 106, crop.size)
+                        actual = crop.getpixel((crop.width // 2, crop.height // 2))
+                        self.assertLess(max(abs(a - b) for a, b in zip(actual, centers[index])), 8)
+            for invalid in ("16,16,140,202", "region:0", "region:11", "region:bad"):
+                parsed.products[0].image_box = invalid
+                saved["content"] = catalog_answer(parsed)
+                with self.subTest(box=invalid), self.assertRaisesRegex(HTTPException, "Regenerate"):
+                    download_catalog(assistant, uuid4(), uuid4())
+
     def test_ai_catalog_rejects_bad_image_reference_and_non_admin(self):
         from app.ai.catalog_workbook import CatalogOutput, catalog_answer, download_catalog
         row = dict.fromkeys(("sku", "description", "brand", "categories", "hsn_code", "hsn_description",

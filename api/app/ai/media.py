@@ -8,7 +8,7 @@ from zipfile import BadZipFile, ZipFile
 from fastapi import HTTPException
 from defusedxml.common import DefusedXmlException
 from openpyxl import load_workbook
-from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageStat, UnidentifiedImageError
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy import text
@@ -104,6 +104,64 @@ def model_image(content):
         output = io.BytesIO()
         image.save(output, format="JPEG", quality=85)
         return output.getvalue()
+
+
+def catalog_photo_regions(content):
+    """Locate rectangular photo panels, not sparse price text, on multi-product catalogues."""
+    import cv2
+    import numpy as np
+
+    with Image.open(io.BytesIO(model_image(content))) as image:
+        gray = np.asarray(image.convert("L"))
+    height, width = gray.shape
+    mask = cv2.threshold(gray, 245, 255, cv2.THRESH_BINARY_INV)[1]
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), dtype=np.uint8))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    regions = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        if min(w, h) < 30 or max(w / h, h / w) > 3 or w * h < 0.002 * width * height:
+            continue
+        if cv2.contourArea(contour) < 0.75 * w * h:
+            continue
+        tones = gray[y:y + h, x:x + w]
+        if np.mean((tones >= 40) & (tones <= 215)) < 0.3 or tones.std() < 15:
+            continue
+        regions.append((x, y, x + w, y + h))
+    if len(regions) < 2:
+        return []
+    ordered = []
+    while regions:
+        anchor = min(regions, key=lambda region: region[1])
+        row = [region for region in regions
+               if min(region[3], anchor[3]) - max(region[1], anchor[1]) >=
+               0.5 * min(region[3] - region[1], anchor[3] - anchor[1])]
+        ordered.extend(sorted(row, key=lambda region: region[0]))
+        regions = [region for region in regions if region not in row]
+    return [",".join(str(round(value * 1000 / dimension)) for value, dimension in
+                     zip(region, (width, height, width, height)))
+            for region in ordered]
+
+
+def catalog_model_image(content):
+    preview = model_image(content)
+    regions = catalog_photo_regions(preview)
+    if not regions:
+        return preview, regions
+    with Image.open(io.BytesIO(preview)) as source:
+        image = source.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    for index, box in enumerate(regions, 1):
+        x0, y0, x1, y1 = (round(float(value) * dimension / 1000) for value, dimension in
+                          zip(box.split(","), (image.width, image.height, image.width, image.height)))
+        draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline="#0066cc", width=2)
+        label = f"R{index}"
+        left, top, right, bottom = draw.textbbox((0, 0), label)
+        draw.rectangle((x0, y0, x0 + right - left + 4, y0 + bottom - top + 4), fill="white")
+        draw.text((x0 + 2 - left, y0 + 2 - top), label, fill="#0066cc")
+    output = io.BytesIO()
+    image.save(output, format="JPEG", quality=85)
+    return output.getvalue(), regions
 
 
 def photo_reference(attachment_id, box):

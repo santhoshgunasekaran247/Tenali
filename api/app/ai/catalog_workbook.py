@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
-from app.ai.media import MediaService, catalog_assets, crop_region
+from app.ai.media import MediaService, catalog_assets, catalog_photo_regions, crop_region
 from app.services.bulk_import import BulkImport
 from app.services.bulk_workbooks import workbook
 
@@ -17,8 +17,14 @@ The user requests a reviewable product import workbook, not a business operation
 Extract product data only from the user's message and attached documents. Never invent
 HSN, tax rates, prices, brands, categories or other facts. Leave uncertain fields null.
 Use | between multiple category or label names. Set image_index to the zero-based
-image reference index only for an image that visibly contains the product, and
-image_box to its x0,y0,x1,y1 region in 0-1000 coordinates. Otherwise both are null.
+image reference index only for an image that visibly contains the product.
+When numbered photo panels are provided, set image_box to the matching region:N
+identifier (label R1 means region:1). Never estimate coordinates for those images.
+Match the product to the visible photo, not to an assumed row/column sequence.
+Without numbered panels, image_box may be x0,y0,x1,y1 in 0-1000 coordinates,
+normalized independently to the full image width and height, including blank margins.
+Exclude neighbouring products, price/description rows and blank space from crops.
+If the image association or boundaries are uncertain, leave both fields null.
 Use the provided PDF page and Excel sheet/row locations to help associate images,
 but never guess an uncertain association. Describe the source catalog's visual
 theme in reply. Set image_background only when a specific color is requested.
@@ -41,7 +47,7 @@ class CatalogRow(BaseModel):
     selling_price: str | None
     image_background: str | None
     image_index: int | None
-    image_box: str | None
+    image_box: str | None = Field(description="Use the supplied region:N photo label when available; otherwise a normalized x0,y0,x1,y1 box.")
 
 
 class CatalogOutput(BaseModel):
@@ -84,6 +90,8 @@ def download_catalog(assistant, conversation_id, message_id):
     except ValueError as error:
         raise HTTPException(422, "The saved catalog response is invalid.") from error
     files = catalog_assets(MediaService(assistant).attachments(conversation_id, row["attachment_ids"]))
+    regions = {index: {f"region:{number}": box for number, box in enumerate(catalog_photo_regions(image["content"]), 1)}
+               for index, image in enumerate(files) if image["mime_type"].startswith("image/")}
     records, images = [], {}
     for index, product in enumerate(parsed.products, 1):
         record = product.model_dump(exclude={"image_index", "image_box"}, exclude_none=True)
@@ -93,7 +101,15 @@ def download_catalog(assistant, conversation_id, message_id):
             image = files[product.image_index]
             if not image["mime_type"].startswith("image/"):
                 raise HTTPException(422, f"Product {index} refers to a document instead of an image.")
-            region = crop_region(image["content"], product.image_box, preserve_alpha=True)
+            box = product.image_box
+            choices = regions[product.image_index]
+            if box and box.startswith("region:"):
+                box = choices.get(box)
+                if box is None:
+                    raise HTTPException(422, f"Product {index} refers to an unavailable photo panel. Regenerate the catalog reply.")
+            elif choices:
+                raise HTTPException(422, f"Product {index} uses estimated image coordinates. Regenerate the catalog reply to select numbered photo panels.")
+            region = crop_region(image["content"], box, preserve_alpha=True)
             if region is None:
                 raise HTTPException(422, f"Product {index} has an invalid image region.")
             region.thumbnail((1200, 1200))

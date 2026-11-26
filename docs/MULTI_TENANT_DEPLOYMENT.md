@@ -77,7 +77,14 @@ attaching PDF/Excel files, then send text and/or private attachments. The assist
 without importing records; download it, check and correct the manifest, then
 upload it on Bulk Upload. Separate images and embedded PDF/Excel images can be
 cropped into product images; the workbook README records the AI's description
-of the catalog theme. AI input limits are 20 MiB per file, two files per message,
+of the catalog theme. Detected multi-photo panels are numbered in the image sent to the model;
+the model selects a panel identifier and the ZIP crops its exact source bounds,
+not estimated coordinates. Labels are not included in exported images. If panel
+selection is uncertain, the model must omit the image. Older collage replies using
+estimated coordinates must be regenerated rather than downloading another bad crop.
+Review images before import; panel detection does not remove printed artwork text
+or guarantee that the AI associated every product correctly.
+AI input limits are 20 MiB per file, two files per message,
 20 PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to
 40 products per reply and can be further limited by the configured output budget.
 Each embedded image and each normalized stored image remain limited to 2 MiB;
