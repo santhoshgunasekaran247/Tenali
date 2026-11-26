@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Tenali businesses report in Indian time (INR/GST); chat periods use the business date, not the server clock.
 BUSINESS_TZ = timezone(timedelta(hours=5, minutes=30))
+MAX_AI_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 def business_today():
@@ -52,7 +53,7 @@ class AIUpload(BaseModel):
     file_name: str = Field(min_length=1, max_length=200)
     mime_type: Literal["text/plain", "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                        "image/png", "image/jpeg", "image/webp"]
-    data_base64: str = Field(min_length=1, max_length=4 * ((2 * 1024 * 1024 + 2) // 3))
+    data_base64: str = Field(min_length=1, max_length=4 * ((MAX_AI_UPLOAD_BYTES + 2) // 3))
     catalog_images: bool = False
 
 class VoiceInput(BaseModel):

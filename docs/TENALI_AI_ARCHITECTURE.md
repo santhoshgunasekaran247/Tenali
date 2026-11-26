@@ -783,12 +783,15 @@ invalid cancellation. Existing immutable deletion archives remain authoritative.
 Stock transfers record workspace-user attribution in a narrowly validated new column;
 legacy profile attribution is retained and tenant credentials receive no SELECT grant.
 
-Private uploads accept UTF-8 `.txt`, text PDF (one to five unencrypted pages), or a
-single PNG/JPEG/WebP image, at most 2 MB/file, ten retained files/conversation and two
+Private uploads accept UTF-8 `.txt`, text PDF (one to five unencrypted pages), Excel
+`.xlsx`, or a single PNG/JPEG/WebP image, at most 20 MiB/file, ten retained files/conversation and two
 files/message. Text extraction is limited to 12,000 UTF-8 bytes. Scanned PDFs must
 be uploaded as page images. Images are decoded, orientation-corrected, stripped of metadata and stored
-as a JPEG no larger than 2048 x 2048 (sharp enough to cut product photos from); the provider receives a
+as a JPEG or transparent PNG no larger than 2048 x 2048 and 2 MiB (sharp enough to cut product photos from); the provider receives a
 1024 x 1024 copy at high detail so bill rows and small print stay legible.
+Catalog documents retain the eight-embedded-image limit and 2 MiB per embedded
+image. Migration `069_ai_upload_limit` allows 20 MiB document originals while
+retaining the 2 MiB database cap for normalized images.
 Document messages use low reasoning effort for row-by-row extraction; plain chat keeps the model default.
 Original binary PDFs/images are not forwarded to the provider or exposed through
 public URLs. Normalized private bytes/text are stored in `ai_attachments`, protected

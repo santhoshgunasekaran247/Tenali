@@ -213,7 +213,7 @@ export function TenaliAIPage() {
   };
   const upload = async (file: File) => {
     if (!selected || attachments.length >= 2) return;
-    if (file.size > 2 * 1024 * 1024) { setError("Choose a file no larger than 2 MB."); return; }
+    if (file.size > 20 * 1024 * 1024) { setError("Choose a file no larger than 20 MB."); return; }
     setBusy(true); setError("");
     try {
       const data = await new Promise<string>((resolve, reject) => {
@@ -329,7 +329,7 @@ export function TenaliAIPage() {
             <div className="ai-compose-actions">
             {features?.document_inputs_enabled ? <label className="ai-attach ai-icon-button" title="Attach file">
               <Paperclip size={19} aria-hidden="true" />
-              <input className="ai-sr-only" aria-label="Attach text PDF, Excel, text file or image (2 MB; up to two files)" type="file" accept=".txt,.pdf,.xlsx,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
+              <input className="ai-sr-only" aria-label="Attach text PDF, Excel, text file or image (20 MB; up to two files)" type="file" accept=".txt,.pdf,.xlsx,.png,.jpg,.jpeg,.webp" disabled={busy || !canSend || !!submission || attachments.length >= 2 || selected.status !== "active"}
                 onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void upload(file); }} /></label> : null}
             {canSend && selected.status === "active" ? <AIVoiceInput key={selected.id}
               conversationId={selected.id} available={!!features?.voice_inputs_enabled} disabled={operationBusy || !!submission} onBusy={setVoiceBusy}

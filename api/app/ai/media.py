@@ -13,10 +13,11 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy import text
 
+from app.ai.schemas import MAX_AI_UPLOAD_BYTES
 from app.services.feature_controls import platform_settings
 from app.services.product_images import PHOTO_REFERENCE
 
-MAX_BYTES = 2 * 1024 * 1024
+MAX_IMAGE_BYTES = 2 * 1024 * 1024
 STORED_SIDE = 2048
 MODEL_SIDE = 1024
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -31,7 +32,7 @@ def embedded_images(content):
     def add(raw, location):
         if len(images) >= MAX_EMBEDDED_IMAGES:
             raise HTTPException(422, f"Use documents with at most {MAX_EMBEDDED_IMAGES} embedded images; split larger catalogs.")
-        if not raw or len(raw) > MAX_BYTES:
+        if not raw or len(raw) > MAX_IMAGE_BYTES:
             raise HTTPException(422, "An embedded image is empty or exceeds 2 MB.")
         try:
             with warnings.catch_warnings():
@@ -153,8 +154,8 @@ def normalize_upload(payload):
         raw = base64.b64decode(payload.data_base64, validate=True)
     except (ValueError, binascii.Error) as error:
         raise HTTPException(422, "Invalid file encoding.") from error
-    if not raw or len(raw) > MAX_BYTES:
-        raise HTTPException(422, "Choose a non-empty file no larger than 2 MB.")
+    if not raw or len(raw) > MAX_AI_UPLOAD_BYTES:
+        raise HTTPException(422, "Choose a non-empty file no larger than 20 MB.")
     if payload.mime_type.startswith("image/"):
         expected = {"image/png": ("PNG", (".png",)), "image/jpeg": ("JPEG", (".jpg", ".jpeg")),
                     "image/webp": ("WEBP", (".webp",))}[payload.mime_type]
@@ -175,17 +176,19 @@ def normalize_upload(payload):
                             reduced.thumbnail((side, side))
                             output = io.BytesIO()
                             reduced.save(output, format="PNG", optimize=True)
-                            if output.tell() <= MAX_BYTES:
+                            if output.tell() <= MAX_IMAGE_BYTES:
                                 return name, "image/png", output.getvalue(), None, IMAGE_TOKEN_BOUND
                         raise HTTPException(422, "Transparent image remains too large after resizing.")
                     image = image.convert("RGB")
                     # Keep up to 2048px so product photos cropped from a bill stay sharp; the model gets a 1024px copy.
                     image.thumbnail((STORED_SIDE, STORED_SIDE))
-                    for quality in (92, 85, 75):
+                    for quality in (92, 85, 75, 65):
                         output = io.BytesIO()
                         image.save(output, format="JPEG", quality=quality)
-                        if output.tell() <= MAX_BYTES:
+                        if output.tell() <= MAX_IMAGE_BYTES:
                             break
+                    else:
+                        raise HTTPException(422, "Image remains larger than 2 MB after resizing. Use a smaller image.")
                     return name, "image/jpeg", output.getvalue(), None, IMAGE_TOKEN_BOUND
         except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             raise HTTPException(422, "Invalid or oversized image.") from error

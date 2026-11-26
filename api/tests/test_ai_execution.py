@@ -9,8 +9,9 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from PIL import Image
+from pydantic import ValidationError
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.ai.actions import ACTIONS, DraftCreate, DraftApproval, ExecutionApproval
 from app.ai.drafts import DraftService
@@ -115,6 +116,68 @@ class BusinessAdapterUnitTests(unittest.TestCase):
 
 
 class MediaUnitTests(unittest.TestCase):
+    def test_large_pdf_accepts_exactly_twenty_mib_without_increasing_text_budget(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, NameObject, DictionaryObject
+        maximum = 20 * 1024 * 1024
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=100, height=100)
+        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+                                 NameObject("/BaseFont"): NameObject("/Helvetica")})
+        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({
+            NameObject("/F1"): writer._add_object(font)})})
+        stream = DecodedStreamObject()
+        stream.set_data(b"BT /F1 12 Tf 10 70 Td (Catalog total 25) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(stream)
+        padding = DecodedStreamObject()
+        writer._add_object(padding)
+        for _ in range(4):
+            output = io.BytesIO()
+            writer.write(output)
+            difference = maximum - output.tell()
+            if not difference:
+                break
+            padding.set_data(b"x" * (len(padding.get_data()) + difference))
+        raw = output.getvalue()
+        self.assertEqual(len(raw), maximum)
+        payload = AIUpload(file_name="large.pdf", mime_type="application/pdf",
+                           data_base64=base64.b64encode(raw).decode())
+        _, mime, stored, extracted, bound = normalize_upload(payload)
+        self.assertEqual(mime, "text/plain")
+        self.assertEqual(stored, raw)
+        self.assertIn("Catalog total 25", extracted)
+        self.assertEqual(bound, len(extracted.encode()) + 512)
+        too_large = {**payload.model_dump(), "data_base64": base64.b64encode(raw + b" ").decode()}
+        with self.assertRaisesRegex(HTTPException, "20 MB"):
+            normalize_upload(AIUpload(**too_large))
+        with self.assertRaises(ValidationError):
+            AIUpload(**{**too_large, "data_base64": base64.b64encode(raw + b"  ").decode()})
+
+    def test_large_image_is_still_normalized_to_two_mib_and_metered_as_one_image(self):
+        import random
+        source = io.BytesIO()
+        Image.frombytes("RGB", (2304, 2304), random.Random(42).randbytes(2304 * 2304 * 3)).save(
+            source, format="PNG", compress_level=0)
+        self.assertGreater(len(source.getvalue()), 2 * 1024 * 1024)
+        self.assertLess(len(source.getvalue()), 20 * 1024 * 1024)
+        payload = AIUpload(file_name="large.png", mime_type="image/png",
+                           data_base64=base64.b64encode(source.getvalue()).decode())
+        _, mime, stored, extracted, bound = normalize_upload(payload)
+        self.assertEqual((mime, extracted, bound), ("image/jpeg", None, 16000))
+        self.assertLessEqual(len(stored), 2 * 1024 * 1024)
+        with Image.open(io.BytesIO(stored)) as image:
+            self.assertEqual(max(image.size), 2048)
+
+    def test_image_that_remains_over_storage_limit_is_rejected(self):
+        import random
+        source = io.BytesIO()
+        Image.frombytes("RGB", (2048, 2048), random.Random(42).randbytes(2048 * 2048 * 3)).save(
+            source, format="PNG", compress_level=0)
+        payload = AIUpload(file_name="noise.png", mime_type="image/png",
+                           data_base64=base64.b64encode(source.getvalue()).decode())
+        with self.assertRaisesRegex(HTTPException, "larger than 2 MB after resizing"):
+            normalize_upload(payload)
+
     def test_text_bound_and_invalid_files(self):
         raw = "Document total 25.00".encode()
         payload = AIUpload(file_name="..\\bill.txt", mime_type="text/plain", data_base64=base64.b64encode(raw).decode())
@@ -277,6 +340,46 @@ class MediaUnitTests(unittest.TestCase):
             normalize_upload(payload.model_copy(update={"data_base64":base64.b64encode(oversized.getvalue()).decode()}))
         with self.assertRaises(HTTPException):
             normalize_upload(payload.model_copy(update={"data_base64":base64.b64encode(b"%PDF-malformed").decode()}))
+
+
+@unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "PostgreSQL database required (all writes rolled back)")
+class MediaUploadDatabaseTests(unittest.TestCase):
+    def test_document_and_image_storage_boundaries(self):
+        from app.core.database import engine
+        with engine.connect() as db:
+            transaction = db.begin()
+            try:
+                company = db.execute(text("""insert into companies(company_name,tenant_slug)
+                    values('Synthetic upload boundary',:slug) returning id"""),
+                    {"slug": "ai-upload-" + uuid4().hex}).scalar_one()
+                user = db.execute(text("""insert into tenant_users(company_id,email,display_name,password_hash)
+                    values(:company,:email,'Synthetic upload owner','unused') returning id"""),
+                    {"company": company, "email": f"upload-{uuid4().hex}@example.com"}).scalar_one()
+                conversation = db.execute(text("""insert into ai_conversations(company_id,user_id,title,expires_at)
+                    values(:company,:user,'Synthetic upload',now()+interval '1 day') returning id"""),
+                    {"company": company, "user": user}).scalar_one()
+
+                def insert(size, mime):
+                    return db.execute(text("""insert into ai_attachments
+                        (id,company_id,user_id,conversation_id,file_name,mime_type,content,extracted_text,input_bound,expires_at)
+                        values(:id,:company,:user,:chat,'synthetic',:mime,convert_to(repeat('x',:size),'UTF8'),
+                            'Synthetic upload',528,now()+interval '1 day')
+                        returning octet_length(content)"""),
+                        {"id": uuid4(), "company": company, "user": user, "chat": conversation,
+                         "size": size, "mime": mime}).scalar_one()
+
+                self.assertEqual(insert(20 * 1024 * 1024, "text/plain"), 20 * 1024 * 1024)
+                for mime in ("image/jpeg", "image/png"):
+                    self.assertEqual(insert(2 * 1024 * 1024, mime), 2 * 1024 * 1024)
+                for size, mime in ((20 * 1024 * 1024 + 1, "text/plain"),
+                                   (2 * 1024 * 1024 + 1, "image/jpeg"),
+                                   (2 * 1024 * 1024 + 1, "image/png")):
+                    with self.assertRaises(IntegrityError) as error:
+                        with db.begin_nested():
+                            insert(size, mime)
+                    self.assertEqual(error.exception.orig.diag.constraint_name, "ai_attachments_content_check")
+            finally:
+                transaction.rollback()
 
 
 @unittest.skipUnless(os.getenv("TENALI_TEST_DB") == "1", "Authorised isolated committed write database required")

@@ -77,9 +77,11 @@ attaching PDF/Excel files, then send text and/or private attachments. The assist
 without importing records; download it, check and correct the manifest, then
 upload it on Bulk Upload. Separate images and embedded PDF/Excel images can be
 cropped into product images; the workbook README records the AI's description
-of the catalog theme. AI input limits are 2 MiB per file, two files per message,
+of the catalog theme. AI input limits are 20 MiB per file, two files per message,
 five PDF pages, eight embedded images per document, and 12,000 bytes of extracted text; catalog drafts allow up to
 40 products per reply and can be further limited by the configured output budget.
+Each embedded image and each normalized stored image remain limited to 2 MiB;
+larger source-image uploads are resized and compressed before storage.
 AI may omit or misread values and image associations; verify all fields and
 images, including HSN and GST. Private attachments must remain available until
 the workbook is downloaded.
@@ -451,11 +453,16 @@ document/image uploads remain subsequent phases.
    **Allow private text/document/image inputs**. Zero pricing or missing allowlisting
    blocks processing. Routine pricing is not reused for a different document model.
    The existing daily/token/spend ceilings include file messages and unknown calls.
-4. Install backend requirements (Pillow and pypdf are added). Uploads are private
-   normalized database content, not public storage objects: 2 MB/file, up to two
+4. Install backend requirements (Pillow and pypdf are added) and run
+   `alembic upgrade head` (revision `069_ai_upload_limit` raises the document storage
+   limit). Restart non-reloading API processes after deploying the upload-limit change.
+   Uploads are private database content, not public storage objects: 20 MiB/file, up to two
    selected files/message and ten retained files/conversation. PDFs must contain text
    and have at most five unencrypted pages. Use page images for scans.
-   Images are resized to at most 512 x 512 for low-detail economical reading.
+   Images are normalized to at most 2048 x 2048 and 2 MiB for storage; the provider
+   receives a 1024 x 1024 copy. Document text remains limited to 12,000 UTF-8 bytes.
+   Downgrading below revision `069_ai_upload_limit` requires removing retained
+   attachments larger than 2 MiB first.
    Uploading is free of provider calls; Send explicitly forwards selected normalized
    inputs to OpenAI. Users must review extracted figures before posting.
 5. Schedule `python -m app.ai.maintenance --apply` under the schema-owner maintenance

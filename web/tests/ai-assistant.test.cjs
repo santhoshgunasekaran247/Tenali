@@ -495,6 +495,56 @@ test("capability discovery uses tenant transport and platform approval uses vers
   assert.match(src("pages/TenaliAIPage.tsx"), /not complete catalogues or company financial totals/);
 });
 
+test("attachment picker accepts 20 MiB and rejects one byte more before reading or uploading", async () => {
+  const state = [], calls = [];
+  let cursor = 0, reads = 0;
+  const element = (type, props) => ({ type, props });
+  const exports = {};
+  class Reader {
+    readAsDataURL() { reads++; this.result = "data:application/pdf;base64,eA=="; this.onload(); }
+  }
+  vm.runInNewContext(ts.transpileModule(src("pages/TenaliAIPage.tsx"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, { exports, FileReader: Reader, require: name =>
+    name === "react" ? {
+      useState(initial) {
+        const i = cursor++;
+        if (!(i in state)) state[i] = i === 0 ? { ai: { effective_enabled: true }, document_inputs_enabled: true }
+          : i === 3 ? { id: "chat", title: "Test", status: "active" } : initial;
+        return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
+      },
+      useRef: current => ({ current }), useEffect() {},
+    } : name === "react/jsx-runtime" ? { jsx: element, jsxs: element } :
+      name === "../features/auth" ? { useAuth: () => ({ user: { role: "owner" } }) } :
+      name === "../features/ai" ? { ai: { upload: async (...args) => {
+        calls.push(args); return { id: "file", file_name: args[1] };
+      } } } :
+      name.startsWith(".") ? new Proxy({}, { get: (_, key) => key }) : require(name) });
+  function nodes(node) {
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    if (!node || typeof node !== "object") return [];
+    return [node, ...nodes(node.props?.children)];
+  }
+  const render = () => { cursor = 0; return exports.TenaliAIPage(); };
+  const input = () => nodes(render()).find(node => node.type === "input" && node.props.type === "file");
+  assert.match(input().props["aria-label"], /20 MB/);
+  assert.equal(input().props.disabled, false);
+  const select = size => input().props.onChange({
+    target: { files: [{ name: "large.pdf", type: "application/pdf", size }], value: "large.pdf" },
+  });
+  select(20 * 1024 * 1024);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "chat");
+  assert.equal(calls[0][1], "large.pdf");
+  select(20 * 1024 * 1024 + 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reads, 1);
+  assert.equal(calls.length, 1);
+  assert.ok(nodes(render()).some(node => node.props?.children === "Choose a file no larger than 20 MB."));
+});
+
 test("enabled stale lookups can review their contract without disabling or changing tenant grants", async () => {
   const state = [], effects = [], calls = [], confirmations = [];
   let cursor = 0, confirmed = false;
