@@ -1022,6 +1022,10 @@ arguments or chat. It refuses to overwrite an existing owner or existing email a
 
 ## Self-service tenant domains on two Render services
 
+The split-service configuration in this section retains the SPA fallback. For
+server-rendered SEO documents, read [Public-page SEO deployment](#public-page-seo-deployment)
+before changing any rewrites.
+
 This mode keeps the existing Render Static Site and Python Web Service separate.
 Tenants never need Render access: they add a domain in **Storefront Domains** and
 copy the generated records into their DNS provider. A persistent API background
@@ -1173,6 +1177,84 @@ path with privileged identity access. Do not use the runtime role as a migration
 Sessions are opaque, stored hashed, host-only HttpOnly cookies, SameSite=Lax, Secure in
 production and expire in 12 hours. Unsafe requests require same-origin CSRF protection.
 Changing roles/deactivating membership revokes that company's sessions for the member.
+
+## Public-page SEO deployment
+
+The public HTML renderer is separate from authentication and business APIs. It reads
+only public catalogue fields through the existing catalogue service and public
+tenant scope. Every visitor receives the same initial public text, links and metadata;
+the existing React app replaces that initial content when JavaScript starts. There
+is no bot-only response or change to staff/shopper permissions. No migration is needed.
+
+Implemented:
+
+- Individual titles, descriptions, absolute social images and canonical URLs for
+  product and collection pages, plus published policy content and the platform home.
+  Storefront home copy and the existing browser-title setting remain supported.
+- Product and breadcrumb JSON-LD without invented reviews, availability or checkout
+  offers. Prices in a catalogue do not by themselves promise online checkout.
+- `noindex` for sign-in, accounts, workspace/admin, cart, checkout and preview/search
+  URLs. Private pages omit public canonical and structured product data; preview/search
+  URLs point to the clean public canonical. Authentication, not robots rules, protects records.
+- `robots.txt` and XML sitemaps at the platform/domain root. Path-based shops have
+  `/c/<slug>/sitemap.xml`. Large product maps split after 1,000 products. Maps and
+  documents exclude inactive, hidden, other-tenant and disabled-storefront products.
+- Actual HTTP 404 responses for missing public pages/products. Existing application
+  routes and direct links retain their JavaScript behaviour.
+- Canonicals prefer the earliest verified custom domain whose hosting status is
+  `active`; otherwise they use `TENALI_PUBLIC_ORIGIN` (or the base platform domain)
+  plus `/c/<canonical-slug>`. Other domains and old slugs remain usable.
+
+### Same-host proxy deployment
+
+1. Build the web app with `npm ci` and `npm run build` in `web`.
+2. Package that exact build with the API release. Set `TENALI_WEB_ROOT` on **both**
+   API and Caddy to the absolute directory containing the built `index.html` and
+   `assets`. The API refuses document requests with HTTP 503 when the build is
+   absent or incompatible; it never silently serves empty successful pages.
+3. Use the updated `config/Caddyfile.example`: `/api/*` still goes to the API;
+   real static files stay with Caddy, including media range requests. All other
+   requests are internally rewritten from `/some/path` to `/seo/pages/some/path`
+   at the API, preserving the original Host and query string. Do not expose
+   `seo/pages` as the canonical public URL.
+4. Deploy API, static build and routing together. Keep the loopback API private,
+   preserve existing origin/CSRF settings, and do not cache public HTML across hosts.
+
+### Existing Render Static Site plus API
+
+Browser metadata works after deploying both API and frontend. A static
+`/* -> /index.html` rule **cannot** provide server-rendered page bodies or real 404s.
+The new renderer needs the frontend build on the API and a document proxy before
+the SPA fallback. On a platform-only static site, that proxy can map unmatched
+documents to `https://<api-service>/seo/pages/<original-path>` while retaining the
+existing `/api/*` rule and serving real static files directly.
+
+**Do not install that fixed-origin rewrite on the shared custom-domain static site.**
+It loses the tenant hostname and can serve the platform HTML on a shop domain.
+Keep its existing fallback until a host-preserving edge/proxy (as above) is configured
+and verified for platform, path-based shops and custom domains. No Render services,
+DNS records or production rewrites are changed automatically by this code.
+
+### Release checks
+
+With JavaScript disabled, fetch the public homepage, a real product, a hidden product
+and a random nonexistent URL. Expect readable content for the first two and HTTP
+404/noindex for the last two. Check View Source for exactly one title, description,
+canonical and escaped JSON-LD. Verify root `robots.txt` is plain text and tenant
+sitemaps are XML, not successful HTML fallbacks. Check image URLs, brand/category
+filters, custom-domain canonicals, page navigation, login and an authenticated
+CSRF-protected write. Private and preview URLs must stay noindex.
+
+From the repository root, use `PYTHONPATH=api;api/tests` and
+`python -m unittest test_seo test_public_origin`; set `TENALI_TEST_DB=1` for the
+rollback-only database case. From `web`, run `node --test tests/seo.test.cjs
+tests/platform-home.test.cjs tests/domains.test.cjs tests/policies.test.cjs`,
+`npx tsc --noEmit` and `npm run build`.
+
+Submit the platform and each shop's canonical sitemap through the corresponding
+verified Google Search Console property after deployment. Real indexing, rich-result
+eligibility and mobile Core Web Vitals must be checked on the live domains; local
+tests do not establish rankings or production performance.
 
 ## Request concurrency and billing loading
 

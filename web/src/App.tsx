@@ -1,6 +1,7 @@
 import { useEffect, useState, type SyntheticEvent } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Link, Route, Routes } from "react-router-dom";
 import { Header } from "./components/Header";
+import { SeoMetadata } from "./components/SeoMetadata";
 import { RequireWorkspace,StorefrontRoot,useAuth } from "./features/auth";
 import { tenantApiOrigin, tenantBase } from "./features/tenantTransport";
 import { useLocation } from "react-router-dom";
@@ -88,6 +89,7 @@ export default function App() {
         if (event.key === "Enter" || event.key === " ") preventPreviewAction?.(event);
       }}>
       <RouteScroll />
+      <SeoMetadata />
       {!platformHome && <Header menuOpen={menuOpen} onMenuToggle={() => setMenuOpen((prev) => !prev)} previewCompany={previewDraft?.company} />}
       <Routes>
         <Route path="/" element={<StorefrontRoot><StorefrontGate><HomePage /></StorefrontGate></StorefrontRoot>} />
@@ -139,6 +141,7 @@ export default function App() {
         <Route path="/portal/new-workspace" element={<NewWorkspacePage/>}/>
         <Route path="/portal/domains" element={<DomainsPage/>}/>
         </Route>
+        <Route path="*" element={<main className="ops-page"><h1>Page not found</h1><p>This page may have moved or is no longer available.</p><Link to="/">Back to home</Link></main>} />
       </Routes>
       {!platformHome && <div className={`policy-footer${workspaceFooter ? " policy-footer-workspace" : ""}`}><PolicyLinks /></div>}
     </div>

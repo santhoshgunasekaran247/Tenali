@@ -39,11 +39,6 @@ export function PlatformHomePage() {
     void video.play().catch(() => setVideoNotice("Press the video's play button to continue, or read the steps below."));
   };
   useEffect(() => {
-    const previous = document.title;
-    document.title = "Tenali | Your business, online shop and AI helper";
-    return () => { document.title = previous; };
-  }, []);
-  useEffect(() => {
     let active = true;
     void policyRequest<PublicPolicy>("/legal/platform/contact").then(policy => {
       if (active) {

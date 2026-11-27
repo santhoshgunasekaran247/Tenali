@@ -54,6 +54,16 @@ It pairs each storefront domain with `api.<storefront-domain>`, provisions Rende
 hostnames server-side and uses exact-origin credentialed requests. The existing
 platform rewrite remains unchanged.
 
+### Public-page SEO
+
+Page-specific search/social metadata now follows browser navigation. For crawler-readable
+HTML, sitemaps and real HTTP 404 responses, the public document renderer must also be
+connected at the hosting layer; deploying browser JavaScript alone is not sufficient.
+See [public-page SEO deployment](docs/MULTI_TENANT_DEPLOYMENT.md#public-page-seo-deployment).
+The existing split-service Render rewrite above remains the compatibility fallback,
+not the fully rendered SEO setup. Do not change custom-domain routing to a fixed
+platform-origin rewrite.
+
 Once `tenali.biz` is connected to the UI and HTTPS is ready, change
 `TENALI_PUBLIC_ORIGIN` to `https://tenali.biz`, `TENALI_BASE_DOMAIN` to `tenali.biz`
 and `CORS_ORIGINS` to `https://tenali.biz`. Keep `TENALI_API_HOST` unchanged.

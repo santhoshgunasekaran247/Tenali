@@ -77,15 +77,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
   const cartModeState=useCartMode(!inPortal);
   const storefrontHref=auth.user?(auth.storefront?.id===auth.user.company_id?(tenantBase()||"/"):`/c/${auth.user.tenant_slug}`):"/";
   const brandHref=auth.user&&inPortal?"/portal":"/";
-  const browserTitle=storefrontText(storefrontCompany?.storefront_content?.home.browser_title||"{nickname} | Catalogue & Workspace",displayBrand);
   useEffect(()=>{setSearchText(new URLSearchParams(location.search).get("q")||"");},[location.search]);
-  useEffect(()=>{if(!auth.loading)document.title=companyName?browserTitle:'Tenali | Business Workspace';},[auth.loading,companyName,browserTitle]);
-  useEffect(()=>{
-    if (!logo) return;
-    const image=new URL(toAssetUrl(logo),window.location.origin).href;
-    document.querySelector('meta[property="og:image"]')?.setAttribute("content",image);
-    document.querySelector('meta[name="twitter:image"]')?.setAttribute("content",image);
-  },[logo]);
   return (
     <header className={`header${inPortal ? " header-portal" : ""}${marketplace ? " header-marketplace" : ""}${boutique ? " header-boutique" : ""}${collectionHeader ? ` header-collections header-${storefrontCompany?.storefront_template}` : ""}`}>
       {marketplace ? <div className="marketplace-utility"><span>{companyName}</span><span>Prices in INR <Link {...link("nav.contact", "/#contact", navText("contact","Contact"))} /></span></div> : null}

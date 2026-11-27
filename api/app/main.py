@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
+from app.api.routes.seo import router as seo_router
 from app.core.config import settings
 from app.services.tenant_context import TenantBoundary
 from app.services.tenant_context import company_by_slug
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     # Serve routes at both root and /api so older clients keep working.
     app.include_router(api_router)
     app.include_router(api_router, prefix="/api")
+    app.include_router(seo_router)
 
     @app.get("/api/public-images/{company_id}/{file_id}", include_in_schema=False)
     def public_product_image(company_id: UUID, file_id: UUID):

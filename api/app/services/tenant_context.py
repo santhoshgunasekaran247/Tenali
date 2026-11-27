@@ -52,6 +52,8 @@ class TenantBoundary(BaseHTTPMiddleware):
         path = request.url.path
         if path.startswith("/api/"):
             path = path[4:]
+        if request.method in {"GET", "HEAD"} and (path == "/seo/metadata" or path.startswith("/seo/pages/")):
+            return await call_next(request)
         if request.method == "OPTIONS" or path in {"/health", "/health/", "/docs", "/redoc", "/openapi.json", "/domain-authorization"} or path.startswith("/catalog-assets/") or (request.method in {"GET", "HEAD"} and path.startswith("/public-images/")):
             return await call_next(request)
         try:

@@ -27,11 +27,6 @@ export function PoliciesPage() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [scope, kind, validScope, authLoading, retry]);
-  useEffect(() => {
-    const previous = document.title;
-    document.title = policy ? `${policy.content.title} | ${policy.content.business_name}` : "Public Policies | Tenali";
-    return () => { document.title = previous; };
-  }, [policy]);
   return <main className="ops-page policy-page">
     <nav className="policy-page-nav" aria-label="Policy navigation"><Link to="/">Home</Link><Link to={policyPath(scope)}>{scope === "tenant" ? "Store policies" : "Tenali platform policies"}</Link></nav>
     {authLoading || loading ? <p role="status">Loading public policies...</p> : error ? <section role="alert" className="ops-card"><h1>Policy unavailable</h1><p>{error}</p><button className="ops-link-btn" onClick={() => setRetry(value => value + 1)}>Retry</button></section> : policy ? <>
