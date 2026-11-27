@@ -104,6 +104,47 @@ class BulkTenantUrlTests(TenantDatabaseCase):
         self.assertEqual(self.export("brands", [ids["brands"]], cookies)[0]["image_url"], changes["brand_image_url"])
         self.assertEqual(self.export("categories", [ids["categories"]], cookies)[0]["image_url"], changes["category_image_url"])
 
+    def test_image_workbook_urls_persist_before_files_and_reject_foreign_targets(self):
+        _, owner, _ = self.register("bulk-image-urls")
+        base = "https://images.example.com/"
+        sku = "IMAGE-URL-" + self.suffix
+        brand = "URL brand " + self.suffix
+        category = "URL category " + self.suffix
+        with patch("app.services.object_storage.httpx.request", side_effect=AssertionError("unexpected network")):
+            products, _ = self.job("products", [
+                {"name": "URL parent " + self.suffix, "sku": sku, "brand": brand, "categories": category,
+                 "hsn_code": "4419", "hsn_description": "Synthetic goods", "gst_rate": 0},
+                {"record_type": "child", "parent_sku": sku, "variant_name": "Blue"},
+            ], owner, 2)
+            parent_id, variant_id = products[0]["id"], products[1]["id"]
+            lookup = self.client.get("/inventory/lookups")
+            self.assertEqual(lookup.status_code, 200, lookup.text)
+            entities = {
+                "product": parent_id,
+                "brand": next(row["id"] for row in lookup.json()["brands"] if row["name"] == brand),
+                "category": next(row["id"] for row in lookup.json()["categories"] if row["name"] == category),
+            }
+            rows = [{"id": record_id, "entity": entity, "image_url": base + entity + ".png"}
+                    for entity, record_id in entities.items()]
+            rows.append({"id": variant_id, "entity": "variant", "image_url": base + "variant-invalid.png"})
+            _, failed = self.job("images", rows, owner, 3, 1)
+            self.assertEqual(failed[0]["entity"], "variant")
+            for kind, entity in (("products", "product"), ("brands", "brand"), ("categories", "category")):
+                row = self.export(kind, [entities[entity]], owner)[0]
+                self.assertEqual(row["image_url"], base + entity + ".png")
+            self.assertIsNone(self.export("variants", [variant_id], owner)[0]["image_url"])
+
+            self.job("variants", [{"id": variant_id, "product_id": parent_id,
+                                   "image_url": base + "variant.png"}], owner, 1)
+            self.assertEqual(self.export("variants", [variant_id], owner)[0]["image_url"], base + "variant.png")
+
+            self.client.cookies.clear()
+            _, other, _ = self.register("bulk-image-foreign")
+            self.job("images", [{"id": parent_id, "entity": "product",
+                                 "image_url": base + "foreign.png"}], other, 0, 1)
+            self.use_cookies(owner)
+            self.assertEqual(self.export("products", [parent_id], owner)[0]["image_url"], base + "product.png")
+
     def test_foreign_product_and_master_ids_are_rejected_without_affecting_own_records(self):
         _, owner, _ = self.register("bulk-url-owner")
         url = "https://images.example.com/original.png"

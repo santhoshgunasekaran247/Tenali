@@ -14,6 +14,15 @@ from app.services.storefront_sections import StorefrontSectionsService
 
 
 class StorefrontSectionSchemaTests(unittest.TestCase):
+    def test_header_logo_shape_preserves_old_settings_and_round_trips_circle(self):
+        self.assertEqual(StorefrontContent.model_validate({}).display.logo_shape, "original")
+        for shape in ("original", "square", "circle"):
+            with self.subTest(shape=shape):
+                content = StorefrontContent.model_validate({"display": {"logo_shape": shape, "corner_style": "square"}})
+                self.assertEqual(content.model_dump()["display"]["logo_shape"], shape)
+        with self.assertRaises(ValidationError):
+            StorefrontContent.model_validate({"display": {"logo_shape": "oval"}})
+
     def test_public_catalog_preserves_images_and_available_products(self):
         from app.schemas.catalog import CatalogHomeResponse
         product = {"id": uuid4(), "name": "Cup", "minimum_order_quantity": 1, "image_background": "#fff0f5"}

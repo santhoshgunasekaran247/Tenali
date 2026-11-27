@@ -90,7 +90,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
     <header className={`header${inPortal ? " header-portal" : ""}${marketplace ? " header-marketplace" : ""}${boutique ? " header-boutique" : ""}${collectionHeader ? ` header-collections header-${storefrontCompany?.storefront_template}` : ""}`}>
       {marketplace ? <div className="marketplace-utility"><span>{companyName}</span><span>Prices in INR <Link {...link("nav.contact", "/#contact", navText("contact","Contact"))} /></span></div> : null}
       <Link className="brand" to={brandHref} aria-label={companyName||(platformBrand?'Tenali':'Workspace home')}>
-        {logo ? <img src={logoSrc} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : companyName?<strong>{companyName}</strong>:<span className="brand-loading" aria-hidden="true"/>}
+        {logo ? <img src={logoSrc} data-logo-shape={storefrontDisplay(storefrontCompany).logo_shape} alt={companyName || "Tenali"} loading="eager" decoding="async" /> : companyName?<strong>{companyName}</strong>:<span className="brand-loading" aria-hidden="true"/>}
       </Link>
       {storefrontCompany&&storefrontOpen&&!inPortal?<form className="header-search" role="search" onSubmit={(event)=>{
         event.preventDefault();

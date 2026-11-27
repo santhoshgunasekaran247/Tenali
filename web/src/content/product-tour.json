@@ -1,5 +1,5 @@
 {
-  "duration": 969,
+  "duration": 1146,
   "chapters": [
     {
       "start": 0,
@@ -7,57 +7,57 @@
       "summary": "Ask for help, prepare linked work and generate a product upload."
     },
     {
-      "start": 102,
+      "start": 111,
       "title": "Accounts",
       "summary": "Cash, bank, opening balances and checking your money."
     },
     {
-      "start": 154,
+      "start": 172,
       "title": "Borrowing, lending and settlements",
       "summary": "Record money borrowed or lent, then repayments and collections."
     },
     {
-      "start": 226,
+      "start": 254,
       "title": "Purchase bills",
       "summary": "Enter a supplier bill, payment and goods receipt."
     },
     {
-      "start": 276,
+      "start": 314,
       "title": "Multiple stores",
       "summary": "Separate stock locations and choose where online orders are fulfilled."
     },
     {
-      "start": 325,
+      "start": 373,
       "title": "Admin and Operations menus",
       "summary": "Find setup tools and day-to-day work; understand access."
     },
     {
-      "start": 375,
+      "start": 440,
       "title": "Your dashboard",
       "summary": "Check sales, payments due and stock for the right dates and store."
     },
     {
-      "start": 401,
+      "start": 475,
       "title": "Set up your business",
       "summary": "Your account, shop details and the GST switch."
     },
     {
-      "start": 453,
+      "start": 544,
       "title": "Products and stock",
       "summary": "Names, codes, categories, prices, pictures and opening quantities."
     },
     {
-      "start": 580,
+      "start": 680,
       "title": "Bulk Excel uploads",
       "summary": "Download the shared template, include images and fix failed rows."
     },
     {
-      "start": 661,
+      "start": 771,
       "title": "Sales bills and payments",
       "summary": "Sell two bottles, receive part-payment and track the balance."
     },
     {
-      "start": 788,
+      "start": 917,
       "title": "Your own online shop",
       "summary": "Publish products, WhatsApp lists, Razorpay, Shiprocket and your domain."
     }
@@ -75,7 +75,21 @@
     },
     {
       "start": 25,
-      "end": 51,
+      "end": 34,
+      "chapter": 0,
+      "screen": "menu-ai",
+      "title": "Find your AI helper",
+      "instruction": "Open the workspace menu. Choose Tenali AI. The highlighted item opens the screen shown next.",
+      "narration": "Choose Tenali AI in your workspace menu. Let's start with a little help.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "label": "Tenali AI",
+        "path": "/portal/ai"
+      }
+    },
+    {
+      "start": 34,
+      "end": 60,
       "chapter": 0,
       "screen": "ai-chat",
       "title": "Ask in ordinary words",
@@ -84,8 +98,8 @@
       "note": "Your role and enabled features limit what AI can read or prepare. Ask one clear question and check its answer."
     },
     {
-      "start": 51,
-      "end": 75,
+      "start": 60,
+      "end": 84,
       "chapter": 0,
       "screen": "ai-workflow",
       "title": "Review linked work before saving",
@@ -94,8 +108,8 @@
       "note": "This screen shows an example request, not a live AI result. In an actual reply, use Review & check, inspect the changes, then Confirm & save. Not every action is enabled."
     },
     {
-      "start": 75,
-      "end": 102,
+      "start": 84,
+      "end": 111,
       "chapter": 0,
       "screen": "ai-attach",
       "title": "Make an Excel upload with AI",
@@ -104,8 +118,23 @@
       "note": "AI uses the same formatted product template as the upload page. The ZIP contains manifest.xlsx and images. Generated internal SKUs and descriptions need review; tax and prices must be checked."
     },
     {
-      "start": 102,
-      "end": 128,
+      "start": 111,
+      "end": 120,
+      "chapter": 1,
+      "screen": "menu-accounts",
+      "title": "Open your accounts",
+      "instruction": "Open the workspace menu. Choose Operations, then Accounts. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Accounts. Here we'll look after your cash and bank records.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Accounts",
+        "path": "/portal/accounts"
+      }
+    },
+    {
+      "start": 120,
+      "end": 146,
       "chapter": 1,
       "screen": "accounts-create",
       "title": "Name your cash or bank account",
@@ -114,8 +143,8 @@
       "note": "A money account is not a staff login. Do not enter the same starting money again as a receipt."
     },
     {
-      "start": 128,
-      "end": 154,
+      "start": 146,
+      "end": 172,
       "chapter": 1,
       "screen": "accounts-tally",
       "title": "Check what came in and went out",
@@ -124,8 +153,23 @@
       "note": "Use the correct account on each payment. Account transaction and journal filters help you trace a difference."
     },
     {
-      "start": 154,
-      "end": 179,
+      "start": 172,
+      "end": 182,
+      "chapter": 2,
+      "screen": "menu-settlements",
+      "title": "Find borrowing and lending",
+      "instruction": "Open the workspace menu. Choose Operations, then Borrowing & Lending. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Borrowing and Lending. We'll keep these money movements clear together.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Borrowing & Lending",
+        "path": "/portal/settlements"
+      }
+    },
+    {
+      "start": 182,
+      "end": 207,
       "chapter": 2,
       "screen": "borrowing",
       "title": "Record money you borrowed",
@@ -134,8 +178,8 @@
       "note": "Borrowing is money you must return, not sales income. Check the linked-account switch before recording so you do not post the same movement twice."
     },
     {
-      "start": 179,
-      "end": 202,
+      "start": 207,
+      "end": 230,
       "chapter": 2,
       "screen": "lending",
       "title": "Record money you lent",
@@ -144,8 +188,8 @@
       "note": "The example amount is INR 2,000. Use Purchases for supplier bills, not this borrowing form."
     },
     {
-      "start": 202,
-      "end": 226,
+      "start": 230,
+      "end": 254,
       "chapter": 2,
       "screen": "settlement",
       "title": "Record a repayment or collection",
@@ -154,8 +198,23 @@
       "note": "For example, borrowing INR 10,000 and repaying INR 2,500 leaves INR 7,500. Customer invoice collections belong in Receivables & Collections."
     },
     {
-      "start": 226,
-      "end": 252,
+      "start": 254,
+      "end": 264,
+      "chapter": 3,
+      "screen": "menu-purchases",
+      "title": "Open purchase bills",
+      "instruction": "Open the workspace menu. Choose Operations, then Purchases. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Purchases. Let's walk through a supplier's bill, one step at a time.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Purchases",
+        "path": "/portal/purchases"
+      }
+    },
+    {
+      "start": 264,
+      "end": 290,
       "chapter": 3,
       "screen": "purchase-bill",
       "title": "Enter your supplier's bill",
@@ -164,8 +223,8 @@
       "note": "Buying price is what you pay the supplier, not your selling price. Check tax, totals and the unpaid balance before posting."
     },
     {
-      "start": 252,
-      "end": 276,
+      "start": 290,
+      "end": 314,
       "chapter": 3,
       "screen": "purchase-receipt",
       "title": "Add stock when goods arrive",
@@ -174,8 +233,23 @@
       "note": "Goods received now adds all product-line quantities to the selected store. Do not also enter those same goods as opening stock. Service receipts do not add product stock."
     },
     {
-      "start": 276,
-      "end": 299,
+      "start": 314,
+      "end": 324,
+      "chapter": 4,
+      "screen": "menu-stores",
+      "title": "Find your stores",
+      "instruction": "Open the workspace menu. Choose Admin, then Stores & Warehouses. The highlighted item opens the screen shown next.",
+      "narration": "Choose Admin, then Stores and Warehouses. Here's where each business location gets its own place.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Stores & Warehouses",
+        "path": "/portal/stores"
+      }
+    },
+    {
+      "start": 324,
+      "end": 347,
       "chapter": 4,
       "screen": "stores",
       "title": "Keep stores separate",
@@ -184,8 +258,8 @@
       "note": "A store code is used in document numbers. Use the inventory stock-transfer tool when moving goods between stores, not an extra purchase or sale."
     },
     {
-      "start": 299,
-      "end": 325,
+      "start": 347,
+      "end": 373,
       "chapter": 4,
       "screen": "online-store",
       "title": "Choose where online orders come from",
@@ -194,8 +268,22 @@
       "note": "An online store does not hold a second copy of stock. Set its settlement account and complete checkout setup before taking real payments."
     },
     {
-      "start": 325,
-      "end": 350,
+      "start": 373,
+      "end": 381,
+      "chapter": 5,
+      "screen": "menu-admin",
+      "title": "Find setup tools",
+      "instruction": "Choose Admin in the workspace menu. This opens the business setup tools shown next.",
+      "narration": "Choose Admin to find your business setup tools. We'll take a quick look together.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Admin"
+      }
+    },
+    {
+      "start": 381,
+      "end": 406,
       "chapter": 5,
       "screen": "navigation",
       "title": "Admin is for setting things up",
@@ -204,8 +292,22 @@
       "note": "Do not give a customer your staff login. Team members see only the modules and stores their access permits."
     },
     {
-      "start": 350,
-      "end": 375,
+      "start": 406,
+      "end": 415,
+      "chapter": 5,
+      "screen": "menu-operations",
+      "title": "Find everyday tools",
+      "instruction": "Choose Operations in the workspace menu. This opens the everyday work tools shown next.",
+      "narration": "Choose Operations for your everyday work. Your bills, stock and money tools are gathered here.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Operations"
+      }
+    },
+    {
+      "start": 415,
+      "end": 440,
       "chapter": 5,
       "screen": "portal-menus",
       "title": "Operations is for daily work",
@@ -214,8 +316,22 @@
       "note": "Menu items depend on your access and enabled features. A checklist is a reminder, not proof that a payment or stock movement happened."
     },
     {
-      "start": 375,
-      "end": 401,
+      "start": 440,
+      "end": 449,
+      "chapter": 6,
+      "screen": "menu-dashboard",
+      "title": "Open your dashboard",
+      "instruction": "Open the workspace menu. Choose Dashboard. The highlighted item opens the screen shown next.",
+      "narration": "Choose Dashboard in your workspace menu. Let's get a gentle overview of the business.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "label": "Dashboard",
+        "path": "/portal/dashboard"
+      }
+    },
+    {
+      "start": 449,
+      "end": 475,
       "chapter": 6,
       "screen": "dashboard",
       "title": "Get a quick business check",
@@ -224,8 +340,23 @@
       "note": "A total depends on the selected period, store and your permissions. It is not necessarily the balance in your bank."
     },
     {
-      "start": 401,
-      "end": 427,
+      "start": 475,
+      "end": 483,
+      "chapter": 7,
+      "screen": "menu-register",
+      "title": "Start your business account",
+      "instruction": "On the Tenali home page, choose Set up my business. This opens the account setup screen shown next.",
+      "narration": "On the home page, choose Set up my business. We'll begin with your account.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Home page",
+        "label": "Set up my business",
+        "path": "/register"
+      }
+    },
+    {
+      "start": 483,
+      "end": 509,
       "chapter": 7,
       "screen": "register",
       "title": "Create your business account",
@@ -234,8 +365,23 @@
       "note": "Your workspace is your business area in Tenali. Avoid creating a second workspace for the same records by accident."
     },
     {
-      "start": 427,
-      "end": 453,
+      "start": 509,
+      "end": 518,
+      "chapter": 7,
+      "screen": "menu-company",
+      "title": "Find your business details",
+      "instruction": "Open the workspace menu. Choose Admin, then Company Setup. The highlighted item opens the screen shown next.",
+      "narration": "After signing in, choose Admin, then Company Setup. Let's check the details for your business.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Company Setup",
+        "path": "/portal/company"
+      }
+    },
+    {
+      "start": 518,
+      "end": 544,
       "chapter": 7,
       "screen": "company-gst",
       "title": "Check your shop and GST details",
@@ -244,8 +390,23 @@
       "note": "The GST switch changes documents; it does not register your business for GST. This sample shop uses GST off. Display Name is what customers see."
     },
     {
-      "start": 453,
-      "end": 478,
+      "start": 544,
+      "end": 553,
+      "chapter": 8,
+      "screen": "menu-inventory",
+      "title": "Find products and stock",
+      "instruction": "Open the workspace menu. Choose Operations, then Product Inventory. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Product Inventory. Here's where your products and stock are kept.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Product Inventory",
+        "path": "/portal/inventory"
+      }
+    },
+    {
+      "start": 553,
+      "end": 578,
       "chapter": 8,
       "screen": "product-name",
       "title": "Add a product and its code",
@@ -254,8 +415,8 @@
       "note": "An AI-generated SKU is an internal code to review, not a manufacturer's part number."
     },
     {
-      "start": 478,
-      "end": 502,
+      "start": 578,
+      "end": 602,
       "chapter": 8,
       "screen": "product-category",
       "title": "Choose the brand, category and HSN",
@@ -264,8 +425,8 @@
       "note": "HSN groups goods for tax. Selecting a category is not a substitute for checking tax classification."
     },
     {
-      "start": 502,
-      "end": 528,
+      "start": 602,
+      "end": 628,
       "chapter": 8,
       "screen": "product-price",
       "title": "Set the price customers pay",
@@ -274,8 +435,8 @@
       "note": "Other pricing rules can calculate from vendor prices; use the rule that matches your intended selling method and review the result."
     },
     {
-      "start": 528,
-      "end": 554,
+      "start": 628,
+      "end": 654,
       "chapter": 8,
       "screen": "product-photo",
       "title": "Add a clear product picture",
@@ -284,8 +445,8 @@
       "note": "PNG, JPEG or WebP. Images fit without stretching. A background change needs an isolated product or transparent image; a low-resolution catalogue cannot gain missing real detail."
     },
     {
-      "start": 554,
-      "end": 580,
+      "start": 654,
+      "end": 680,
       "chapter": 8,
       "screen": "opening-stock",
       "title": "Enter what you already own",
@@ -294,8 +455,23 @@
       "note": "Opening stock is what you already have when starting. Do not duplicate quantities already added through a received purchase."
     },
     {
-      "start": 580,
-      "end": 608,
+      "start": 680,
+      "end": 690,
+      "chapter": 9,
+      "screen": "menu-bulk",
+      "title": "Find bulk uploads",
+      "instruction": "Open the workspace menu. Choose Operations, then Bulk Upload. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Bulk Upload. This is where your prepared spreadsheet comes into the business.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Bulk Upload",
+        "path": "/portal/bulk-upload"
+      }
+    },
+    {
+      "start": 690,
+      "end": 718,
       "chapter": 9,
       "screen": "bulk-template",
       "title": "Download the right Excel template",
@@ -304,8 +480,8 @@
       "note": "The Excel file works offline. Its dropdown snapshot does not refresh on every open; download a fresh template after changing your saved lists."
     },
     {
-      "start": 608,
-      "end": 636,
+      "start": 718,
+      "end": 746,
       "chapter": 9,
       "screen": "bulk-images",
       "title": "Include product, brand and category images",
@@ -314,8 +490,8 @@
       "note": "Recommended squares: product 1000×1000, logo 600×600, category 800×800 pixels. Use English background names such as white. Review extracted product crops before importing."
     },
     {
-      "start": 636,
-      "end": 661,
+      "start": 746,
+      "end": 771,
       "chapter": 9,
       "screen": "bulk-results",
       "title": "Check successes and failures",
@@ -324,8 +500,23 @@
       "note": "A failed row should not partially save. Results contain success.xlsx and failure.xlsx; referenced local image files are retained for retry."
     },
     {
-      "start": 661,
-      "end": 687,
+      "start": 771,
+      "end": 780,
+      "chapter": 10,
+      "screen": "menu-billing",
+      "title": "Open sales bills",
+      "instruction": "Open the workspace menu. Choose Operations, then Sales & Quotations. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Sales and Quotations. Let's prepare a customer's bill with care.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Sales & Quotations",
+        "path": "/portal/billing"
+      }
+    },
+    {
+      "start": 780,
+      "end": 806,
       "chapter": 10,
       "screen": "billing-customer",
       "title": "Start a sales bill",
@@ -334,8 +525,8 @@
       "note": "Use a real customer record for credit sales so later collections can be matched."
     },
     {
-      "start": 687,
-      "end": 713,
+      "start": 806,
+      "end": 832,
       "chapter": 10,
       "screen": "billing-product",
       "title": "Choose products and quantities",
@@ -344,8 +535,8 @@
       "note": "The example prices are made up. Registered businesses must check the applicable GST and place of supply."
     },
     {
-      "start": 713,
-      "end": 737,
+      "start": 832,
+      "end": 856,
       "chapter": 10,
       "screen": "billing-payment",
       "title": "Record only what was received",
@@ -354,8 +545,8 @@
       "note": "Do not enter the full bill amount unless you actually received it. A payment mode describes how; the account says where the money went."
     },
     {
-      "start": 737,
-      "end": 763,
+      "start": 856,
+      "end": 882,
       "chapter": 10,
       "screen": "billing-post",
       "title": "Keep track of the unpaid part",
@@ -364,8 +555,23 @@
       "note": "A posted bill affects records and stock. Correct mistakes using the supported cancellation or reversal flow rather than posting a duplicate."
     },
     {
-      "start": 763,
-      "end": 788,
+      "start": 882,
+      "end": 892,
+      "chapter": 10,
+      "screen": "menu-inventory",
+      "title": "Return to your stock",
+      "instruction": "Open the workspace menu. Choose Operations, then Product Inventory. The highlighted item opens the screen shown next.",
+      "narration": "Now return to Operations, then Product Inventory. We'll check what changed after that sale.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Product Inventory",
+        "path": "/portal/inventory"
+      }
+    },
+    {
+      "start": 892,
+      "end": 917,
       "chapter": 10,
       "screen": "stock-after-sale",
       "title": "Check the stock after a sale",
@@ -374,8 +580,23 @@
       "note": "If the quantity is unexpected, inspect the movements instead of adding another opening balance."
     },
     {
-      "start": 788,
-      "end": 814,
+      "start": 917,
+      "end": 927,
+      "chapter": 11,
+      "screen": "menu-inventory",
+      "title": "Choose your online products",
+      "instruction": "Open the workspace menu. Choose Operations, then Product Inventory. The highlighted item opens the screen shown next.",
+      "narration": "Choose Operations, then Product Inventory. Let's decide which products customers can see online.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Operations",
+        "label": "Product Inventory",
+        "path": "/portal/inventory"
+      }
+    },
+    {
+      "start": 927,
+      "end": 953,
       "chapter": 11,
       "screen": "shop-product",
       "title": "Choose what customers can see",
@@ -384,8 +605,23 @@
       "note": "Published catalogue items still need valid prices and available owned stock for online purchase. An enquiry is different from checkout."
     },
     {
-      "start": 814,
-      "end": 839,
+      "start": 953,
+      "end": 963,
+      "chapter": 11,
+      "screen": "menu-company",
+      "title": "Find online shop settings",
+      "instruction": "Open the workspace menu. Choose Admin, then Company Setup. The highlighted item opens the screen shown next.",
+      "narration": "Choose Admin, then Company Setup. Your online shop settings are here, with a link to its designer.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Company Setup",
+        "path": "/portal/company"
+      }
+    },
+    {
+      "start": 963,
+      "end": 988,
       "chapter": 11,
       "screen": "shop-settings",
       "title": "Make the website your own",
@@ -394,8 +630,23 @@
       "note": "Open the storefront only when your public contact details, policies and catalogue are ready. Keep business access separate from shopper access."
     },
     {
-      "start": 839,
-      "end": 863,
+      "start": 988,
+      "end": 997,
+      "chapter": 11,
+      "screen": "menu-storefront",
+      "title": "Visit your online shop",
+      "instruction": "Choose Storefront from the header menu. This opens your customer website. Open a product there to see the page shown next.",
+      "narration": "Choose Storefront in the header menu. Then open a product to see what your customers see.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Header",
+        "label": "Storefront",
+        "path": "/"
+      }
+    },
+    {
+      "start": 997,
+      "end": 1021,
       "chapter": 11,
       "screen": "shop-preview",
       "title": "Share your own online shop",
@@ -404,8 +655,23 @@
       "note": "Mobile shelves scroll sideways. Prices, stock and enabled checkout methods determine what a customer can buy."
     },
     {
-      "start": 863,
-      "end": 890,
+      "start": 1021,
+      "end": 1031,
+      "chapter": 11,
+      "screen": "menu-checkout",
+      "title": "Find payments and delivery",
+      "instruction": "Open the workspace menu. Choose Admin, then Payments & Delivery Setup. The highlighted item opens the screen shown next.",
+      "narration": "Back in your workspace, choose Admin, then Payments and Delivery Setup. We'll look at the options together.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Payments & Delivery Setup",
+        "path": "/portal/checkout-setup"
+      }
+    },
+    {
+      "start": 1031,
+      "end": 1058,
       "chapter": 11,
       "screen": "whatsapp-checkout",
       "title": "Let customers send a WhatsApp list",
@@ -414,8 +680,8 @@
       "note": "Set the business phone in Company Setup. Enquiries can stay available when checkout is off. Do not treat an enquiry as confirmed payment."
     },
     {
-      "start": 890,
-      "end": 916,
+      "start": 1058,
+      "end": 1084,
       "chapter": 11,
       "screen": "razorpay",
       "title": "Connect online payments",
@@ -424,8 +690,8 @@
       "note": "Provider approval, keys, automatic capture and webhook setup are separate requirements. Never share keys or secrets in chat. The tutorial does not connect or charge a provider account."
     },
     {
-      "start": 916,
-      "end": 942,
+      "start": 1084,
+      "end": 1110,
       "chapter": 11,
       "screen": "shiprocket",
       "title": "Choose how orders are delivered",
@@ -434,8 +700,23 @@
       "note": "Shiprocket is optional and needs its own setup and approval. Booking a shipment does not prove delivery. Track cash-on-delivery receipts separately where applicable."
     },
     {
-      "start": 942,
-      "end": 969,
+      "start": 1110,
+      "end": 1119,
+      "chapter": 11,
+      "screen": "menu-domains",
+      "title": "Find your website address",
+      "instruction": "Open the workspace menu. Choose Admin, then Storefront Domains. The highlighted item opens the screen shown next.",
+      "narration": "Choose Admin, then Storefront Domains. Here's where you connect your own website address.",
+      "note": "Menu locations shown for a business owner. Your available tools depend on your role and enabled features.",
+      "menu": {
+        "group": "Admin",
+        "label": "Storefront Domains",
+        "path": "/portal/domains"
+      }
+    },
+    {
+      "start": 1119,
+      "end": 1146,
       "chapter": 11,
       "screen": "own-domain",
       "title": "Use a domain you own",

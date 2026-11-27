@@ -240,6 +240,7 @@ class StorefrontDisplay(BaseModel):
     show_bulk_pricing: bool = True
     whatsapp_enquiry_enabled: bool = True
     corner_style: Literal["rounded", "square"] = "rounded"
+    logo_shape: Literal["original", "square", "circle"] = "original"
 
 
 class StorefrontLink(BaseModel):

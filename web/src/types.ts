@@ -42,6 +42,7 @@ export type StorefrontDisplay = {
   show_bulk_pricing: boolean;
   whatsapp_enquiry_enabled: boolean;
   corner_style: "rounded" | "square";
+  logo_shape?: "original" | "square" | "circle";
 };
 
 export type StorefrontMenuItem = {

@@ -155,6 +155,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
     "../features/catalog/boutiqueImages": load("features/catalog/boutiqueImages.ts"),
     "../features/catalog/themeImages": load("features/catalog/themeImages.ts"),
     "../features/catalog/storefrontLinks": linkHelpers,
+    "../features/catalog/storefrontDisplay": load("features/catalog/storefrontDisplay.ts"),
   };
   const { StorefrontDesignPage } = load("pages/StorefrontDesignPage.tsx", mocks, {
     window: { addEventListener() {}, removeEventListener() {}, dispatchEvent() {}, location: { origin: "http://localhost" } }, Event: class {},
@@ -169,6 +170,12 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   effects.forEach(effect => effect());
   await new Promise(resolve => setImmediate(resolve));
   let tree = render();
+  const logoSelect = () => all(render(), node => node.type === "label" && text(node).startsWith("Header logo shape"))[0].props.children[1];
+  logoSelect().props.onChange({ target: { value: "circle" } });
+  assert.equal(logoSelect().props.value, "circle");
+  all(render(), node => node.type === "select" && node.props.value === "rounded")[0].props.onChange({ target: { value: "square" } });
+  assert.equal(logoSelect().props.value, "circle", "Changing page corners must preserve the logo shape");
+  tree = render();
   const summaries = all(tree, node => node.type === "summary").map(text);
   for (const name of ["Header", "Hero", "Categories", "Best sellers", "Specials", "Brands", "Why", "Contact", "About / collection story", "Footer"]) {
     assert.ok(summaries.some(summary => summary.includes(name)), `Missing ${name}`);
@@ -218,6 +225,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   assert.equal(calls[0].storefront_content.home.hero_heading_first, "Edited Classic hero");
   assert.equal(calls[0].storefront_content.footer.contact_text, "Edited footer");
   assert.equal(calls[0].storefront_content.product.add_to_cart, "Add to bag");
+  assert.equal(calls[0].storefront_content.display.logo_shape, "circle");
   assert.equal(calls[1].length, 5);
   assert.deepEqual(Array.from(calls[1][2].product_ids), ["p1"]);
   assert.equal(calls[1][0].configuration.classic_slot, "hero");

@@ -715,19 +715,27 @@ and actual data-handling practices before publication. Anonymous visitors now se
 a platform homepage with an app description and public policy links; signed-in
 workspace/storefront routing is preserved.
 
-The platform homepage includes a narrated 16-minute, 9-second beginner guide with 38
+The platform homepage includes a narrated 19-minute, 6-second beginner guide with 57
 steps and 12 clickable, timed chapters. Conversational narration uses the expressive
 Indian-English female `en-IN-NeerjaExpressiveNeural` synthetic voice at its natural rate,
-over quiet, original background music. Speech is authored separately from the concise
+over the supplied veena/mridangam instrumental recording, not synthesized music.
+The backing stays approximately 21 dB below the voice during narration and gently
+rises during pauses, with a soft opening/closing fade. Ensure the supplied recording
+is cleared for distribution with the guide. Speech is authored separately from the concise
 on-screen instructions, rather than reading the instruction panel verbatim. Instructions occupy a dark panel;
-actual app screens using sample data occupy a separate light panel. It follows
+actual app screens using sample data occupy a separate light panel.
+19 short menu-selection transitions show the real workspace group and highlighted item
+before each module or screen change; the next panel shows the selected screen.
+Menu labels and destinations match the application's navigation, including direct AI/dashboard
+links, Admin, Operations, account setup and the customer storefront.
+The guide covers
 AI help and workbook generation, accounts, borrowing/lending and settlements,
 purchase bills, multiple stores, Admin/Operations menus, the dashboard, products,
 Excel uploads and a part-paid sale. Online-shop chapters explain WhatsApp list enquiries,
 Razorpay, optional Shiprocket/self-shipping and custom domains without implying those services
 are enabled automatically. Native volume controls and a separate mute/unmute button control
 both narration and music; the video never autoplays. Captions and the written guide remain usable without sound.
-Deploy `web/public/tenali-product-tour.mp4`, its
+Deploy `web/public/tenali-product-tour-veena.mp4`, its
 `tenali-product-tour-poster.jpg` poster, `tenali-product-tour.vtt` English captions
 and `tenali-product-tour-chapters.vtt` chapter track together with the frontend.
 `web/src/content/product-tour.json` supplies the chapter buttons and full written
@@ -746,6 +754,15 @@ Saved-import progress shows successes, failures and remaining rows; retry only f
 Older API workers without summary counts use completed-result headers to recover actual totals;
 an incomplete legacy job shows an explicit unavailable-count notice, never invented zero failures.
 Restart/deploy the API with the frontend to get live counts and new workbook fields.
+The opt-in rollback matrix in `api/tests/test_bulk_tenant_records.py` exercises all seven
+bulk kinds: products, variants, HSN, parties, brands, categories and images. It uses actual
+API templates, uploads, saved-job processing, result counts, corrected failure retries
+and supported exports/updates, with URL and ZIP images and parent/child dependencies.
+Standalone Images workbooks target products, brands and categories. Variant pictures use
+the Variants workbook or child rows in Products, rather than an unsupported Images target type.
+AI product preparation is checked separately through the real parser and download/import
+pipeline using a cached synthetic response, without another provider call. AI catalogue
+workbook preparation is product-only; this does not imply AI preparation for every master kind.
 
 Product workbooks contain parent (`record_type=product`) and variant (`record_type=child`) rows.
 Child rows use `parent_product_id` or the exact `parent_sku`; place new parents first.
@@ -778,7 +795,11 @@ Storefront Design groups and nested sections start collapsed, with consistent sa
 Each image field shows recommended pixels and an optional crop/preview dialog with editable output
 dimensions, zoom and position. Reopening a crop uses the current image's actual pixels rather than
 resetting to the recommendation. Logos offer both 600×600 square and 1200×300 wide presets; custom
-dimensions remain available. The crop frame can be dragged with a mouse or touch, with sliders as an
+dimensions remain available. Header settings also offer Original, Square and Circle logo shapes,
+persisted separately as `storefront_content.display.logo_shape`. Original preserves existing layouts;
+Square/Circle fit the complete image without stretching and agree with desktop/mobile previews.
+The circular display mask does not rewrite the stored image or its crop dimensions. No migration is needed.
+The crop frame can be dragged with a mouse or touch, with sliders as an
 alternative; compact previews and sticky actions keep desktop/mobile controls reachable.
 The product/variant editor also previews the square product-card frame.
 Cropping preserves proportions and updates the draft only; save explicitly to publish. Remote pictures

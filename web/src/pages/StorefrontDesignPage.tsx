@@ -7,6 +7,7 @@ import { ImageCropEditor } from "../components/ImageCropEditor";
 import { SITE_THEME_FIELDS, STOREFRONT_THEME_PALETTES, normalizeSiteTheme, storefrontSiteTheme } from "../features/siteTheme";
 import { tenantBase } from "../features/tenantTransport";
 import { toAssetUrl } from "../features/catalog/utils";
+import { storefrontDisplay } from "../features/catalog/storefrontDisplay";
 import { CLASSIC_COPY_FIELDS, classicSections } from "../features/catalog/classicStorefront";
 import { storefrontPreviewSections } from "../features/catalog/storefrontPreview";
 import { BOUTIQUE_IMAGES } from "../features/catalog/boutiqueImages";
@@ -82,7 +83,7 @@ function ActionField({ definition, value, targets, onChange, requireDestination 
   </details>;
 }
 
-function ImageField({ label, value, onChange, onError, width = 1200, height = 900, wideLogo = false }: {
+function ImageField({ label, value, onChange, onError, width = 1200, height = 900, wideLogo = false, logoShape }: {
   label: string;
   value?: string | null;
   onChange: (value: string | null) => void;
@@ -90,6 +91,7 @@ function ImageField({ label, value, onChange, onError, width = 1200, height = 90
   width?: number;
   height?: number;
   wideLogo?: boolean;
+  logoShape?: "original" | "square" | "circle";
 }) {
   const [cropping, setCropping] = useState(false);
   const upload = async (file?: File) => {
@@ -112,7 +114,7 @@ function ImageField({ label, value, onChange, onError, width = 1200, height = 90
   };
   return <div className="storefront-design-image-field">
     <p className="social-caption">Preferred {width} x {height} px{wideLogo ? " (square), or 1200 x 300 px for a wide logo" : ""}. PNG, JPEG or WebP under 1 MiB. Keep your image size or choose a crop below.</p>
-    {value ? <img src={toAssetUrl(value)} alt={`${label} preview`} /> : <div className="storefront-image-placeholder">Image preview</div>}
+    {value ? <img src={toAssetUrl(value)} data-logo-shape={logoShape} alt={`${label} preview`} /> : <div className="storefront-image-placeholder">Image preview</div>}
     <label>{label} URL<input value={value?.startsWith("data:") ? "" : value || ""} placeholder={value?.startsWith("data:") ? "Uploaded image — save to apply" : "Paste an image URL"} onChange={event => onChange(event.target.value || null)} /></label>
     <div className="storefront-design-image-actions">
       <label className="company-upload image-action"><Upload size={16} aria-hidden="true" />Upload image
@@ -388,8 +390,7 @@ export function StorefrontDesignPage() {
             <select value={company.storefront_content.display?.corner_style === "square" ? "square" : "rounded"} onChange={event => updateCompany({
               storefront_content: {
                 ...company.storefront_content,
-                display: { show_bulk_pricing: company.storefront_content.display?.show_bulk_pricing !== false,
-                  whatsapp_enquiry_enabled: company.storefront_content.display?.whatsapp_enquiry_enabled !== false,
+                display: { ...storefrontDisplay(company),
                   corner_style: event.target.value === "square" ? "square" : "rounded" },
               },
             })}>
@@ -405,7 +406,12 @@ export function StorefrontDesignPage() {
             <summary><strong>Header</strong><span>Fixed at top</span></summary>
             <div className="storefront-design-section-fields">
               <p>The header always stays above the homepage sections.</p>
-              <ImageField label="Store logo" width={600} height={600} wideLogo value={company.logo_url} onChange={value => updateCompany({ logo_url: value || undefined })} onError={setError} />
+              <label>Header logo shape<select aria-label="Header logo shape" value={storefrontDisplay(company).logo_shape} onChange={event => updateCompany({
+                storefront_content: { ...company.storefront_content, display: { ...storefrontDisplay(company),
+                  logo_shape: event.target.value === "circle" ? "circle" : event.target.value === "square" ? "square" : "original" } },
+              })}><option value="original">Original shape (including wide logos)</option><option value="square">Square</option><option value="circle">Circle</option></select></label>
+              <p>Circle changes how the logo looks in the header, not the saved picture. Your whole logo fits without stretching.</p>
+              <ImageField label="Store logo" width={600} height={600} wideLogo logoShape={storefrontDisplay(company).logo_shape} value={company.logo_url} onChange={value => updateCompany({ logo_url: value || undefined })} onError={setError} />
               <label>Browser title<input maxLength={140} value={company.storefront_content.home.browser_title || ""}
                 onChange={event => updateHomeCopy("browser_title", event.target.value)} /></label>
               <h4>Header menu ({headerMenu.length}/{MAX_STOREFRONT_MENU_ITEMS})</h4>

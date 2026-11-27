@@ -116,13 +116,13 @@ test("marketing page has real routes, an accessible demo and a local video", () 
   assert.doesNotMatch(page, /one-minute|1-minute/);
   assert.match(page, /setAttribute\("open", ""\)/);
   assert.match(page, /poster="\/tenali-product-tour-poster.jpg"/);
-  assert.match(page, /src="\/tenali-product-tour.mp4" type="video\/mp4"/);
+  assert.match(page, /src="\/tenali-product-tour-veena.mp4" type="video\/mp4"/);
   assert.ok(statSync(path.join(root, "public", "tenali-workspace-preview.jpg")).size > 10000);
   assert.ok(statSync(path.join(root, "public", "tenali-product-tour-poster.jpg")).size > 10000);
 });
 
 test("local narrated guide is seekable with matching captions and chapters", () => {
-  const video = readFileSync(path.join(root, "public", "tenali-product-tour.mp4"));
+  const video = readFileSync(path.join(root, "public", "tenali-product-tour-veena.mp4"));
   assert.equal(video.toString("ascii", 4, 8), "ftyp");
   assert.ok(video.includes(Buffer.from("avc1")), "video must contain H.264 media");
   assert.ok(video.includes(Buffer.from("mp4a")), "video must include AAC narration and music");
@@ -164,6 +164,39 @@ test("instructions allow reading time and each step belongs to its timed chapter
     const chapter = tour.chapters[step.chapter];
     assert.ok(step.start >= chapter.start);
     assert.ok(step.end <= (tour.chapters[step.chapter + 1]?.start ?? tour.duration));
+  }
+});
+
+test("guide shows the real menu selection before each module and screen change", () => {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(read("features/portalNavigation.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports });
+  const destinations = {
+    "ai-chat": "/portal/ai", "accounts-create": "/portal/accounts", borrowing: "/portal/settlements",
+    "purchase-bill": "/portal/purchases", stores: "/portal/stores", dashboard: "/portal/dashboard",
+    register: "/register", "company-gst": "/portal/company", "product-name": "/portal/inventory",
+    "bulk-template": "/portal/bulk-upload", "billing-customer": "/portal/billing",
+    "stock-after-sale": "/portal/inventory", "shop-product": "/portal/inventory",
+    "shop-settings": "/portal/company", "shop-preview": "/", "whatsapp-checkout": "/portal/checkout-setup",
+    "own-domain": "/portal/domains",
+  };
+  for (const [index, step] of tour.steps.entries()) {
+    if (destinations[step.screen]) {
+      const previous = tour.steps[index - 1];
+      assert.equal(previous?.menu?.path, destinations[step.screen], `Missing menu selection before ${step.title}`);
+      assert.equal(previous.chapter, step.chapter);
+    }
+    if (step.menu?.path?.startsWith("/portal/")) {
+      const entry = exports.portalEntries.find(entry => entry.path === step.menu.path);
+      assert.ok(entry, `Unknown module: ${step.menu.path}`);
+      assert.equal(step.menu.label, entry.label);
+      assert.equal(step.menu.group, entry.group);
+    }
+  }
+  for (const [screen, group] of [["navigation", "Admin"], ["portal-menus", "Operations"]]) {
+    const index = tour.steps.findIndex(step => step.screen === screen);
+    assert.equal(tour.steps[index - 1].menu.group, group);
   }
 });
 
