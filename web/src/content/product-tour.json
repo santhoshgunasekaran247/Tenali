@@ -1,183 +1,409 @@
 {
-  "duration": 300,
+  "duration": 725,
   "chapters": [
-    { "start": 0, "title": "What Tenali does", "summary": "Follow one sample shop, from a product to a sale." },
-    { "start": 15, "title": "Your account and shop details", "summary": "Sign in, add your business details and understand the GST setting." },
-    { "start": 55, "title": "Your first product and stock", "summary": "Name, code, category, price, photo and opening stock." },
-    { "start": 125, "title": "Add a longer list with Excel", "summary": "Download the template, include images and check upload results." },
-    { "start": 160, "title": "Make a bill and record payment", "summary": "Customer, address, products, quantity, totals and money received." },
-    { "start": 225, "title": "Check stock and money due", "summary": "See store balances, stock history and outstanding payments." },
-    { "start": 250, "title": "Prepare your online shop", "summary": "Show products, check your shop settings and share the link." },
-    { "start": 280, "title": "Get help from Tenali AI", "summary": "Start a chat, attach a document and review before saving." }
+    {
+      "start": 0,
+      "title": "Your AI helper",
+      "summary": "Ask for help, prepare linked work and generate a product upload."
+    },
+    {
+      "start": 72,
+      "title": "Accounts",
+      "summary": "Cash, bank, opening balances and checking your money."
+    },
+    {
+      "start": 107,
+      "title": "Borrowing, lending and settlements",
+      "summary": "Record money borrowed or lent, then repayments and collections."
+    },
+    {
+      "start": 161,
+      "title": "Purchase bills",
+      "summary": "Enter a supplier bill, payment and goods receipt."
+    },
+    {
+      "start": 198,
+      "title": "Multiple stores",
+      "summary": "Separate stock locations and choose where online orders are fulfilled."
+    },
+    {
+      "start": 233,
+      "title": "Admin and Operations menus",
+      "summary": "Find setup tools and day-to-day work; understand access."
+    },
+    {
+      "start": 275,
+      "title": "Your dashboard",
+      "summary": "Check sales, payments due and stock for the right dates and store."
+    },
+    {
+      "start": 294,
+      "title": "Set up your business",
+      "summary": "Your account, shop details and the GST switch."
+    },
+    {
+      "start": 330,
+      "title": "Products and stock",
+      "summary": "Names, codes, categories, prices, pictures and opening quantities."
+    },
+    {
+      "start": 424,
+      "title": "Bulk Excel uploads",
+      "summary": "Download the shared template, include images and fix failed rows."
+    },
+    {
+      "start": 490,
+      "title": "Sales bills and payments",
+      "summary": "Sell two bottles, receive part-payment and track the balance."
+    },
+    {
+      "start": 580,
+      "title": "Your own online shop",
+      "summary": "Publish products, WhatsApp lists, Razorpay, Shiprocket and your domain."
+    }
   ],
   "steps": [
     {
-      "start": 0, "end": 15, "chapter": 0, "screen": "home",
-      "title": "Let us run a sample shop",
-      "instruction": "We will add a steel water bottle, record 24 bottles in stock, then sell two for INR 250 each.",
-      "note": "The example uses made-up details. You can pause the video or repeat any chapter."
+      "start": 0,
+      "end": 18,
+      "chapter": 0,
+      "screen": "home",
+      "title": "Welcome to Tenali",
+      "instruction": "Welcome to Tenali. Your products, bills, stock, accounts and own online shop stay together. Let us begin with your AI helper, then walk through everyday tasks at a comfortable pace.",
+      "note": "All screens use made-up shop details. Pause, use captions or choose any chapter below. No customer data or live AI answers are shown."
     },
     {
-      "start": 15, "end": 25, "chapter": 1, "screen": "register",
-      "title": "Create your account",
-      "instruction": "Choose Set up my business, then a sign-in option. After sign-in, enter your business name and workspace address.",
-      "note": "Already have an account? Choose Sign in instead. Your workspace is your business area in Tenali."
+      "start": 18,
+      "end": 35,
+      "chapter": 0,
+      "screen": "ai-chat",
+      "title": "Ask in ordinary words",
+      "instruction": "Open Tenali AI and choose New chat. Type what you need in the Message box. You can also ask for help beside your work. AI must be enabled for your business.",
+      "note": "Your role and enabled features limit what AI can read or prepare. Ask one clear question and check its answer."
     },
     {
-      "start": 25, "end": 35, "chapter": 1, "screen": "company",
-      "title": "Add your shop details",
-      "instruction": "In Company Setup, enter your business name, address, phone and email. Display Name is the name customers see.",
-      "note": "Storefront Address is the short part of your shop link. Check spelling and choose Save Changes when finished."
+      "start": 35,
+      "end": 54,
+      "chapter": 0,
+      "screen": "ai-workflow",
+      "title": "Review linked work before saving",
+      "instruction": "For a purchase, ask AI to prepare the supplier, product and bill together. Attach the bill if needed. Review every proposed step, check missing details, then confirm only the work you want saved.",
+      "note": "This screen shows an example request, not a live AI result. In an actual reply, use Review & check, inspect the changes, then Confirm & save. Not every action is enabled."
     },
     {
-      "start": 35, "end": 45, "chapter": 1, "screen": "company-gst",
-      "title": "What does this GST switch do?",
-      "instruction": "Off: sales documents have no GST. On: GST applies and GSTIN is needed. This sample shop is not GST-registered, so we use Off.",
-      "note": "For a GST-registered business, turn it on and enter the registered GSTIN. The switch changes documents; it does not register your business for GST."
+      "start": 54,
+      "end": 72,
+      "chapter": 0,
+      "screen": "ai-attach",
+      "title": "Make an Excel upload with AI",
+      "instruction": "To prepare a product list, select Prepare product bulk workbook and attach your catalogue. Download the reply's ZIP. Review its Excel sheet and product pictures, then upload it through Bulk Upload.",
+      "note": "AI uses the same formatted product template as the upload page. The ZIP contains manifest.xlsx and images. Generated internal SKUs and descriptions need review; tax and prices must be checked."
     },
     {
-      "start": 45, "end": 55, "chapter": 1, "screen": "navigation",
-      "title": "Find your way around",
-      "instruction": "Open the three-line menu. Product Inventory is for items, Billing is for sales bills, and Dashboard is for a quick business check.",
-      "note": "On a smaller screen, open the three-line menu first. The guide names the buttons as they appear in the app."
+      "start": 72,
+      "end": 88,
+      "chapter": 1,
+      "screen": "accounts-create",
+      "title": "Name your cash or bank account",
+      "instruction": "In Accounts, give each money account a clear nickname, such as Shop cash or Business bank. Choose its type and enter the opening balance once: the money already there when you start.",
+      "note": "A money account is not a staff login. Do not enter the same starting money again as a receipt."
     },
     {
-      "start": 55, "end": 65, "chapter": 2, "screen": "inventory-empty",
-      "title": "Add your first product",
-      "instruction": "Open Product Inventory, then choose Add Product. A product is one of the things you sell.",
-      "note": "Start with one item. You can use Bulk Excel later for a longer list."
+      "start": 88,
+      "end": 107,
+      "chapter": 1,
+      "screen": "accounts-tally",
+      "title": "Check what came in and went out",
+      "instruction": "Account Tally shows opening money, money received, money paid and the current balance. Compare cash with your counted drawer and bank with your statement. Record an internal transfer once, not as a sale.",
+      "note": "Use the correct account on each payment. Account transaction and journal filters help you trace a difference."
     },
     {
-      "start": 65, "end": 75, "chapter": 2, "screen": "product-name",
-      "title": "Give the item a clear name",
-      "instruction": "Product Name: Steel water bottle. SKU: BOTTLE-01. SKU is your own short item code. Use a name you will recognise.",
-      "note": "Use a name you will recognise when making a bill. Avoid creating the same item twice."
+      "start": 107,
+      "end": 125,
+      "chapter": 2,
+      "screen": "borrowing",
+      "title": "Record money you borrowed",
+      "instruction": "Open Borrowing and Settlements. Select the contact, choose Borrowed from party, and enter the amount and date. Choose the account receiving the money if you also want its money entry recorded.",
+      "note": "Borrowing is money you must return, not sales income. Check the linked-account switch before recording so you do not post the same movement twice."
     },
     {
-      "start": 75, "end": 85, "chapter": 2, "screen": "product-category",
-      "title": "Group similar products",
-      "instruction": "Choose or type the brand and category. HSN / SAC groups products for tax. Select a matching saved code when needed.",
-      "note": "Saved HSN choices show their description and GST rate. This example still has GST off for sales."
+      "start": 125,
+      "end": 143,
+      "chapter": 2,
+      "screen": "lending",
+      "title": "Record money you lent",
+      "instruction": "For money you give someone to return later, choose Lent to party. Select the contact, amount, date and paying account. Review the direction carefully: lending is different from paying a supplier bill.",
+      "note": "The example amount is INR 2,000. Use Purchases for supplier bills, not this borrowing form."
     },
     {
-      "start": 85, "end": 95, "chapter": 2, "screen": "product-price",
-      "title": "Set the selling price",
-      "instruction": "Choose Keep catalog price. Enter 250 in Catalog Price (INR). This is the catalogue selling price, not your supplier's buying price.",
-      "note": "Buying price is what you pay a supplier. It is not the price you charge a customer."
+      "start": 143,
+      "end": 161,
+      "chapter": 2,
+      "screen": "settlement",
+      "title": "Record a repayment or collection",
+      "instruction": "When returning borrowed money, choose Repaid to party. When someone returns money you lent, choose Collected from party. Enter only the amount moving today, then check the remaining balance and history.",
+      "note": "For example, borrowing INR 10,000 and repaying INR 2,500 leaves INR 7,500. Customer invoice collections belong in Receivables & Collections."
     },
     {
-      "start": 95, "end": 105, "chapter": 2, "screen": "product-photo",
-      "title": "Add a product picture",
-      "instruction": "Choose a Product Image file, or enter its image URL. Check the preview. Use PNG, JPEG or WebP under 1 MB.",
-      "note": "For a single-product upload, use a PNG, JPEG or WebP under 1 MB. The image shown here is a sample illustration."
+      "start": 161,
+      "end": 181,
+      "chapter": 3,
+      "screen": "purchase-bill",
+      "title": "Enter your supplier's bill",
+      "instruction": "Open Purchases. Select the vendor, store, bill date and supplier's bill number. Add the products, quantities and buying prices. If you paid something now, enter that amount and the paying account.",
+      "note": "Buying price is what you pay the supplier, not your selling price. Check tax, totals and the unpaid balance before posting."
     },
     {
-      "start": 105, "end": 115, "chapter": 2, "screen": "product-save",
-      "title": "Save and check the product",
-      "instruction": "Keep Active selected. Review the details, then choose Save Product. Adding a product does not add physical stock; that comes next.",
-      "note": "Saving a product does not add physical stock. We will enter the bottles already in the shop next."
+      "start": 181,
+      "end": 198,
+      "chapter": 3,
+      "screen": "purchase-receipt",
+      "title": "Add stock when goods arrive",
+      "instruction": "If all the listed goods have arrived, select Goods received now before posting. Otherwise leave it off and confirm receipt later. Recording a bill and receiving the goods are separate checks.",
+      "note": "Goods received now adds all product-line quantities to the selected store. Do not also enter those same goods as opening stock. Service receipts do not add product stock."
     },
     {
-      "start": 115, "end": 125, "chapter": 2, "screen": "opening-stock",
-      "title": "Enter your opening stock",
-      "instruction": "Owned Stock: select your store and Stock In. Quantity: 24. Reason: Opening stock. Choose Record Stock Movement once.",
-      "note": "Opening stock means items you already have when you start. Enter it once; do not enter a purchase again if its stock was already recorded."
+      "start": 198,
+      "end": 215,
+      "chapter": 4,
+      "screen": "stores",
+      "title": "Keep stores separate",
+      "instruction": "Under Stores and Warehouses, add each shop or warehouse with a short code and clear name. Choose the right store on sales, purchases and stock movements so each location's quantity stays meaningful.",
+      "note": "A store code is used in document numbers. Use the inventory stock-transfer tool when moving goods between stores, not an extra purchase or sale."
     },
     {
-      "start": 125, "end": 135, "chapter": 3, "screen": "bulk-template",
-      "title": "Add many products with Excel",
-      "instruction": "Choose Bulk Excel, then Products and Download products template. Fill the Data sheet in Excel. The README sheet explains each column.",
-      "note": "The README sheet explains the columns. Use the template instead of starting with an empty sheet."
+      "start": 215,
+      "end": 233,
+      "chapter": 4,
+      "screen": "online-store",
+      "title": "Choose where online orders come from",
+      "instruction": "For an online store, choose Online store as the kind and link its fulfilment shop or warehouse. This is the location supplying those orders. Shops can separately allow customers to collect orders.",
+      "note": "An online store does not hold a second copy of stock. Set its settlement account and complete checkout setup before taking real payments."
     },
     {
-      "start": 135, "end": 145, "chapter": 3, "screen": "bulk-images",
-      "title": "Include photos in a bulk file",
-      "instruction": "Web pictures: use public HTTPS links in image_url. Local files: use image_file filenames, then ZIP manifest.xlsx with its images folder.",
-      "note": "Local files go in a ZIP: manifest.xlsx plus an images folder containing those files. Use the matching filename for each product."
+      "start": 233,
+      "end": 254,
+      "chapter": 5,
+      "screen": "navigation",
+      "title": "Admin is for setting things up",
+      "instruction": "Open the three-line menu. Admin contains Company Setup, Stores and Warehouses, Users and Roles, Storefront Design, domains, policies, and payment setup. Owners and administrators manage these settings and team access.",
+      "note": "Do not give a customer your staff login. Team members see only the modules and stores their access permits."
     },
     {
-      "start": 145, "end": 160, "chapter": 3, "screen": "bulk-results",
-      "title": "Check what the upload saved",
-      "instruction": "Choose your file, then Upload & process. Download results: success.xlsx lists saved rows; failure.xlsx explains errors. Fix only failed rows. Resume an interrupted import rather than starting again.",
-      "note": "success.xlsx lists saved rows; failure.xlsx explains rows to fix. Retry only failed rows. If interrupted, resume the saved import rather than uploading everything again."
+      "start": 254,
+      "end": 275,
+      "chapter": 5,
+      "screen": "portal-menus",
+      "title": "Operations is for daily work",
+      "instruction": "Operations contains your everyday tools: contacts, accounts, borrowing, purchases, sales, receivables, products and reports. The Operations Portal also has start-of-day and closing checklists to help you remember important checks.",
+      "note": "Menu items depend on your access and enabled features. A checklist is a reminder, not proof that a payment or stock movement happened."
     },
     {
-      "start": 160, "end": 170, "chapter": 4, "screen": "billing-customer",
-      "title": "Choose the customer",
-      "instruction": "Open Billing. Choose Sales invoice and the billing store. Find your customer, or choose Add customer here to enter a new one.",
-      "note": "For a new customer, choose Add customer here, enter their details and save. This example uses Sample customer."
+      "start": 275,
+      "end": 294,
+      "chapter": 6,
+      "screen": "dashboard",
+      "title": "Get a quick business check",
+      "instruction": "On Dashboard, choose the dates and store you want to check. Review sales, money received, unpaid amounts, pending purchases and low stock. Open the relevant work area when a figure needs attention.",
+      "note": "A total depends on the selected period, store and your permissions. It is not necessarily the balance in your bank."
     },
     {
-      "start": 170, "end": 180, "chapter": 4, "screen": "billing-address",
-      "title": "Check the bill details",
-      "instruction": "Set the invoice date and Bill To Address. Place of Supply is the sale's state. Keep Ship to billing address checked for the same delivery address.",
-      "note": "Place of Supply is the state used for this sale. Enter the correct customer and delivery details before continuing."
+      "start": 294,
+      "end": 313,
+      "chapter": 7,
+      "screen": "register",
+      "title": "Create your business account",
+      "instruction": "New to Tenali? Choose Set up my business and a sign-in option, then add your business name and workspace address. Already registered? Choose Sign in and open your existing business instead.",
+      "note": "Your workspace is your business area in Tenali. Avoid creating a second workspace for the same records by accident."
     },
     {
-      "start": 180, "end": 190, "chapter": 4, "screen": "billing-product",
-      "title": "Add the items being sold",
-      "instruction": "Select Steel water bottle from Product / Inventory. Quantity: 2. Price: 250. Use Add Item for another product on the same bill.",
-      "note": "Quantity means how many units the customer is buying, not how much stock you have."
+      "start": 313,
+      "end": 330,
+      "chapter": 7,
+      "screen": "company-gst",
+      "title": "Check your shop and GST details",
+      "instruction": "In Company Setup, enter your name, address, phone and email. GST off means sales documents have no GST. Turn it on and enter your GSTIN only for a GST-registered business.",
+      "note": "The GST switch changes documents; it does not register your business for GST. This sample shop uses GST off. Display Name is what customers see."
     },
     {
-      "start": 190, "end": 200, "chapter": 4, "screen": "billing-total",
-      "title": "Check the total",
-      "instruction": "Check the total: 2 bottles x INR 250 = INR 500. This sample shop has no GST. Check your own bill's tax too.",
-      "note": "This example has no GST because the sample shop is not GST-registered. A quotation is only an offer and does not change stock."
+      "start": 330,
+      "end": 350,
+      "chapter": 8,
+      "screen": "product-name",
+      "title": "Add a product and its code",
+      "instruction": "In Product Inventory, choose Add Product. Enter a recognisable name, such as Steel water bottle. SKU is your own short item code; we use BOTTLE-01. Avoid adding the same item twice.",
+      "note": "An AI-generated SKU is an internal code to review, not a manufacturer's part number."
     },
     {
-      "start": 200, "end": 210, "chapter": 4, "screen": "billing-payment",
-      "title": "Record money received",
-      "instruction": "The customer pays INR 300. Enter Amount Received Now: 300, Payment Mode: cash, and Received In Account: Shop cash. INR 200 remains due.",
-      "note": "INR 500 minus INR 300 leaves INR 200 still due. Do not enter the full total if only part was paid."
+      "start": 350,
+      "end": 368,
+      "chapter": 8,
+      "screen": "product-category",
+      "title": "Choose the brand, category and HSN",
+      "instruction": "Choose or type the brand and category. Select a saved HSN code when needed; its description and GST rate fill from that saved record. Check these values match the product before continuing.",
+      "note": "HSN groups goods for tax. Selecting a category is not a substitute for checking tax classification."
     },
     {
-      "start": 210, "end": 225, "chapter": 4, "screen": "billing-post",
-      "title": "Post the invoice once",
-      "instruction": "Keep Auto-create receivable for unpaid balance checked: this tracks the INR 200 still owed. Review the bill, choose Post Invoice once, and wait for confirmation.",
-      "note": "Do not repeat a save because it feels slow. Check the result first. Posting this sale records two bottles sold and leaves INR 200 to collect."
+      "start": 368,
+      "end": 386,
+      "chapter": 8,
+      "screen": "product-price",
+      "title": "Set the price customers pay",
+      "instruction": "Choose Keep catalog price and enter 250 in Catalog Price. This is the catalogue selling price for our sample bottle. The supplier's buying price is a different number, recorded with purchases.",
+      "note": "Other pricing rules can calculate from vendor prices; use the rule that matches your intended selling method and review the result."
     },
     {
-      "start": 225, "end": 235, "chapter": 5, "screen": "stock-after-sale",
-      "title": "Check what is left",
-      "instruction": "Open the bottle's Owned Stock tab. 24 bottles minus 2 sold leaves 22. Check Stock History; do not enter the same sale again manually.",
-      "note": "Check the store breakdown and Stock History. Do not also enter a manual Stock Out for the same posted sale."
+      "start": 386,
+      "end": 406,
+      "chapter": 8,
+      "screen": "product-photo",
+      "title": "Add a clear product picture",
+      "instruction": "Choose a picture file or enter its public image link. Aim for a square, one-thousand-pixel product picture under one megabyte. Choose a background in ordinary colour names. Review, then save the product.",
+      "note": "PNG, JPEG or WebP. Images fit without stretching. A background change needs an isolated product or transparent image; a low-resolution catalogue cannot gain missing real detail."
     },
     {
-      "start": 235, "end": 250, "chapter": 5, "screen": "dashboard",
-      "title": "Check money still due",
-      "instruction": "Open Dashboard and choose the reporting period. Collections shows money customers still owe: INR 200 in our example. Older unpaid bills can appear here too.",
-      "note": "Outstanding collections can include older unpaid bills, not only the selected month. Record a later payment against the existing due amount, not as another sale."
+      "start": 406,
+      "end": 424,
+      "chapter": 8,
+      "screen": "opening-stock",
+      "title": "Enter what you already own",
+      "instruction": "In Owned Stock, choose the store and Stock In. Enter 24 and the reason Opening stock. Record the movement once. Saving a product alone does not put any physical bottles into stock.",
+      "note": "Opening stock is what you already have when starting. Do not duplicate quantities already added through a received purchase."
     },
     {
-      "start": 250, "end": 260, "chapter": 6, "screen": "shop-product",
+      "start": 424,
+      "end": 445,
+      "chapter": 9,
+      "screen": "bulk-template",
+      "title": "Download the right Excel template",
+      "instruction": "Open Bulk Upload and choose the record type. Download its template, then fill the Data sheet. README explains every column. Use the fresh template to include current dropdown choices and dependent saved details.",
+      "note": "The Excel file works offline. Its dropdown snapshot does not refresh on every open; download a fresh template after changing your saved lists."
+    },
+    {
+      "start": 445,
+      "end": 468,
+      "chapter": 9,
+      "screen": "bulk-images",
+      "title": "Include product, brand and category images",
+      "instruction": "For web pictures, fill image URL. For local files, enter each filename and ZIP manifest.xlsx with an images folder. Brand and category templates support pictures too. Product rows can include their matching brand and category images.",
+      "note": "Recommended squares: product 1000×1000, logo 600×600, category 800×800 pixels. Use English background names such as white. Review extracted product crops before importing."
+    },
+    {
+      "start": 468,
+      "end": 490,
+      "chapter": 9,
+      "screen": "bulk-results",
+      "title": "Check successes and failures",
+      "instruction": "Upload the workbook or ZIP. The page shows successful, failed and remaining rows as processing continues. Download results. Read failure reasons, correct only failed rows, then retry them without uploading successful rows again.",
+      "note": "A failed row should not partially save. Results contain success.xlsx and failure.xlsx; referenced local image files are retained for retry."
+    },
+    {
+      "start": 490,
+      "end": 508,
+      "chapter": 10,
+      "screen": "billing-customer",
+      "title": "Start a sales bill",
+      "instruction": "In Sales and Quotations, choose the customer. Add a missing customer using the button provided. Check the invoice date, billing address, store and place of supply before adding what you sold.",
+      "note": "Use a real customer record for credit sales so later collections can be matched."
+    },
+    {
+      "start": 508,
+      "end": 526,
+      "chapter": 10,
+      "screen": "billing-product",
+      "title": "Choose products and quantities",
+      "instruction": "Select Steel water bottle, enter quantity two and price two hundred and fifty rupees. Our sample sale totals five hundred rupees with GST off. Check the complete bill total before posting.",
+      "note": "The example prices are made up. Registered businesses must check the applicable GST and place of supply."
+    },
+    {
+      "start": 526,
+      "end": 543,
+      "chapter": 10,
+      "screen": "billing-payment",
+      "title": "Record only what was received",
+      "instruction": "The customer pays three hundred rupees now. Enter that in Amount Received Now, choose cash as the payment mode and Shop cash as the receiving account. Two hundred rupees is still due.",
+      "note": "Do not enter the full bill amount unless you actually received it. A payment mode describes how; the account says where the money went."
+    },
+    {
+      "start": 543,
+      "end": 562,
+      "chapter": 10,
+      "screen": "billing-post",
+      "title": "Keep track of the unpaid part",
+      "instruction": "Keep Auto-create receivable selected for the unpaid balance. Review the bill, then choose Post Invoice once. Later, record the remaining two hundred rupees in Receivables and Collections, against this bill.",
+      "note": "A posted bill affects records and stock. Correct mistakes using the supported cancellation or reversal flow rather than posting a duplicate."
+    },
+    {
+      "start": 562,
+      "end": 580,
+      "chapter": 10,
+      "screen": "stock-after-sale",
+      "title": "Check the stock after a sale",
+      "instruction": "Back in Product Inventory, check stock by store and Stock History. We began with twenty-four bottles and sold two, so twenty-two remain. The history explains which movement changed the quantity.",
+      "note": "If the quantity is unexpected, inspect the movements instead of adding another opening balance."
+    },
+    {
+      "start": 580,
+      "end": 599,
+      "chapter": 11,
+      "screen": "shop-product",
       "title": "Choose what customers can see",
-      "instruction": "The online shop is optional. In Edit Product, check photos and price, then select Visible in customer catalog and save.",
-      "note": "Keep unfinished items hidden until their details are ready. Active and catalogue visibility are separate settings."
+      "instruction": "For a product to appear online, keep it active and select Visible in customer catalog. Check the name, price, photo and available variants. Save your changes, then view the shop as a customer.",
+      "note": "Published catalogue items still need valid prices and available owned stock for online purchase. An enquiry is different from checkout."
     },
     {
-      "start": 260, "end": 270, "chapter": 6, "screen": "shop-settings",
-      "title": "Prepare your shop page",
-      "instruction": "In Company Setup, check Storefront Address and Storefront open to the public. Choose Save Changes. Storefront Design changes colours, pictures and layout.",
-      "note": "If the public-shop switch is disabled, the platform has not enabled that feature for this workspace. The rest of your shop work can continue."
+      "start": 599,
+      "end": 621,
+      "chapter": 11,
+      "screen": "shop-settings",
+      "title": "Make the website your own",
+      "instruction": "In Company Setup, open Storefront Design. Choose a theme, pictures and wording. Selected products, brands and categories come first; the rest follow unless you explicitly choose Show only selected. Preview before saving.",
+      "note": "Open the storefront only when your public contact details, policies and catalogue are ready. Keep business access separate from shopper access."
     },
     {
-      "start": 270, "end": 280, "chapter": 6, "screen": "shop-preview",
-      "title": "Check the customer view",
-      "instruction": "Open Customer View. Check the picture, name and price as a customer would. Your storefront is your online shop. Share its link when ready.",
-      "note": "A storefront is the customer-facing online shop. Your operations menu remains for you and your team."
+      "start": 621,
+      "end": 639,
+      "chapter": 11,
+      "screen": "shop-preview",
+      "title": "Share your own online shop",
+      "instruction": "Share your Tenali shop link with customers. They can browse products and pictures on their phone, choose variants and ask about items. Your website is connected to the same product and stock records.",
+      "note": "Mobile shelves scroll sideways. Prices, stock and enabled checkout methods determine what a customer can buy."
     },
     {
-      "start": 280, "end": 290, "chapter": 7, "screen": "ai-chat",
-      "title": "Ask a question in your words",
-      "instruction": "When AI is enabled, open Tenali AI and choose New chat. Type your question in everyday words. This example does not send an AI request.",
-      "note": "You can describe the task in everyday language. This guide shows the question, not a live AI answer."
+      "start": 639,
+      "end": 659,
+      "chapter": 11,
+      "screen": "whatsapp-checkout",
+      "title": "Let customers send a WhatsApp list",
+      "instruction": "Customers can collect several items into a WhatsApp enquiry list and send quantities together. Use it to discuss bulk prices or availability. A WhatsApp conversation does not create a paid order or reserve stock.",
+      "note": "Set the business phone in Company Setup. Enquiries can stay available when checkout is off. Do not treat an enquiry as confirmed payment."
     },
     {
-      "start": 290, "end": 300, "chapter": 7, "screen": "ai-attach",
-      "title": "Use documents and review the result",
-      "instruction": "Attach a bill or catalogue using the paperclip. For products, select Prepare product bulk workbook first. Check AI suggestions before saving business records.",
-      "note": "AI suggestions are a starting point. Check names, quantities, prices and tax. You stay in control of what becomes a business record."
+      "start": 659,
+      "end": 678,
+      "chapter": 11,
+      "screen": "razorpay",
+      "title": "Connect online payments",
+      "instruction": "To accept online purchases, open Payments and Delivery Setup and connect your own Razorpay account. Start in Test Mode, complete the setup and checks, then use approved live credentials for real customer payments.",
+      "note": "Provider approval, keys, automatic capture and webhook setup are separate requirements. Never share keys or secrets in chat. The tutorial does not connect or charge a provider account."
+    },
+    {
+      "start": 678,
+      "end": 699,
+      "chapter": 11,
+      "screen": "shiprocket",
+      "title": "Choose how orders are delivered",
+      "instruction": "Choose your own delivery team or courier, or connect Shiprocket using its dedicated API user and pickup location. Confirm delivery coverage and charges. Online Orders is where you process orders and record dispatch or collection.",
+      "note": "Shiprocket is optional and needs its own setup and approval. Booking a shipment does not prove delivery. Track cash-on-delivery receipts separately where applicable."
+    },
+    {
+      "start": 699,
+      "end": 725,
+      "chapter": 11,
+      "screen": "own-domain",
+      "title": "Use a domain you own",
+      "instruction": "For your own web address, open Storefront Domains. Add a domain you own, follow the displayed DNS instructions and verify it. Keep your email records intact. Your existing Tenali shop link remains available. You can return to any chapter whenever you need a reminder.",
+      "note": "A domain is your website's address. You arrange domain ownership; DNS and HTTPS changes can take time. Features depend on enabled services and your role. Thank you for exploring Tenali."
     }
   ]
 }

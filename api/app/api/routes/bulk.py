@@ -97,8 +97,8 @@ def result_package(kind, success, failures, images, suggestions):
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr("success.xlsx", workbook(kind, success, suggestions))
         archive.writestr("failure.xlsx", workbook(kind, failures, suggestions, reasons=True))
-        if kind in {"images", "products"}:
-            for name in {row["image_file"] for row in failures if row.get("image_file") in images}:
+        if kind in {"images", "products", "brands", "categories"}:
+            for name in {row[field] for row in failures for field in ("image_file", "brand_image_file", "category_image_file") if row.get(field) in images}:
                 archive.writestr(f"images/{name}", images[name])
     return download(output.getvalue(), f"tenali-{kind}-results.zip", "application/zip",
                     {"X-Bulk-Success-Count": str(len(success)), "X-Bulk-Failure-Count": str(len(failures)),
@@ -111,8 +111,10 @@ def job_scope(service):
 
 def job_summary(row):
     total = row["total"] if "total" in row else len(row["rows"])
+    failures = row["failures"] if "failures" in row else sum("failure_reason" in item for item in row["outcomes"])
     return {"id": str(row["id"]), "kind": row["kind"], "processed": row["next_row"],
             "total": total, "completed": row["next_row"] == total,
+            "success": row["next_row"] - failures, "failures": failures,
             "created_at": row["created_at"], "expires_at": row["expires_at"]}
 
 
@@ -134,7 +136,7 @@ def json_value(value):
 def create_job(kind, content, client_key, service):
     if kind not in FIELDS:
         raise HTTPException(422, "Unknown bulk workbook type.")
-    rows, _ = image_upload(content, kind) if kind in {"images", "products"} else (read_workbook(kind, content), {})
+    rows, _ = image_upload(content, kind) if kind in {"images", "products", "brands", "categories"} else (read_workbook(kind, content), {})
     if not rows:
         raise HTTPException(422, "The workbook contains no data rows.")
     scope = job_scope(service)
@@ -177,7 +179,7 @@ def advance_job(job_id, service):
         if index == len(job["rows"]):
             service.db.commit()
             return job_summary(job)
-        images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products"} else {}
+        images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "brands", "categories"} else {}
         try:
             with service.db.begin_nested():
                 record_id = service.apply_row(job["kind"], job["rows"][index], images)
@@ -192,7 +194,8 @@ def advance_job(job_id, service):
         updated = service.db.execute(text("""update bulk_import_jobs
             set next_row=next_row+1,outcomes=outcomes || jsonb_build_array(cast(:outcome as jsonb))
             where id=:id and company_id=:company and user_id=:user
-            returning id,kind,next_row,jsonb_array_length(rows) as total,created_at,expires_at"""),
+            returning id,kind,next_row,jsonb_array_length(rows) as total,created_at,expires_at,
+                (select count(*) from jsonb_array_elements(outcomes) item where item ? 'failure_reason') as failures"""),
             {**job_scope(service), "id": str(job_id), "outcome": json.dumps(outcome)}).mappings().one()
         result = job_summary(updated)
         service.db.commit()
@@ -205,7 +208,8 @@ def advance_job(job_id, service):
 def jobs(service: BulkImport = Depends(bulk_service)):
     scope = job_scope(service)
     service.db.execute(text("delete from bulk_import_jobs where company_id=:company and user_id=:user and expires_at<=now()"), scope)
-    rows = service.db.execute(text("""select id,kind,next_row,jsonb_array_length(rows) as total,created_at,expires_at
+    rows = service.db.execute(text("""select id,kind,next_row,jsonb_array_length(rows) as total,created_at,expires_at,
+        (select count(*) from jsonb_array_elements(outcomes) item where item ? 'failure_reason') as failures
         from bulk_import_jobs where company_id=:company and user_id=:user
         and expires_at>now() order by created_at desc limit 10"""), scope).mappings().all()
     result = [job_summary(row) for row in rows]
@@ -216,7 +220,7 @@ def jobs(service: BulkImport = Depends(bulk_service)):
 @router.post("/jobs/{kind}")
 async def upload(kind: str, request: Request, client_key: UUID, service: BulkImport = Depends(bulk_service)):
     content = bytearray()
-    limit = MAX_IMAGE_UPLOAD_BYTES if kind in {"images", "products"} else MAX_UPLOAD_BYTES
+    limit = MAX_IMAGE_UPLOAD_BYTES if kind in {"images", "products", "brands", "categories"} else MAX_UPLOAD_BYTES
     async for chunk in request.stream():
         content.extend(chunk)
         if len(content) > limit:
@@ -240,7 +244,7 @@ def results(job_id: UUID, service: BulkImport = Depends(bulk_service)):
             failures.append({**row, **outcome})
         else:
             successes.append({**row, **outcome})
-    images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products"} else {}
+    images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "brands", "categories"} else {}
     return result_package(job["kind"], successes, failures, images, service.suggestions())
 
 

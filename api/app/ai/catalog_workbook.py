@@ -1,5 +1,6 @@
 """Reviewable product workbooks generated from a private AI reply."""
 from io import BytesIO
+import re
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import HTTPException
@@ -14,20 +15,33 @@ REQUEST_PREFIX = "[TENALI_CATALOG_WORKBOOK]\n"
 REPLY_PREFIX = "[TENALI_CATALOG_WORKBOOK_V1]\n"
 CATALOG_INSTRUCTIONS = """
 The user requests a reviewable product import workbook, not a business operation.
-Extract product data only from the user's message and attached documents. Never invent
-HSN, tax rates, prices, brands, categories or other facts. Leave uncertain fields null.
+Extract product facts from the user's message and attached documents. Never invent
+HSN, tax rates, prices, brands, category assignments, model numbers or image URLs.
+When absent, write a brief plain-English description using the product name and ordinary
+knowledge of its use, without inventing specifications, materials, warranties or claims.
+Missing SKU values may use clearly generated internal stock codes, never pretend manufacturer codes.
+Default image_background to white (English colour names, not hex codes).
+brand_image_url and category_image_url may contain supplied public HTTPS logos or category
+pictures, never guessed URLs. Their matching file columns are available in the workbook.
+Use square images: products 1000x1000 px, brand logos 600x600 px, categories 800x800 px,
+PNG/JPEG/WebP under 1 MiB. Keep products un-stretched on a white or requested backdrop.
 Use | between multiple category or label names. Set image_index to the zero-based
 image reference index only for an image that visibly contains the product.
 When numbered photo panels are provided, set image_box to the matching region:N
-identifier (label R1 means region:1). Never estimate coordinates for those images.
+identifier (label R1 means region:1), AND product_box to the tight object rectangle
+inside that panel, in panel-relative 0-1000 coordinates. The panel includes advertising
+text: do not use the whole panel as the product. Locate the named item, not props
+(for example the milk frother, not the glass beside it). Include its complete shape.
+Leave both image fields null if you cannot separate the object from overlaid text.
 Match the product to the visible photo, not to an assumed row/column sequence.
 Without numbered panels, image_box may be x0,y0,x1,y1 in 0-1000 coordinates,
 normalized independently to the full image width and height, including blank margins.
-Exclude neighbouring products, price/description rows and blank space from crops.
+For unnumbered crops, select only the object: exclude overlaid headings, feature captions,
+neighbouring products, price/description rows and blank space.
 If the image association or boundaries are uncertain, leave both fields null.
 Use the provided PDF page and Excel sheet/row locations to help associate images,
 but never guess an uncertain association. Describe the source catalog's visual
-theme in reply. Set image_background only when a specific color is requested.
+theme in reply. Use white unless a different background colour is explicitly requested.
 Explain uncertainties, missing data or omitted images in reply. No records are saved.
 """
 
@@ -46,8 +60,11 @@ class CatalogRow(BaseModel):
     labels: str | None
     selling_price: str | None
     image_background: str | None
+    brand_image_url: str | None = None
+    category_image_url: str | None = None
     image_index: int | None
     image_box: str | None = Field(description="Use the supplied region:N photo label when available; otherwise a normalized x0,y0,x1,y1 box.")
+    product_box: str | None = Field(default=None, description="For a numbered panel, the tight product-only x0,y0,x1,y1 box, normalized to that panel (not the whole page). Exclude headings, icons, captions and unrelated props.")
 
 
 class CatalogOutput(BaseModel):
@@ -93,8 +110,22 @@ def download_catalog(assistant, conversation_id, message_id):
     regions = {index: {f"region:{number}": box for number, box in enumerate(catalog_photo_regions(image["content"]), 1)}
                for index, image in enumerate(files) if image["mime_type"].startswith("image/")}
     records, images = [], {}
+    used_skus = {product.sku.strip().casefold() for product in parsed.products if product.sku and product.sku.strip()}
     for index, product in enumerate(parsed.products, 1):
-        record = product.model_dump(exclude={"image_index", "image_box"}, exclude_none=True)
+        record = product.model_dump(exclude={"image_index", "image_box", "product_box"}, exclude_none=True)
+        if not (record.get("sku") or "").strip():
+            stem = re.sub(r"[^A-Z0-9]+", "-", product.name.upper()).strip("-")[:65] or "PRODUCT"
+            candidate = f"{stem}-{index:03}"
+            suffix = 2
+            while candidate.casefold() in used_skus:
+                candidate = f"{stem}-{index:03}-{suffix}"
+                suffix += 1
+            record["sku"] = candidate
+            used_skus.add(candidate.casefold())
+        if not (record.get("description") or "").strip():
+            brand = (product.brand or "").strip()
+            record["description"] = product.name.strip() + (f" by {brand}." if brand else ".")
+        record["image_background"] = product.image_background or "white"
         if product.image_index is not None:
             if product.image_index < 0 or product.image_index >= len(files):
                 raise HTTPException(422, f"Product {index} refers to an unavailable image.")
@@ -112,7 +143,15 @@ def download_catalog(assistant, conversation_id, message_id):
             region = crop_region(image["content"], box, preserve_alpha=True)
             if region is None:
                 raise HTTPException(422, f"Product {index} has an invalid image region.")
-            region.thumbnail((1200, 1200))
+            if choices and not product.product_box:
+                raise HTTPException(422, f"Product {index} still uses a whole advert panel. Regenerate the catalogue reply to identify the product-only rectangle, excluding text.")
+            if product.product_box:
+                panel = BytesIO()
+                region.save(panel, format="PNG")
+                region = crop_region(panel.getvalue(), product.product_box, preserve_alpha=True)
+                if region is None:
+                    raise HTTPException(422, f"Product {index} has an invalid product-only rectangle. Regenerate the catalogue reply.")
+            region.thumbnail((1000, 1000))
             output = BytesIO()
             transparent = region.mode == "RGBA"
             region.save(output, format="PNG" if transparent else "JPEG", **({} if transparent else {"quality": 85}))
@@ -124,6 +163,7 @@ def download_catalog(assistant, conversation_id, message_id):
     if sum(map(len, images.values())) > 8 * 1024 * 1024:
         raise HTTPException(422, "Catalog images exceed the bulk image package limit; split the request.")
     notes = parsed.reply + (("\n\n" + parsed.clarification) if parsed.clarification else "")
+    notes += "\n\nMissing SKUs use generated internal stock codes, not manufacturer part numbers. Descriptions may be AI-written; review them against the product. Default image background: white."
     content = workbook("products", records, BulkImport(assistant.db, assistant.scope["company"]).suggestions(), notes=notes)
     output = BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:

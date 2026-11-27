@@ -1,4 +1,5 @@
 import type { CatalogProduct, CatalogStorefrontPreviewResponse, StorefrontSection, StorefrontTemplate } from "../../types";
+import { prioritizedItems } from "./classicStorefront";
 
 type SampleProduct = readonly [name: string, price: string, photo: string];
 
@@ -100,10 +101,13 @@ export function storefrontPreviewSections(
     const offset = section.section_type === "products" ? (productShelf++ % 2) * 4 : 0;
     return {
       ...section,
-      products: section.section_type === "products" && section.is_enabled && (useSamples || !section.product_ids?.length)
-        ? sampleProducts.slice(offset, offset + 4) : selectedProducts,
-      categories: (section.category_ids || []).map(id => categories.get(id)).filter((item): item is NonNullable<typeof item> => !!item),
-      brands: (section.brand_ids || []).map(id => brands.get(id)).filter((item): item is NonNullable<typeof item> => !!item),
+      products: section.section_type === "products" && section.is_enabled && useSamples
+        ? sampleProducts.slice(offset, offset + 4)
+        : prioritizedItems(selectedProducts, preview.catalog_products, section.configuration.selected_only === true),
+      categories: prioritizedItems((section.category_ids || []).map(id => categories.get(id)).filter((item): item is NonNullable<typeof item> => !!item),
+        preview.categories, section.configuration.selected_only === true),
+      brands: prioritizedItems((section.brand_ids || []).map(id => brands.get(id)).filter((item): item is NonNullable<typeof item> => !!item),
+        preview.brands, section.configuration.selected_only === true),
     };
   });
 }

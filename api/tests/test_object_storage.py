@@ -137,18 +137,19 @@ class ProductImageTests(unittest.TestCase):
         with self.assertRaisesRegex(HTTPException, "background"):
             display_image(photo, background="#202830")
 
-    def test_without_a_clear_product_the_full_photo_fills_the_square(self):
+    def test_without_a_clear_product_the_full_photo_fits_on_white_without_distortion(self):
         photo = Image.new("RGB", (400, 300), "white")
         photo.paste((180, 90, 30), (150, 100, 250, 200))
         photo.paste((150, 150, 150), (390, 0, 391, 300))
         with Image.open(io.BytesIO(display_image(self.encode(photo)))) as result:
-            # Bill margins and table rules are trimmed, so the photo itself fills the frame.
-            self.assertGreater(result.convert("RGB").getpixel((10, 10))[0], 150)
+            self.assertTrue(min(result.convert("RGB").getpixel((10, 10))) > 245)
         with Image.open(io.BytesIO(display_image(self.encode(Image.new("RGB", (40, 20), (90, 140, 60)), "JPEG")))) as result:
             self.assertEqual(result.size, (1000, 1000))
-            # A wide photo is extended by a soft blur of itself rather than partial white bands.
+            # A white backdrop fills the square without inventing a blurred duplicate of the object.
             red, green, blue = result.convert("RGB").getpixel((500, 20))
-            self.assertTrue(green > red and green > blue and green < 245)
+            self.assertTrue(min(red, green, blue) > 245)
+            red, green, blue = result.convert("RGB").getpixel((500, 500))
+            self.assertTrue(green > red and green > blue)
         with self.assertRaises(HTTPException) as error:
             display_image(PNG)
         self.assertEqual(error.exception.status_code, 422)

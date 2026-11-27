@@ -22,7 +22,7 @@ const jsx = { jsx: element, jsxs: element, Fragment: "fragment" };
 const themeHelpers = load("features/siteTheme.ts");
 const classicHelpers = load("features/catalog/classicStorefront.ts", { "../siteTheme": themeHelpers });
 const { classicSections, CLASSIC_COPY_FIELDS } = classicHelpers;
-const previewHelpers = load("features/catalog/storefrontPreview.ts");
+const previewHelpers = load("features/catalog/storefrontPreview.ts", { "./classicStorefront": classicHelpers });
 const textHelpers = load("features/catalog/storefrontText.ts");
 const linkHelpers = load("features/catalog/storefrontLinks.ts", { "./storefrontText": textHelpers }, { URL });
 const home = Object.fromEntries(Object.values(CLASSIC_COPY_FIELDS).flat().map(([key]) => [key, `Saved ${key}`]));
@@ -107,7 +107,7 @@ function renderHome(sections, overrides = {}, draft) {
 test("Classic defaults retain the exact visible catalog selection and native hero when materialized", () => {
   const sections = classicSections(data);
   assert.deepEqual(Array.from(sections, section => section.section_type), ["hero", "categories", "products", "products", "brands"]);
-  assert.deepEqual(Array.from(sections[1].category_ids), ["c0", "c1", "c2", "c3"]);
+  assert.deepEqual(Array.from(sections[1].category_ids), ["c0", "c1", "c2", "c3", "c4"]);
   const legacy = renderHome([]);
   const editable = renderHome(sections);
   const meaningful = tree => all(tree, node => ["h1", "h2", "h3", "ProductCard", "BulkPricingNote"].includes(node.type))
@@ -278,7 +278,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   const draft = messages.at(-1);
   assert.equal(draft.sections[2].products[0], data.catalog_products[0]);
   assert.equal(draft.sections.at(-1).product_ids.length, 0);
-  assert.ok(draft.sections.at(-1).products.every(product => product.id.startsWith("storefront-preview-marketplace-")));
+  assert.deepEqual(Array.from(draft.sections.at(-1).products, product => product.id), ["p1", "p2"]);
   const notice = () => all(render(), node => node.props.className === "storefront-preview-notice")[0];
   const sampleSwitch = all(notice(), node => node.type === "input")[0];
   sampleSwitch.props.onChange({ target: { checked: true } });
@@ -296,6 +296,12 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   assert.equal(all(notice(), node => node.type === "input")[0].props.checked, false);
   all(render(), node => node.type === "iframe")[0].props.onLoad();
   assert.equal(messages.at(-1).sections[2].products[0], data.catalog_products[1]);
+  all(render(), node => node.type === "select" && node.props.multiple && node.props.value.includes("p2"))[0]
+    .props.onChange({ currentTarget: { selectedOptions: [{ value: "p1" }, { value: "p2" }] } });
+  assert.deepEqual(Array.from(all(render(), node => node.type === "select" && node.props.multiple && node.props.value.includes("p2"))[0].props.value), ["p2", "p1"]);
+  const priorities = all(render(), node => node.props["data-priority-for"] === "classic-best-sellers")[0];
+  all(priorities, node => node.type === "button" && node.props["aria-label"].endsWith(" up"))[1].props.onClick();
+  assert.deepEqual(Array.from(all(render(), node => node.type === "select" && node.props.multiple && node.props.value.includes("p2"))[0].props.value), ["p1", "p2"]);
   const actionField = all(render(), node => node.props.definition?.key === "section.classic-hero.hero.primary")[0];
   actionField.props.onChange({ label: "Shop new arrivals", href: "/#section-classic-specials" });
   await all(render(), node => node.type === "button" && text(node).includes("Save design"))[0].props.onClick();
@@ -360,7 +366,7 @@ test("theme samples stay in preview copies and never replace explicit or unavail
   const before = JSON.stringify(sections);
   const firstNames = new Set();
   for (const template of ["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"]) {
-    const preview = previewHelpers.storefrontPreviewSections(sections, empty, template);
+    const preview = previewHelpers.storefrontPreviewSections(sections, empty, template, true);
     const shelves = preview.filter(section => section.section_type === "products");
     const products = shelves.flatMap(section => section.products);
     assert.equal(products.length, 8);
@@ -378,7 +384,7 @@ test("theme samples stay in preview copies and never replace explicit or unavail
   const preview = previewHelpers.storefrontPreviewSections(selected, data, "marketplace");
   assert.deepEqual(Array.from(preview[2].products, product => product.id), ["p2", "p1"]);
   assert.equal(preview[2].products[0], data.catalog_products[1]);
-  assert.equal(preview[3].products.length, 0);
+  assert.deepEqual(Array.from(preview[3].products, product => product.id), ["p1", "p2"]);
   const showcase = previewHelpers.storefrontPreviewSections(selected, data, "boutique", true);
   assert.deepEqual(Array.from(showcase[2].product_ids), ["p2", "p1"]);
   assert.ok(showcase[2].products.every(product => product.id.startsWith("storefront-preview-boutique-")));
@@ -386,6 +392,22 @@ test("theme samples stay in preview copies and never replace explicit or unavail
   const hidden = sections.map(section => ({ ...section, is_enabled: false }));
   assert.ok(previewHelpers.storefrontPreviewSections(hidden, empty, "boutique")
     .every(section => section.products.length === 0));
+});
+
+test("all themes prioritise selections and only restrict when explicitly selected-only", () => {
+  for (const template of ["current", "marketplace", "category_first", "boutique", "heritage", "supermarket", "jewellery"]) {
+    const sections = classicSections(data);
+    sections[1].category_ids = ["c3"];
+    sections[2].product_ids = ["p2"];
+    let preview = previewHelpers.storefrontPreviewSections(sections, data, template);
+    assert.deepEqual(Array.from(preview[1].categories, item => item.id), ["c3", "c0", "c1", "c2", "c4"]);
+    assert.deepEqual(Array.from(preview[2].products, item => item.id), ["p2", "p1"]);
+    sections[2].configuration.selected_only = true;
+    preview = previewHelpers.storefrontPreviewSections(sections, data, template);
+    assert.deepEqual(Array.from(preview[2].products, item => item.id), ["p2"]);
+    sections[2].product_ids = [];
+    assert.equal(previewHelpers.storefrontPreviewSections(sections, data, template)[2].products.length, 0);
+  }
 });
 
 test("preview shopping actions are blocked for keyboard and pointer input without blocking live shopping or scrolling", () => {
@@ -513,7 +535,7 @@ test("category-first storefront opens directly on the selected category tiles", 
   assert.equal(homeSections[0].props.id, "categories");
   const categoryGrid = all(tree, node => node.props.className === "category-first-grid")[0];
   assert.ok(categoryGrid);
-  assert.equal(all(categoryGrid, node => node.props.className === "category-first-tile").length, 4);
+  assert.equal(all(categoryGrid, node => node.props.className === "category-first-tile").length, 5);
 });
 
 test("marketplace product sections use horizontal rails to keep the homepage compact", () => {
@@ -575,9 +597,9 @@ test("Marketplace renders the reference layout with Classic selections and all e
   assert.equal(all(tree, node => node.props.className === "marketplace-quick-links").length, 1);
   assert.equal(all(tree, node => node.type === "h1").map(text)[0],
     `${home.hero_heading_first} ${home.hero_heading_second}`);
-  assert.deepEqual(all(tree, node => node.type === "ProductCard").map(node => node.props.product.id), ["p1", "p2"]);
+  assert.deepEqual(all(tree, node => node.type === "ProductCard").map(node => node.props.product.id), ["p1", "p2", "p2", "p1"]);
   const categoryLinks = all(tree, node => node.props.className === "marketplace-category-tile");
-  assert.equal(categoryLinks.length, 4);
+  assert.equal(categoryLinks.length, 5);
   assert.equal(categoryLinks[0].props.to, "/brand?category=cat-0");
   for (const key of ["why_description", "contact_description", "collection_heading_first", "collection_point_three_body"]) {
     assert.ok(text(tree).includes(home[key]), `Missing Classic content: ${key}`);
@@ -598,7 +620,7 @@ test("Marketplace preserves curated order, uploaded hero image, styles and disab
   assert.equal(hero.props.style.backgroundColor, "#112233");
   assert.deepEqual(all(tree, node => node.type === "section").slice(0, 3).map(node => node.props.id),
     ["section-classic-hero", "brands", "best-sellers"]);
-  assert.equal(all(tree, node => node.type === "ProductCard").length, 1);
+  assert.equal(all(tree, node => node.type === "ProductCard").length, 2);
   const hidden = renderMarketplace({ sections: [], classic_sections_configured: true });
   assert.equal(all(hidden, node => node.type === "h1" || node.type === "ProductCard").length, 0);
   const noHero = renderMarketplace({ sections: sections.slice(1), classic_sections_configured: true });
@@ -619,9 +641,9 @@ test("Boutique uses the editorial reference with editable Classic content and ca
     },
   } };
   const tree = renderMarketplace({ company: store, sections }, "boutique");
-  assert.deepEqual(all(tree, node => node.type === "ProductCard").map(node => node.props.product.id), ["p1", "p2"]);
+  assert.deepEqual(all(tree, node => node.type === "ProductCard").map(node => node.props.product.id), ["p1", "p2", "p2", "p1"]);
   const categories = all(tree, node => node.props.className === "boutique-category-card");
-  assert.equal(categories.length, 4);
+  assert.equal(categories.length, 5);
   assert.equal(categories[0].props.to, "/brand?category=cat-0");
   assert.ok(text(categories[0]).includes("Discover this collection"));
   const brand = all(tree, node => node.type === "BrandCard")[0];
@@ -649,7 +671,7 @@ test("Boutique defaults, removed sections, uploaded images and mapping order mat
   const { BOUTIQUE_IMAGES } = load("features/catalog/boutiqueImages.ts");
   const defaults = renderMarketplace({}, "boutique");
   assert.ok(all(defaults, node => node.type === "img" && node.props.src === BOUTIQUE_IMAGES.hero).length);
-  assert.equal(all(defaults, node => node.props.className === "boutique-category-card").length, 4);
+  assert.equal(all(defaults, node => node.props.className === "boutique-category-card").length, 5);
   const sections = classicSections(data);
   sections[0].image_url = "uploads/boutique-cover.jpg";
   sections[0].configuration = { ...sections[0].configuration, image_ratio: "portrait", image_fit: "contain" };

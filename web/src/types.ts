@@ -264,6 +264,7 @@ export type CatalogCategory = {
 };
 
 export type CatalogProduct = {
+  image_background?: string | null;
   id: string;
   minimum_order_quantity: number;
   portal_product_id: string;
@@ -294,6 +295,7 @@ export type CatalogProduct = {
 };
 
 export type CatalogHomeResponse = {
+  catalog_products: CatalogProduct[];
   company: Company;
   brands: Brand[];
   categories: CatalogCategory[];

@@ -77,6 +77,11 @@
 .marketing .footer-grid strong { color: #172d4a; }
 .marketing .footer-grid a, .marketing .footer-bottom a { color: #425f7d; }
 .marketing .marketing-footer a:hover { color: #80501f; text-decoration: underline; }
+.marketing-online-guide { margin-top: 28px; padding: 28px; background: #edf4fc; border-left: 4px solid #17385f; }
+.marketing-online-guide h3 { margin-bottom: 12px; }
+.marketing-online-guide p { color: #425f7d; margin-bottom: 12px; max-width: 1000px; }
+.marketing-online-guide p:last-child { margin-bottom: 0; font-size: 14px; }
+.demo-audio-toggle { padding: 8px 14px; border: 1px solid #adc3da; border-radius: 4px; background: #fff; color: #17385f; font: inherit; cursor: pointer; }
 @media (max-width: 1100px) { .marketing-header { height: 72px; padding: 0 20px; }.marketing-brand img { width: 112px; }.marketing-menu { display: block; }.marketing-nav { display: none; position: absolute; left: 0; right: 0; top: 72px; background: white; padding: 20px; border-bottom: 1px solid #dce7f2; align-items: stretch; flex-direction: column; gap: 0; box-shadow: 0 18px 20px #16395f14; }.marketing-nav.is-open { display: flex; }.marketing-nav > a:not(.marketing-button) { padding: 11px 0; }.marketing-nav-login { border: 0; }.marketing-nav .marketing-button { margin-top: 10px; } }
 @media (max-width: 1000px) { .hero-grid { gap: 35px; }.preview-floating { right: 0; } }
 @media (max-width: 800px) { .marketing-container { width: min(100% - 40px, 600px); }.hero-grid, .section-intro, .how-grid, .demo-grid, .about-grid, .contact-grid { grid-template-columns: 1fr; gap: 36px; }.hero-grid { padding-block: 65px 55px; }.hero-visual { max-width: 580px; }.hero-visual:before { top: 0; }.marketing-section, .marketing-about { padding: 80px 0; }.marketing-how, .marketing-contact { padding: 75px 0; }.section-intro { margin-bottom: 35px; }.capability-grid { grid-template-columns: repeat(2, 1fr); }.demo-transcript { grid-column: auto; }.marketing-strip .marketing-container { gap: 15px; font-size: 8px; }.marketing-strip svg { display: none; } }

@@ -48,9 +48,12 @@ class StorefrontSectionInput(BaseModel):
             "image_ratio", "image_fit", "font_family", "border_style",
             "background_color", "text_color", "accent_color",
             "classic_slot",
+            "selected_only",
         }
         if self.configuration.keys() - allowed_configuration:
             raise ValueError("Section configuration contains unsupported style options")
+        if "selected_only" in self.configuration and not isinstance(self.configuration["selected_only"], bool):
+            raise ValueError("Selected-only display must be true or false")
         classic_slot = self.configuration.get("classic_slot")
         if classic_slot is not None:
             slot_types = {

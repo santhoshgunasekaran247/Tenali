@@ -79,7 +79,7 @@ export function ProductCard({ product, phone, checkoutEnabled, template, product
         if (e.key === "Enter" && e.target === e.currentTarget) navigate(`/products/${product.id}`);
       }}
     >
-      <div className="product-image">
+      <div className="product-image" style={{ backgroundColor: product.image_background || "#ffffff" }}>
         {imageSrc && imageSrc !== failedSrc ? <img src={imageSrc} alt={product.name} loading="lazy" onError={() => setFailedSrc(imageSrc)} />
           : <span className="product-image-placeholder"><ImageOff size={32} aria-hidden="true" /><span>{imageSrc ? "Image unavailable" : "No image"}</span></span>}
         <div className="product-tags">

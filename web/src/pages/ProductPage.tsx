@@ -112,7 +112,7 @@ export function ProductPage() {
         </div>
         <section className={`product-detail product-detail--${template}`}>
           <div className="detail-gallery">
-            <div className="detail-image-wrap">
+            <div className="detail-image-wrap" style={{ backgroundColor: product.image_background || "#ffffff" }}>
               {mainPhoto?<img src={toAssetUrl(mainPhoto)} alt={product.name} />:<ImageOff size={48} aria-label="No product image"/>}
             </div>
             {gallery.length > 1 && (

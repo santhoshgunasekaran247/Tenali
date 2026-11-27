@@ -24,16 +24,17 @@ function track(file) {
   });
 }
 
-function marketingPlayer(video) {
+function marketingPlayer(video, muted = false) {
   const exports = {};
   const updates = [];
+  let stateSlot = 0;
   const jsx = (type, props) => ({ type, props });
   const mocks = {
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },
     react: {
       useEffect: () => {},
       useRef: () => ({ current: video }),
-      useState: initial => [initial, value => updates.push(value)],
+      useState: initial => [stateSlot++ === 5 ? muted : initial, value => updates.push(value)],
     },
     "react-router-dom": { Link: "Link" },
     "../content/product-tour.json": tour,
@@ -56,6 +57,7 @@ function marketingPlayer(video) {
   return {
     buttons: nodes.filter(node => node.type === "button"),
     video: allNodes.find(node => node.type === "video"),
+    audio: allNodes.find(node => node.props?.className === "demo-audio-toggle"),
     updates,
   };
 }
@@ -118,16 +120,17 @@ test("marketing page has real routes, an accessible demo and a local video", () 
   assert.ok(statSync(path.join(root, "public", "tenali-product-tour-poster.jpg")).size > 10000);
 });
 
-test("local guide is a seekable five-minute MP4 with matching captions and chapters", () => {
+test("local narrated guide is seekable with matching captions and chapters", () => {
   const video = readFileSync(path.join(root, "public", "tenali-product-tour.mp4"));
   assert.equal(video.toString("ascii", 4, 8), "ftyp");
   assert.ok(video.includes(Buffer.from("avc1")), "video must contain H.264 media");
+  assert.ok(video.includes(Buffer.from("mp4a")), "video must include AAC narration and music");
   assert.ok(video.indexOf(Buffer.from("moov")) < video.indexOf(Buffer.from("mdat")), "metadata must precede media for progressive playback");
   const header = video.indexOf(Buffer.from("mvhd"));
   assert.ok(header > 0);
   assert.equal(video[header + 4], 0);
   const duration = video.readUInt32BE(header + 20) / video.readUInt32BE(header + 16);
-  assert.equal(duration, 300);
+  assert.ok(duration >= 300);
   assert.equal(duration, tour.duration);
   const cues = track("tenali-product-tour.vtt");
   assert.equal(cues.length, tour.steps.length);
@@ -176,9 +179,23 @@ test("chapter buttons seek and play their actual start times without autoplay on
   }
   assert.equal(plays, tour.chapters.length);
   assert.equal(focuses, tour.chapters.length);
-  video.currentTime = 251;
+  video.currentTime = tour.chapters[6].start + 1;
   player.video.props.onTimeUpdate({ currentTarget: video });
   assert.equal(player.updates.at(-1), 6);
+});
+
+test("sound controls mute and unmute both narration and music without starting playback", () => {
+  const video = { muted: false, volume: 1 };
+  let player = marketingPlayer(video);
+  player.audio.props.onClick();
+  assert.equal(video.muted, true);
+  video.volume = 0;
+  player = marketingPlayer(video, true);
+  player.audio.props.onClick();
+  assert.equal(video.muted, false);
+  assert.equal(video.volume, 1);
+  player.video.props.onVolumeChange({ currentTarget: { muted: false, volume: 0 } });
+  assert.equal(player.updates.at(-1), true);
 });
 
 test("playback failures give a readable alternative", async () => {

@@ -77,7 +77,7 @@ import { tenantFetch } from "./features/tenantTransport";
 
 export const API_BASE = "/api";
 export type BulkKind = "products" | "variants" | "hsn" | "parties" | "brands" | "categories" | "images";
-export type BulkJob = { id: string; kind: BulkKind; processed: number; total: number; completed: boolean;
+export type BulkJob = { id: string; kind: BulkKind; processed: number; total: number; success: number; failures: number; completed: boolean;
   created_at: string; expires_at: string };
 export const API_RESULT_EVENT = "tenali-api-result";
 export type ApiResult = { method: string; path: string; ok: boolean; status: number; data?: unknown; message?: string };

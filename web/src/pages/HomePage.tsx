@@ -17,7 +17,7 @@ import { Package } from "lucide-react";
 import { useAuth } from "../features/auth";
 import { useCheckoutAvailability } from "../features/useCheckoutAvailability";
 import { hasStorefrontLinkOverride, storefrontLink, storefrontSectionId } from "../features/catalog/storefrontLinks";
-import { storefrontSectionStyle } from "../features/catalog/classicStorefront";
+import { prioritizedItems, storefrontSectionStyle } from "../features/catalog/classicStorefront";
 
 type StorefrontPreviewMessage = {
   type: "tenali-storefront-preview";
@@ -269,7 +269,7 @@ export function HomePage() {
             <p>{text("categories_description")}</p>
           </div>
           <div className="category-grid">
-            {data.categories.slice(0, 4).map((category) => (
+            {data.categories.map((category) => (
               <Link
                 className="category-card"
                 to={link("category.card", `/brand?category=${encodeURIComponent(category.category_slug)}`, "").to}
@@ -305,7 +305,7 @@ export function HomePage() {
           </div>
           {bulkStrip}
           <ProductRail label={text("best_sellers_eyebrow") || "Best sellers"}>
-            {data.best_sellers.map((product) => (
+            {prioritizedItems(data.best_sellers, data.catalog_products || []).map((product) => (
               <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} productCopy={data.company.storefront_content?.product} />
             ))}
           </ProductRail>
@@ -323,7 +323,7 @@ export function HomePage() {
           </div>
           {bulkStrip}
           <ProductRail label={text("specials_eyebrow") || "Specials"}>
-            {data.sru_specials.map((product) => (
+            {prioritizedItems(data.sru_specials, data.catalog_products || []).map((product) => (
               <ProductCard key={product.id} product={product} phone={phone} checkoutEnabled={!!availability?.enabled} productCopy={data.company.storefront_content?.product} />
             ))}
           </ProductRail>

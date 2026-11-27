@@ -715,11 +715,16 @@ and actual data-handling practices before publication. Anonymous visitors now se
 a platform homepage with an app description and public policy links; signed-in
 workspace/storefront routing is preserved.
 
-The platform homepage includes a silent, five-minute beginner guide with 28
-steps and eight clickable, timed chapters. Instructions occupy a dark panel;
+The platform homepage includes a narrated 12-minute, 5-second beginner guide with 38
+steps and 12 clickable, timed chapters. A gentle Indian-English female voice
+explains each step over quiet, original background music. Instructions occupy a dark panel;
 actual app screens using sample data occupy a separate light panel. It follows
-one example through products, opening stock, Excel uploads, a part-paid invoice,
-remaining stock, the online shop and AI.
+AI help and workbook generation, accounts, borrowing/lending and settlements,
+purchase bills, multiple stores, Admin/Operations menus, the dashboard, products,
+Excel uploads and a part-paid sale. Online-shop chapters explain WhatsApp list enquiries,
+Razorpay, optional Shiprocket/self-shipping and custom domains without implying those services
+are enabled automatically. Native volume controls and a separate mute/unmute button control
+both narration and music; the video never autoplays. Captions and the written guide remain usable without sound.
 Deploy `web/public/tenali-product-tour.mp4`, its
 `tenali-product-tour-poster.jpg` poster, `tenali-product-tour.vtt` English captions
 and `tenali-product-tour-chapters.vtt` chapter track together with the frontend.
@@ -728,6 +733,27 @@ guide; keep its timings and instructions consistent with the video and tracks.
 Caption cues leave a short gap between steps to prevent overlapping text after seeking.
 Playback failures show a written-guide alternative. The guide makes no live AI
 requests and needs no database migration.
+
+Bulk templates use English image-background colour names (existing hexadecimal values remain accepted).
+Brand/category workbooks support `image_url` and `image_file`; product workbooks additionally support
+`brand_image_url`, `brand_image_file`, `category_image_url` and `category_image_file`. File imports use
+`manifest.xlsx` plus `images/` in a ZIP. Recommended square images are 1000×1000 pixels for products,
+600×600 for logos and 800×800 for categories, in PNG/JPEG/WebP under 1 MiB. Photos fit without stretching;
+white padding replaces blurred duplicated backdrops when a product cannot be isolated.
+Saved-import progress shows successes, failures and remaining rows; retry only failed rows.
+
+AI catalogue workbooks use the same template. Missing descriptions may use generic, reviewed AI copy;
+missing SKUs receive collision-checked internal codes and the default background is white. Tax, prices,
+manufacturer identifiers and image URLs must not be invented. Numbered advert panels require a second,
+panel-relative `product_box` around the actual object, excluding advertising text and props. Old saved
+whole-panel responses must be regenerated instead of downloading misleading product images.
+Always review extracted crops: object recognition can be uncertain, and low-resolution source pictures
+cannot supply missing detail.
+
+Across storefront themes, selected records are priorities, followed by remaining active, public records.
+Use **Show only selected** to restrict a section explicitly. Inactive/private products and records from
+other workspaces remain excluded. Mobile product, brand and category shelves support horizontal scrolling.
+These changes use existing image columns, job outcomes and section JSON; no additional migration is needed.
 
 Tenant owners/admins use **Store Policies** (`/portal/policies`), also linked from
 Company Setup. Each tenant gets independent, editable privacy, terms, shipping and

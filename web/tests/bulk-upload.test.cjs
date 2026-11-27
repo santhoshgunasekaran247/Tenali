@@ -102,14 +102,14 @@ test("changing record type clears the chosen file and keeps selected export scop
 
 test("upload advances saved jobs to completion and exposes results, not a second upload", async () => {
   const h = hooks(), calls = [];
-  const job = { id: "job-a", kind: "products", total: 4, processed: 0, completed: false,
+  const job = { id: "job-a", kind: "products", total: 4, processed: 0, success: 0, failures: 0, completed: false,
     created_at: "2026-11-26", expires_at: "2026-12-03" };
   const { BulkWorkbookPanel } = load("components/BulkWorkbookPanel.tsx", {
     react: h.react, "react-router-dom": { Link },
     "../api": { api: {
       bulkJobs: async () => ({ items: [] }),
       bulkStart: async (kind, file, key) => { calls.push(["start", kind, file.name, key]); return job; },
-      bulkAdvance: async id => { calls.push(["advance", id]); const processed = calls.filter(call => call[0] === "advance").length === 1 ? 3 : 4; return { ...job, processed, completed: processed === 4 }; },
+      bulkAdvance: async id => { calls.push(["advance", id]); const processed = calls.filter(call => call[0] === "advance").length === 1 ? 3 : 4; return { ...job, processed, success: processed - 1, failures: 1, completed: processed === 4 }; },
     } },
   });
   const render = () => h.render(() => BulkWorkbookPanel({ selectedProducts: [] }));
@@ -122,6 +122,8 @@ test("upload advances saved jobs to completion and exposes results, not a second
   tree = render();
   assert.deepEqual(calls, [["start", "products", "products.xlsx", "upload-reference"], ["advance", "job-a"], ["advance", "job-a"]]);
   assert.match(text(find(tree, node => node.props.role === "status")), /Import complete: 4 rows processed/);
+  assert.match(text(find(tree, node => node.props.role === "status")), /3 succeeded; 1 failed/);
+  assert.match(text(tree), /3 succeeded.*1 failed.*0 remaining/);
   assert.ok(button(tree, "Download results"));
   assert.equal(button(tree, "Upload & process").props.disabled, true);
   assert.equal(button(tree, "Resume"), undefined);

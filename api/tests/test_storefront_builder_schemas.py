@@ -14,6 +14,40 @@ from app.services.storefront_sections import StorefrontSectionsService
 
 
 class StorefrontSectionSchemaTests(unittest.TestCase):
+    def test_public_catalog_preserves_images_and_available_products(self):
+        from app.schemas.catalog import CatalogHomeResponse
+        product = {"id": uuid4(), "name": "Cup", "minimum_order_quantity": 1, "image_background": "#fff0f5"}
+        response = CatalogHomeResponse.model_validate({
+            "company": {"id": uuid4(), "company_name": "Example"},
+            "brands": [{"id": uuid4(), "name": "Example", "code": "EXAMPLE", "image_url": "https://example.com/logo.png"}],
+            "categories": [], "best_sellers": [], "sru_specials": [], "catalog_products": [product],
+        }).model_dump()
+        self.assertEqual(response["brands"][0]["image_url"], "https://example.com/logo.png")
+        self.assertEqual(response["catalog_products"][0]["image_background"], "#fff0f5")
+
+    def test_saved_sections_prioritise_selected_items_or_explicitly_restrict_them(self):
+        def mapped(rows):
+            result = Mock()
+            result.mappings.return_value.all.return_value = rows
+            result.mappings.return_value.first.return_value = rows[0] if rows else None
+            return result
+
+        for selected_only in (False, True):
+            with self.subTest(selected_only=selected_only):
+                db = Mock()
+                sections = [{"id": kind, "section_type": kind, "is_enabled": True, "configuration": {"selected_only": selected_only}}
+                            for kind in ("products", "categories", "brands")]
+                choices = [mapped([]) for _ in sections]
+                for choice in choices:
+                    choice.scalars.return_value.all.return_value = ["2", "foreign", "inactive"]
+                items = [{"id": str(index), "name": f"Item {index}"} for index in (1, 2, 3)]
+                db.execute.side_effect = [mapped([{"id": "tenant"}]), mapped(items), mapped(items), mapped(items),
+                                          mapped(sections), *choices]
+                result = CatalogService(db).home("tenant")
+                for section in result["sections"]:
+                    self.assertEqual([item["id"] for item in section[section["section_type"]]],
+                                     ["2"] if selected_only else ["2", "1", "3"])
+
     def section(self, **overrides):
         values = {
             "section_key": "custom-section",
@@ -46,6 +80,12 @@ class StorefrontSectionSchemaTests(unittest.TestCase):
             self.section(configuration={"background_color": "red"})
         with self.assertRaises(ValidationError):
             self.section(configuration={"html": "<script>alert(1)</script>"})
+
+    def test_selected_only_is_explicit_and_boolean(self):
+        self.assertNotIn("selected_only", self.section().configuration)
+        self.assertIs(self.section(configuration={"selected_only": True}).configuration["selected_only"], True)
+        with self.assertRaises(ValidationError):
+            self.section(configuration={"selected_only": "yes"})
 
     def test_classic_defaults_keep_native_layout_and_validate_matching_catalog_type(self):
         for slot, section_type in {
@@ -156,7 +196,7 @@ class ProductTagInputTests(unittest.TestCase):
             ProductInput.model_validate({"name": "Cotton Kurta", "tags": [" "]})
 
 class ClassicSectionVisibilityTests(unittest.TestCase):
-    def test_explicit_empty_categories_are_visible_without_exposing_other_empty_or_inactive_categories(self):
+    def test_all_active_categories_are_visible_without_exposing_other_tenants_or_inactive_categories(self):
         with closing(sqlite3.connect(":memory:")) as db:
             db.executescript("""
                 create table product_categories(id text, company_id text, code text, name text,
@@ -192,7 +232,8 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
                 ("tenant", "other", "cross-tenant"),
             ])
             rows = db.execute(_catalog_categories_query(), {"company_id": "tenant"}).fetchall()
-            self.assertEqual([row[0] for row in rows], ["diya", "populated", "secondary"])
+            self.assertEqual([row[0] for row in rows],
+                             ["cross-tenant", "disabled", "diya", "foreign-assignment", "hidden-product", "populated", "secondary", "unselected"])
 
     def test_saved_section_mappings_reload_with_the_same_input_field_names_and_order(self):
         company_id = str(uuid4())

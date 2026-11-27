@@ -191,6 +191,12 @@ class BulkImport:
         if "categories" in _changes(row, ("categories",)):
             ids = [self._lookup("categories", name) for name in _names(_changes(row, ("categories",))["categories"])]
             values.update(category_ids=ids, category_id=ids[0] if ids else None)
+        for prefix, field, entity in (("brand", "brand_id", "brand"), ("category", "category_id", "category")):
+            url, filename = row.get(f"{prefix}_image_url"), row.get(f"{prefix}_image_file")
+            if url or filename:
+                if not values.get(field):
+                    raise HTTPException(422, f"Set the {prefix} name before adding its image.")
+                self.image({"id": str(values[field]), "entity": entity, "image_url": url, "image_file": filename}, images or {})
         if "labels" in _changes(row, ("labels",)):
             values["tags"] = _names(_changes(row, ("labels",))["labels"])
         if "hsn_code" in _changes(row, ("hsn_code",)):
@@ -262,9 +268,9 @@ class BulkImport:
             created = self.parties.update(str(created["id"]), PartyUpdate(is_active=False), self.company_id, commit=False)
         return str(created["id"])
 
-    def master(self, kind, row):
+    def master(self, kind, row, images=None):
         record_id = _id(row["id"]) if row.get("id") not in (None, "") else None
-        changes = _changes(row, FIELDS[kind][1:])
+        changes = _changes(row, ("name", "description", "is_active"))
         if "description" in changes and changes["description"] is None:
             changes["description"] = ""
         if record_id:
@@ -274,9 +280,17 @@ class BulkImport:
             if not current:
                 raise HTTPException(404, "Master record not found.")
             payload = InventoryLookupCreate.model_validate({**dict(current), "description": current["description"] or "", **changes})
-            return str(self.inventory.update_lookup(kind, record_id, payload, commit=False)["id"])
-        payload = InventoryLookupCreate.model_validate(changes)
-        return str(self.inventory.create_lookup(kind, payload.name, payload.description, payload.is_active, commit=False)["id"])
+            record_id = str(self.inventory.update_lookup(kind, record_id, payload, commit=False)["id"])
+        else:
+            payload = InventoryLookupCreate.model_validate(changes)
+            record_id = str(self.inventory.create_lookup(kind, payload.name, payload.description, payload.is_active, commit=False)["id"])
+        if row.get("image_url") == "<clear>" and not row.get("image_file"):
+            table = {"brands": "brands", "categories": "product_categories"}[kind]
+            self.db.execute(text(f"update {table} set image_url=null where id=:id and company_id=:company"),
+                            {"id": record_id, "company": self.company_id})
+        elif row.get("image_url") or row.get("image_file"):
+            self.image({**row, "id": record_id, "entity": "brand" if kind == "brands" else "category"}, images or {})
+        return record_id
 
     def image(self, row, images):
         record_id = _id(row.get("id"))
@@ -325,7 +339,7 @@ class BulkImport:
         if kind == "images":
             return self.image(row, images or {})
         if kind in {"brands", "categories"}:
-            return self.master(kind, row)
+            return self.master(kind, row, images)
         raise HTTPException(422, "Invalid bulk record type.")
 
     def export_rows(self, kind, ids):

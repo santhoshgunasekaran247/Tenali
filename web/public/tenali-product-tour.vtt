@@ -1,118 +1,198 @@
 WEBVTT
 
-00:00.000 --> 00:14.900
-We will add a steel water bottle, record 24 bottles in stock, then sell two
-for INR 250 each.
+00:00.000 --> 00:17.900
+Welcome to Tenali. Your products, bills, stock, accounts and own online
+shop stay together. Let us begin with your AI helper, then walk through
+everyday tasks at a comfortable pace.
 
-00:15.000 --> 00:24.900
-Choose Set up my business, then a sign-in option. After sign-in, enter your
-business name and workspace address.
+00:18.000 --> 00:34.900
+Open Tenali AI and choose New chat. Type what you need in the Message box.
+You can also ask for help beside your work. AI must be enabled for your
+business.
 
-00:25.000 --> 00:34.900
-In Company Setup, enter your business name, address, phone and email.
-Display Name is the name customers see.
+00:35.000 --> 00:53.900
+For a purchase, ask AI to prepare the supplier, product and bill together.
+Attach the bill if needed. Review every proposed step, check missing
+details, then confirm only the work you want saved.
 
-00:35.000 --> 00:44.900
-Off: sales documents have no GST. On: GST applies and GSTIN is needed. This
-sample shop is not GST-registered, so we use Off.
+00:54.000 --> 01:11.900
+To prepare a product list, select Prepare product bulk workbook and attach
+your catalogue. Download the reply's ZIP. Review its Excel sheet and
+product pictures, then upload it through Bulk Upload.
 
-00:45.000 --> 00:54.900
-Open the three-line menu. Product Inventory is for items, Billing is for
-sales bills, and Dashboard is for a quick business check.
+01:12.000 --> 01:27.900
+In Accounts, give each money account a clear nickname, such as Shop cash or
+Business bank. Choose its type and enter the opening balance once: the
+money already there when you start.
 
-00:55.000 --> 01:04.900
-Open Product Inventory, then choose Add Product. A product is one of the
-things you sell.
+01:28.000 --> 01:46.900
+Account Tally shows opening money, money received, money paid and the
+current balance. Compare cash with your counted drawer and bank with your
+statement. Record an internal transfer once, not as a sale.
 
-01:05.000 --> 01:14.900
-Product Name: Steel water bottle. SKU: BOTTLE-01. SKU is your own short
-item code. Use a name you will recognise.
+01:47.000 --> 02:04.900
+Open Borrowing and Settlements. Select the contact, choose Borrowed from
+party, and enter the amount and date. Choose the account receiving the
+money if you also want its money entry recorded.
 
-01:15.000 --> 01:24.900
-Choose or type the brand and category. HSN / SAC groups products for tax.
-Select a matching saved code when needed.
+02:05.000 --> 02:22.900
+For money you give someone to return later, choose Lent to party. Select
+the contact, amount, date and paying account. Review the direction
+carefully: lending is different from paying a supplier bill.
 
-01:25.000 --> 01:34.900
-Choose Keep catalog price. Enter 250 in Catalog Price (INR). This is the
-catalogue selling price, not your supplier's buying price.
+02:23.000 --> 02:40.900
+When returning borrowed money, choose Repaid to party. When someone returns
+money you lent, choose Collected from party. Enter only the amount moving
+today, then check the remaining balance and history.
 
-01:35.000 --> 01:44.900
-Choose a Product Image file, or enter its image URL. Check the preview. Use
-PNG, JPEG or WebP under 1 MB.
+02:41.000 --> 03:00.900
+Open Purchases. Select the vendor, store, bill date and supplier's bill
+number. Add the products, quantities and buying prices. If you paid
+something now, enter that amount and the paying account.
 
-01:45.000 --> 01:54.900
-Keep Active selected. Review the details, then choose Save Product. Adding
-a product does not add physical stock; that comes next.
+03:01.000 --> 03:17.900
+If all the listed goods have arrived, select Goods received now before
+posting. Otherwise leave it off and confirm receipt later. Recording a bill
+and receiving the goods are separate checks.
 
-01:55.000 --> 02:04.900
-Owned Stock: select your store and Stock In. Quantity: 24. Reason: Opening
-stock. Choose Record Stock Movement once.
+03:18.000 --> 03:34.900
+Under Stores and Warehouses, add each shop or warehouse with a short code
+and clear name. Choose the right store on sales, purchases and stock
+movements so each location's quantity stays meaningful.
 
-02:05.000 --> 02:14.900
-Choose Bulk Excel, then Products and Download products template. Fill the
-Data sheet in Excel. The README sheet explains each column.
+03:35.000 --> 03:52.900
+For an online store, choose Online store as the kind and link its
+fulfilment shop or warehouse. This is the location supplying those orders.
+Shops can separately allow customers to collect orders.
 
-02:15.000 --> 02:24.900
-Web pictures: use public HTTPS links in image_url. Local files: use
-image_file filenames, then ZIP manifest.xlsx with its images folder.
+03:53.000 --> 04:13.900
+Open the three-line menu. Admin contains Company Setup, Stores and
+Warehouses, Users and Roles, Storefront Design, domains, policies, and
+payment setup. Owners and administrators manage these settings and team
+access.
 
-02:25.000 --> 02:39.900
-Choose your file, then Upload & process. Download results: success.xlsx
-lists saved rows; failure.xlsx explains errors. Fix only failed rows.
-Resume an interrupted import rather than starting again.
+04:14.000 --> 04:34.900
+Operations contains your everyday tools: contacts, accounts, borrowing,
+purchases, sales, receivables, products and reports. The Operations Portal
+also has start-of-day and closing checklists to help you remember important
+checks.
 
-02:40.000 --> 02:49.900
-Open Billing. Choose Sales invoice and the billing store. Find your
-customer, or choose Add customer here to enter a new one.
+04:35.000 --> 04:53.900
+On Dashboard, choose the dates and store you want to check. Review sales,
+money received, unpaid amounts, pending purchases and low stock. Open the
+relevant work area when a figure needs attention.
 
-02:50.000 --> 02:59.900
-Set the invoice date and Bill To Address. Place of Supply is the sale's
-state. Keep Ship to billing address checked for the same delivery address.
+04:54.000 --> 05:12.900
+New to Tenali? Choose Set up my business and a sign-in option, then add
+your business name and workspace address. Already registered? Choose Sign
+in and open your existing business instead.
 
-03:00.000 --> 03:09.900
-Select Steel water bottle from Product / Inventory. Quantity: 2. Price:
-250. Use Add Item for another product on the same bill.
+05:13.000 --> 05:29.900
+In Company Setup, enter your name, address, phone and email. GST off means
+sales documents have no GST. Turn it on and enter your GSTIN only for a
+GST-registered business.
 
-03:10.000 --> 03:19.900
-Check the total: 2 bottles x INR 250 = INR 500. This sample shop has no
-GST. Check your own bill's tax too.
+05:30.000 --> 05:49.900
+In Product Inventory, choose Add Product. Enter a recognisable name, such
+as Steel water bottle. SKU is your own short item code; we use BOTTLE-01.
+Avoid adding the same item twice.
 
-03:20.000 --> 03:29.900
-The customer pays INR 300. Enter Amount Received Now: 300, Payment Mode:
-cash, and Received In Account: Shop cash. INR 200 remains due.
+05:50.000 --> 06:07.900
+Choose or type the brand and category. Select a saved HSN code when needed;
+its description and GST rate fill from that saved record. Check these
+values match the product before continuing.
 
-03:30.000 --> 03:44.900
-Keep Auto-create receivable for unpaid balance checked: this tracks the INR
-200 still owed. Review the bill, choose Post Invoice once, and wait for
-confirmation.
+06:08.000 --> 06:25.900
+Choose Keep catalog price and enter 250 in Catalog Price. This is the
+catalogue selling price for our sample bottle. The supplier's buying price
+is a different number, recorded with purchases.
 
-03:45.000 --> 03:54.900
-Open the bottle's Owned Stock tab. 24 bottles minus 2 sold leaves 22. Check
-Stock History; do not enter the same sale again manually.
+06:26.000 --> 06:45.900
+Choose a picture file or enter its public image link. Aim for a square,
+one-thousand-pixel product picture under one megabyte. Choose a background
+in ordinary colour names. Review, then save the product.
 
-03:55.000 --> 04:09.900
-Open Dashboard and choose the reporting period. Collections shows money
-customers still owe: INR 200 in our example. Older unpaid bills can appear
-here too.
+06:46.000 --> 07:03.900
+In Owned Stock, choose the store and Stock In. Enter 24 and the reason
+Opening stock. Record the movement once. Saving a product alone does not
+put any physical bottles into stock.
 
-04:10.000 --> 04:19.900
-The online shop is optional. In Edit Product, check photos and price, then
-select Visible in customer catalog and save.
+07:04.000 --> 07:24.900
+Open Bulk Upload and choose the record type. Download its template, then
+fill the Data sheet. README explains every column. Use the fresh template
+to include current dropdown choices and dependent saved details.
 
-04:20.000 --> 04:29.900
-In Company Setup, check Storefront Address and Storefront open to the
-public. Choose Save Changes. Storefront Design changes colours, pictures
-and layout.
+07:25.000 --> 07:47.900
+For web pictures, fill image URL. For local files, enter each filename and
+ZIP manifest.xlsx with an images folder. Brand and category templates
+support pictures too. Product rows can include their matching brand and
+category images.
 
-04:30.000 --> 04:39.900
-Open Customer View. Check the picture, name and price as a customer would.
-Your storefront is your online shop. Share its link when ready.
+07:48.000 --> 08:09.900
+Upload the workbook or ZIP. The page shows successful, failed and remaining
+rows as processing continues. Download results. Read failure reasons,
+correct only failed rows, then retry them without uploading successful rows
+again.
 
-04:40.000 --> 04:49.900
-When AI is enabled, open Tenali AI and choose New chat. Type your question
-in everyday words. This example does not send an AI request.
+08:10.000 --> 08:27.900
+In Sales and Quotations, choose the customer. Add a missing customer using
+the button provided. Check the invoice date, billing address, store and
+place of supply before adding what you sold.
 
-04:50.000 --> 05:00.000
-Attach a bill or catalogue using the paperclip. For products, select
-Prepare product bulk workbook first. Check AI suggestions before saving
-business records.
+08:28.000 --> 08:45.900
+Select Steel water bottle, enter quantity two and price two hundred and
+fifty rupees. Our sample sale totals five hundred rupees with GST off.
+Check the complete bill total before posting.
+
+08:46.000 --> 09:02.900
+The customer pays three hundred rupees now. Enter that in Amount Received
+Now, choose cash as the payment mode and Shop cash as the receiving
+account. Two hundred rupees is still due.
+
+09:03.000 --> 09:21.900
+Keep Auto-create receivable selected for the unpaid balance. Review the
+bill, then choose Post Invoice once. Later, record the remaining two
+hundred rupees in Receivables and Collections, against this bill.
+
+09:22.000 --> 09:39.900
+Back in Product Inventory, check stock by store and Stock History. We began
+with twenty-four bottles and sold two, so twenty-two remain. The history
+explains which movement changed the quantity.
+
+09:40.000 --> 09:58.900
+For a product to appear online, keep it active and select Visible in
+customer catalog. Check the name, price, photo and available variants. Save
+your changes, then view the shop as a customer.
+
+09:59.000 --> 10:20.900
+In Company Setup, open Storefront Design. Choose a theme, pictures and
+wording. Selected products, brands and categories come first; the rest
+follow unless you explicitly choose Show only selected. Preview before
+saving.
+
+10:21.000 --> 10:38.900
+Share your Tenali shop link with customers. They can browse products and
+pictures on their phone, choose variants and ask about items. Your website
+is connected to the same product and stock records.
+
+10:39.000 --> 10:58.900
+Customers can collect several items into a WhatsApp enquiry list and send
+quantities together. Use it to discuss bulk prices or availability. A
+WhatsApp conversation does not create a paid order or reserve stock.
+
+10:59.000 --> 11:17.900
+To accept online purchases, open Payments and Delivery Setup and connect
+your own Razorpay account. Start in Test Mode, complete the setup and
+checks, then use approved live credentials for real customer payments.
+
+11:18.000 --> 11:38.900
+Choose your own delivery team or courier, or connect Shiprocket using its
+dedicated API user and pickup location. Confirm delivery coverage and
+charges. Online Orders is where you process orders and record dispatch or
+collection.
+
+11:39.000 --> 12:05.000
+For your own web address, open Storefront Domains. Add a domain you own,
+follow the displayed DNS instructions and verify it. Keep your email
+records intact. Your existing Tenali shop link remains available. You can
+return to any chapter whenever you need a reminder.

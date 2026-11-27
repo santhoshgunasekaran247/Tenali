@@ -27,6 +27,7 @@ class BrandOut(BaseModel):
     code: str
     name: str
     description: str = ""
+    image_url: str | None = None
 
 
 class CategoryOut(BaseModel):
@@ -67,6 +68,7 @@ class ProductOut(BaseModel):
     description: str | None = None
     image_url: str | None = None
     image_urls: str | None = None
+    image_background: str = "#ffffff"
     mrp_display: str | None = None
     selling_price_display: str | None = None
     best_seller: bool = False
@@ -115,12 +117,13 @@ class CatalogHomeResponse(BaseModel):
     categories: list[CategoryOut]
     best_sellers: list[ProductOut]
     sru_specials: list[ProductOut]
+    catalog_products: list[ProductOut] = Field(default_factory=list)
     sections: list[StorefrontSectionOut] = Field(default_factory=list)
     classic_sections_configured: bool = False
 
 
 class CatalogStorefrontPreviewResponse(CatalogHomeResponse):
-    catalog_products: list[ProductOut] = Field(default_factory=list)
+    pass
 
 
 class CatalogListResponse(BaseModel):

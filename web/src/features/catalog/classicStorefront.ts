@@ -2,6 +2,11 @@ import type { CSSProperties } from "react";
 import type { CatalogHomeResponse, StorefrontSection } from "../../types";
 import { contrastingText } from "../siteTheme";
 
+export function prioritizedItems<T extends { id: string }>(selected: T[], available: T[], selectedOnly = false): T[] {
+  const ids = new Set(selected.map(item => item.id));
+  return selectedOnly ? selected : [...selected, ...available.filter(item => !ids.has(item.id))];
+}
+
 export function storefrontSectionStyle(configuration: StorefrontSection["configuration"]): CSSProperties & {
   "--site-accent"?: string; "--site-on-accent"?: string;
 } {
@@ -97,13 +102,13 @@ export function classicSections(data: CatalogHomeResponse): StorefrontSection[] 
   return [
     section("hero", "hero", "Hero"),
     section("categories", "categories", "Categories", {
-      categories: data.categories.slice(0, 4), category_ids: data.categories.slice(0, 4).map(item => item.id),
+      categories: data.categories, category_ids: data.categories.map(item => item.id),
     }),
     section("best-sellers", "products", "Best sellers", {
-      products: data.best_sellers, product_ids: data.best_sellers.map(item => item.id),
+      products: prioritizedItems(data.best_sellers, data.catalog_products || []), product_ids: data.best_sellers.map(item => item.id),
     }),
     section("specials", "products", "Specials", {
-      products: data.sru_specials, product_ids: data.sru_specials.map(item => item.id),
+      products: prioritizedItems(data.sru_specials, data.catalog_products || []), product_ids: data.sru_specials.map(item => item.id),
     }),
     section("brands", "brands", "Brands", {
       brands: data.brands, brand_ids: data.brands.map(item => item.id),

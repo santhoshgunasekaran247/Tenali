@@ -6,7 +6,7 @@ import warnings
 from collections import OrderedDict
 
 from fastapi import HTTPException
-from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageColor, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 
 DISPLAY_SIZE = 1000
 MAX_PIXELS = 16_000_000
@@ -21,9 +21,18 @@ _rendered_lock = threading.Lock()
 
 
 def normalize_background(background: str) -> str:
-    if not isinstance(background, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
-        raise HTTPException(422, "Choose a valid product image background color.")
-    return background.lower()
+    if isinstance(background, str):
+        value = background.strip().lower().replace(" ", "")
+        if value in ImageColor.colormap or re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            red, green, blue = ImageColor.getrgb(value)
+            return f"#{red:02x}{green:02x}{blue:02x}"
+    raise HTTPException(422, "Use a colour name such as white, black or light blue (a six-digit hex colour also works).")
+
+
+def background_name(background: str) -> str:
+    value = normalize_background(background)
+    rgb = ImageColor.getrgb(value)
+    return next((name for name in ImageColor.colormap if ImageColor.getrgb(name) == rgb), value)
 
 
 def display_image(content: bytes, size: int = DISPLAY_SIZE, *, background: str = "#ffffff") -> bytes:
@@ -44,8 +53,8 @@ def display_image(content: bytes, size: int = DISPLAY_SIZE, *, background: str =
 def _render(content: bytes, size: int, background: str) -> bytes:
     """Website display version of a product photo as a square WebP. When AI segmentation (or the photo's
     own transparency) isolates the product, only the product is kept, on pure white with a soft contact
-    shadow. Otherwise the whole photo fills the square over a blurred extension of itself, never a
-    partial backdrop. Small photos are AI super-resolved; all get tone, clarity, colour and sharpening."""
+    shadow. Otherwise the whole photo fits on white without stretching, cropping or duplicating it.
+    Small photos are AI super-resolved; all get tone, clarity, colour and sharpening."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -89,12 +98,7 @@ def _render(content: bytes, size: int, background: str) -> bytes:
         if background != "#ffffff":
             raise HTTPException(422, "The product background could not be isolated. Use a transparent image, enable AI segmentation, or choose white.")
         image = _enhance(trim_background(image), size, vision_models)
-        cover = max(size / image.width, size / image.height)
-        backdrop = image.resize((max(size, round(image.width * cover)), max(size, round(image.height * cover))), Image.BILINEAR)
-        backdrop = backdrop.crop(((backdrop.width - size) // 2, (backdrop.height - size) // 2,
-                                  (backdrop.width + size) // 2, (backdrop.height + size) // 2))
-        canvas = Image.blend(backdrop.filter(ImageFilter.GaussianBlur(size // 12)), Image.new("RGB", (size, size), "white"), 0.35)
-        image = _fit(image, size)
+        image = _fit(image, round(size * 0.84))
         canvas.paste(image, ((size - image.width) // 2, (size - image.height) // 2))
     output = io.BytesIO()
     canvas.save(output, format="WEBP", quality=88, method=6)

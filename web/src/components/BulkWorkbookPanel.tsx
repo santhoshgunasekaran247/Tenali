@@ -9,8 +9,8 @@ const RECORD_TYPES: { kind: BulkKind; label: string; help: string }[] = [
   { kind: "variants", label: "Variants", help: "Sizes, colours and variant pricing for existing products." },
   { kind: "hsn", label: "HSN / GST", help: "Tax codes, descriptions and GST rates." },
   { kind: "parties", label: "Contacts", help: "Customers, vendors and other business contacts." },
-  { kind: "brands", label: "Brands", help: "Brand names and descriptions." },
-  { kind: "categories", label: "Categories", help: "Category names and descriptions." },
+  { kind: "brands", label: "Brands", help: "Brand names, descriptions and logo URLs or files." },
+  { kind: "categories", label: "Categories", help: "Category names, descriptions and image URLs or files." },
   { kind: "images", label: "Images", help: "Photos for existing products, brands and categories." },
 ];
 
@@ -63,7 +63,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
       setJobs(previous => previous.map(item => item.id === current.id ? current : item));
     }
     if (current.completed && mounted.current) {
-      setMessage(`Import complete: ${current.total} rows processed. Download results below.`);
+      setMessage(`Import complete: ${current.total} rows processed. ${current.success} succeeded; ${current.failures} failed. Download results below.`);
     }
   };
 
@@ -98,7 +98,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
         save(result.blob, `tenali-${kind}-selected.xlsx`);
       } else {
         if (!file) throw new Error("Choose an Excel workbook first.");
-        const limit = kind === "images" || (kind === "products" && file.name.toLowerCase().endsWith(".zip")) ? 20 : 10;
+        const limit = supportsFiles && file.name.toLowerCase().endsWith(".zip") ? 20 : 10;
         if (file.size > limit * 1024 * 1024) throw new Error(`The upload must be at most ${limit} MiB.`);
         const job = await api.bulkStart(kind, file, uploadKey.current || (uploadKey.current = crypto.randomUUID()));
         setFile(null);
@@ -116,7 +116,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
     finally { setBusy(false); }
   };
 
-  const supportsFiles = kind === "products" || kind === "images";
+  const supportsFiles = ["products", "images", "brands", "categories"].includes(kind);
   const exportCount = kind === "products" && selectedProducts.length ? selectedProducts.length
     : kind === "brands" || kind === "categories" ? selected.length : manualIds.split(/[\s,]+/).filter(Boolean).length;
   return <div className="bulk-content" aria-label="Bulk Excel workbooks" aria-busy={busy}>
@@ -141,6 +141,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
           <li>Fill in the <strong>Data</strong> sheet. The README explains every step and includes an example.</li>
           <li>Leave <strong>id</strong> blank for new records; keep exported IDs to update.</li>
           {kind === "products" ? <li>Select an existing HSN to fill its description and GST rate; select a brand to fill its description. For new entries, replace those cells with your own values.</li> : null}
+          {kind === "products" ? <li>Use English background colours such as <strong>white</strong> or <strong>light blue</strong>. Brand and primary-category photos can use their own image URL or file columns.</li> : null}
           {kind === "variants" ? <li>Use an existing product ID for each variant. Keep the variant ID when updating.</li> : null}
           {kind === "hsn" ? <li>Use 4, 6 or 8 digit codes. Enter a description and a GST rate between 0 and 100.</li> : null}
           {kind === "parties" ? <li>New contacts need a legal name and party type. Format phone numbers as text.</li> : null}
@@ -174,7 +175,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
           <p><strong>Image URLs:</strong> enter a public HTTPS URL in <code>image_url</code> and upload the workbook.</p>
           <p><strong>Image files:</strong> ZIP the workbook as <code>manifest.xlsx</code> alongside an <code>images/</code> folder. Put each filename in <code>image_file</code>, leaving its URL blank.</p>
           <pre aria-label="Image ZIP structure">{"upload.zip\n  manifest.xlsx\n  images/\n    photo.png"}</pre>
-          <p>PNG, JPEG or WebP; up to 1 MiB per photo and 8 MiB total.</p>
+          <p>Recommended: products <strong>1000 x 1000 px</strong>, brand logos <strong>600 x 600 px</strong>, categories <strong>800 x 800 px</strong>. Square PNG, JPEG or WebP; up to 1 MiB per photo and 8 MiB total. Images fit without stretching.</p>
         </div> : null}
         <button type="button" className="btn bulk-upload-button" disabled={busy || !file} onClick={() => void run("import")}><UploadCloud size={17} aria-hidden="true" />{busy ? "Processing..." : "Upload & process"}</button>
         <p className="bulk-muted">Rows save independently. A failed row will not undo successful rows.</p>
@@ -191,6 +192,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
       {jobs.map(job => <article key={job.id} className="bulk-job">
         <div><strong>{RECORD_TYPES.find(item => item.kind === job.kind)?.label || job.kind}</strong><span className={`bulk-job-status${job.completed ? " is-complete" : ""}`}>{job.completed ? "Processed" : "Ready to resume"}</span>
           <p>{job.processed} / {job.total} rows processed</p>
+          <p role="status">{job.success} succeeded · {job.failures} failed · {job.total - job.processed} remaining</p>
           <progress aria-label={`${job.kind} import progress`} value={job.processed} max={Math.max(1, job.total)} />
           <small>Uploaded {new Date(job.created_at).toLocaleString()} · Expires {new Date(job.expires_at).toLocaleDateString()}</small>
         </div>

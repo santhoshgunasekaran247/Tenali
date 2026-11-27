@@ -24,6 +24,7 @@ def _catalog_base_query() -> str:
             p.description,
             p.image_url,
             p.image_urls,
+            p.image_background,
             p.mrp_display,
             p.selling_price_display,
             p.best_seller,
@@ -91,21 +92,6 @@ def _catalog_categories_query() -> str:
                image_url, home_order
         from product_categories
         where company_id = :company_id and is_active = true
-          and (
-              exists(select 1 from products product
-                  where product.company_id = product_categories.company_id
-                    and (product.category_id = product_categories.id or exists (
-                        select 1 from product_category_products assignment
-                        where assignment.company_id=product.company_id and assignment.product_id=product.id
-                          and assignment.category_id=product_categories.id))
-                    and product.is_active = true and product.catalog_visible = true)
-              or exists(select 1 from storefront_section_categories selection
-                  join storefront_sections section
-                    on section.id = selection.section_id and section.company_id = selection.company_id
-                  where selection.company_id = product_categories.company_id
-                    and selection.category_id = product_categories.id
-                    and section.section_type = 'categories' and section.is_enabled = true)
-          )
         order by home_order asc, name asc
     """
 
@@ -196,14 +182,17 @@ class CatalogService:
                 order by sort_order, {entity_column}
             """), {"company_id": resolved_company_id, "section_id": str(row["id"])}).scalars().all()
             row[response_key] = [items_by_id[str(item_id)] for item_id in item_ids if str(item_id) in items_by_id]
+            if not row["configuration"].get("selected_only", False):
+                selected = {str(item["id"]) for item in row[response_key]}
+                row[response_key].extend(item for key, item in items_by_id.items() if key not in selected)
             sections.append(row)
 
         return {
             "company": _to_dict(company_row),
             "brands": [_to_dict(row) for row in brands],
             "categories": [_to_dict(row) for row in categories],
-            "best_sellers": best_sellers[:8],
-            "sru_specials": sru_specials[:8],
+            "best_sellers": best_sellers,
+            "sru_specials": sru_specials,
             "sections": sections,
             "classic_sections_configured": bool(section_rows),
             "catalog_products": all_products,

@@ -28,13 +28,15 @@ function CatalogThemeBanner({ template, eyebrow, heading, description, image, im
   note?: string;
   actions?: ReactNode;
 }) {
+  const [failedImage, setFailedImage] = useState("");
   if (template === "boutique") {
     return <header className="theme-catalog-banner theme-catalog-banner--boutique">
       <p className="eyebrow">{eyebrow}</p><h1>{heading}</h1>{description ? <p className="lead">{description}</p> : null}
       {note ? <p className="catalog-note">{note}</p> : null}{count ? <span className="catalog-count">{count}</span> : null}{actions}
     </header>;
   }
-  const media = image ? <img src={image} alt={imageAlt || ""} loading="lazy" /> : <Package size={32} aria-hidden="true" />;
+  const media = image && image !== failedImage ? <img src={image} alt={imageAlt || ""} loading="lazy" onError={() => setFailedImage(image)} />
+    : <span className="catalog-brand-placeholder" aria-label="Brand or category image unavailable">{heading.slice(0, 2).toUpperCase()}</span>;
   if (template === "heritage") {
     return <header className="theme-catalog-banner theme-catalog-banner--heritage">
       <span className="heritage-catalog-rule" aria-hidden="true" />
@@ -260,15 +262,15 @@ export function BrandPage() {
   const bestPricingMessage = encodeURIComponent(storefrontText(catalogCopy.whatsapp_prefilled_message,data.company,{brand_name:heading}));
   const firstProductImage = isCategoryView ? data.products.map((item) => item.image_urls?.split("|").map((image) => image.trim()).find(Boolean) || item.image_url).find(Boolean) : undefined;
   const heroImage = isCategoryView
-    ? toAssetUrl(firstProductImage || data.selected_category!.image_url)
-    : toAssetUrl(data.selected_brand!.image_url || `brand-logos/${data.selected_brand!.code}.png`);
+    ? toAssetUrl(data.selected_category!.image_url || firstProductImage)
+    : toAssetUrl(data.selected_brand!.image_url || undefined);
   const heroAlt = isCategoryView ? heading : `${heading} logo`;
   const productGroups = groupProducts(data.products, (product) => (isCategoryView ? product.brand_name : product.category_title) || heading);
 
   return (
     <>
       <main id="brand-page" className={`storefront-catalog storefront-commerce-page storefront-catalog--${template}`}>
-        <CatalogThemeBanner template={template} eyebrow={eyebrow} heading={heading} description={lead}
+        <CatalogThemeBanner template={template} eyebrow={eyebrow} heading={heading} description={lead?.trim().toLowerCase() === heading.trim().toLowerCase() ? undefined : lead}
           image={heroImage} imageAlt={heroAlt} note={catalogText("sample_price_note")}
           count={productCount(data.products.length)}
           actions={<div className="actions catalog-hero-actions">

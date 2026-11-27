@@ -430,6 +430,9 @@ export function StorefrontDesignPage() {
             const selectedIds = section.section_type === "products" ? section.product_ids || []
               : section.section_type === "categories" ? section.category_ids || []
                 : section.section_type === "brands" ? section.brand_ids || [] : [];
+            const setPriorityIds = (ids: string[]) => updateSection(section.section_key,
+              section.section_type === "products" ? { product_ids: ids }
+                : section.section_type === "categories" ? { category_ids: ids } : { brand_ids: ids });
             const choices = section.section_type === "products"
               ? (options?.products || []).map(item => [item.id, `${item.name}${item.brand_name ? ` · ${item.brand_name}` : ""}${item.is_active && item.catalog_visible ? "" : " (not visible)"}`] as const)
               : section.section_type === "categories"
@@ -493,17 +496,33 @@ export function StorefrontDesignPage() {
                     onChange={event => updateSection(section.section_key, { configuration: { ...section.configuration, [key]: event.target.value } })} />
                 </label>)}
                 <label className="storefront-design-checkbox"><input type="checkbox" checked={section.is_enabled} onChange={event => updateSection(section.section_key, { is_enabled: event.target.checked })} />Show section</label>
-                {section.section_type !== "hero" ? <label>Select {section.section_type}
+                {section.section_type !== "hero" ? <><label>Prioritise {section.section_type}
                   <select multiple size={Math.min(7, Math.max(3, choices.length))} value={selectedIds}
                     onChange={event => {
-                      const ids = Array.from(event.currentTarget.selectedOptions, option => option.value);
-                      updateSection(section.section_key, section.section_type === "products" ? { product_ids: ids }
-                        : section.section_type === "categories" ? { category_ids: ids } : { brand_ids: ids });
+                      const chosen = Array.from(event.currentTarget.selectedOptions, option => option.value);
+                      setPriorityIds([...selectedIds.filter(id => chosen.includes(id)), ...chosen.filter(id => !selectedIds.includes(id))]);
                     }}>
                     {choices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
                   </select>
                   {section.section_type === "products" ? <span>{productCount} catalogue products available</span> : null}
-                </label> : null}
+                  <small>Selected items appear first in the order below; all other active items follow. Use Ctrl / Cmd to select more than one.</small>
+                </label>
+                {selectedIds.length > 1 ? <ol className="storefront-design-priorities" data-priority-for={section.section_key}>
+                  {selectedIds.map((id, priority) => {
+                    const label = choices.find(choice => choice[0] === id)?.[1] || "Unavailable item";
+                    const move = (offset: number) => {
+                      const ids = [...selectedIds];
+                      [ids[priority], ids[priority + offset]] = [ids[priority + offset], ids[priority]];
+                      setPriorityIds(ids);
+                    };
+                    return <li key={id}><span>{priority + 1}. {label}</span>
+                      <button type="button" className="ops-link-btn" disabled={priority === 0} aria-label={`Move ${label} up`} onClick={() => move(-1)}><ChevronUp size={15} /></button>
+                      <button type="button" className="ops-link-btn" disabled={priority === selectedIds.length - 1} aria-label={`Move ${label} down`} onClick={() => move(1)}><ChevronDown size={15} /></button>
+                    </li>;
+                  })}
+                </ol> : null}
+                <label className="storefront-design-checkbox"><input type="checkbox" checked={section.configuration.selected_only === true}
+                  onChange={event => updateSection(section.section_key, { configuration: { ...section.configuration, selected_only: event.target.checked } })} />Show only selected {section.section_type}</label></> : null}
                 <div className="storefront-design-section-actions">
                   <button type="button" className="ops-link-btn" aria-label="Move section up" disabled={index === 0} onClick={() => moveSection(index, -1)}><ChevronUp size={15} />Move up</button>
                   <button type="button" className="ops-link-btn" aria-label="Move section down" disabled={index === sections.length - 1} onClick={() => moveSection(index, 1)}><ChevronDown size={15} />Move down</button>

@@ -16,6 +16,18 @@ from test_tenancy import TenantDatabaseCase
 
 
 class BulkWorkbookTests(unittest.TestCase):
+    def test_named_backgrounds_and_master_image_templates_round_trip(self):
+        for colour, expected in (("white", "#ffffff"), ("Light Blue", "#add8e6"), ("ivory", "#fffff0"), ("#123abc", "#123abc")):
+            with self.subTest(colour=colour):
+                self.assertEqual(ProductInput(name="Cup", image_background=colour).image_background, expected)
+        with self.assertRaises(HTTPException):
+            ProductInput(name="Cup", image_background="not a colour")
+        for kind in ("brands", "categories"):
+            record = {"name": "Example", "image_url": "https://images.example.com/logo.png"}
+            self.assertEqual(read_workbook(kind, workbook(kind, [record]))[0]["image_url"], record["image_url"])
+        self.assertEqual(read_workbook("products", workbook("products", [{"name": "Cup", "image_background": "#ffffff"}]))[0]["image_background"], "white")
+        self.assertEqual(read_workbook("products", workbook("products", [{"name": "Cup", "image_background": "bad colour"}], reasons=True))[0]["image_background"], "bad colour")
+
     def test_bulk_image_urls_require_public_https_or_existing_tenali_paths(self):
         for value in ("http://example.com/p.png", "https://127.0.0.1/p.png", "https://192.168.1.1/p.png",
                       "https://[::1]/p.png", "https://224.0.0.1/p.png", "https://localhost/p.png",
@@ -232,7 +244,7 @@ class BulkWorkbookTests(unittest.TestCase):
             package = download_catalog(assistant, uuid4(), uuid4())
         with ZipFile(io.BytesIO(package)) as archive:
             readme = load_workbook(io.BytesIO(archive.read("manifest.xlsx")))["README"]
-            self.assertTrue(any(cell.value == "Review before upload." for cells in readme for cell in cells))
+            self.assertTrue(any("Review before upload." in str(cell.value) and "generated internal stock codes" in str(cell.value) for cells in readme for cell in cells))
         from app.api.routes.bulk import image_upload
         rows, images = image_upload(package, "products")
         self.assertEqual(rows[0]["name"], "Cup")
@@ -261,7 +273,7 @@ class BulkWorkbookTests(unittest.TestCase):
             product = dict.fromkeys(("sku", "description", "brand", "categories", "hsn_code", "hsn_description",
                                     "gst_rate", "vendor", "labels", "selling_price", "image_background"), None)
             products.append({**product, "name": f"Product {index + 1}", "image_index": 0,
-                             "image_box": f"region:{index + 1}"})
+                             "image_box": f"region:{index + 1}", "product_box": "0,0,1000,1000"})
         parsed = CatalogOutput.model_validate({"reply": "Review the images.", "clarification": None, "products": products})
         response = MagicMock(status="completed", id="fixture", output_text=parsed.model_dump_json(),
             usage=MagicMock(input_tokens=100, output_tokens=100, input_tokens_details=MagicMock(cached_tokens=0)))
@@ -307,6 +319,11 @@ class BulkWorkbookTests(unittest.TestCase):
                 saved["content"] = catalog_answer(parsed)
                 with self.subTest(box=invalid), self.assertRaisesRegex(HTTPException, "Regenerate"):
                     download_catalog(assistant, uuid4(), uuid4())
+            parsed.products[0].image_box = "region:1"
+            parsed.products[0].product_box = None
+            saved["content"] = catalog_answer(parsed)
+            with self.assertRaisesRegex(HTTPException, "whole advert panel"):
+                download_catalog(assistant, uuid4(), uuid4())
 
     def test_ai_catalog_rejects_bad_image_reference_and_non_admin(self):
         from app.ai.catalog_workbook import CatalogOutput, catalog_answer, download_catalog
@@ -394,12 +411,13 @@ class BulkWorkbookTests(unittest.TestCase):
         service.db.info = {"tenant_context": {"user_id": uuid4()}}
         rows = [{"code": "bad"}, {"code": "1234"}]
         base = {"id": job_id, "kind": "hsn", "rows": rows, "content": b"", "created_at": "now", "expires_at": "later"}
-        updates = iter([{**base, "total": 2, "next_row": 1}, {**base, "total": 2, "next_row": 2}])
+        updates = iter([{**base, "total": 2, "next_row": 1, "failures": 1}, {**base, "total": 2, "next_row": 2, "failures": 1}])
         service.db.execute.return_value.mappings.return_value.one.side_effect = lambda: next(updates)
         service.hsn = MagicMock(side_effect=[HTTPException(422, "Invalid HSN"), str(uuid4())])
         with patch("app.api.routes.bulk.job_row", side_effect=[{**base, "next_row": 0}, {**base, "next_row": 1}]):
             result = advance_job(job_id, service)
         self.assertTrue(result["completed"])
+        self.assertEqual((result["success"], result["failures"]), (1, 1))
         self.assertEqual(service.db.commit.call_count, 2)
         service.db.rollback.assert_not_called()
         outcomes = [call.args[1]["outcome"] for call in service.db.execute.call_args_list]
@@ -440,9 +458,13 @@ class BulkDatabaseTests(TenantDatabaseCase):
         first = self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(cookies))
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual(first.json()["processed"], 3)
+        self.assertEqual((first.json()["success"], first.json()["failures"]), (2, 1))
         self.assertEqual(self.client.get(f"/bulk/jobs/{job_id}/results").status_code, 409)
         second = self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(cookies))
         self.assertTrue(second.json()["completed"])
+        self.assertEqual((second.json()["success"], second.json()["failures"]), (3, 1))
+        saved_job = self.client.get("/bulk/jobs").json()["items"][0]
+        self.assertEqual((saved_job["success"], saved_job["failures"]), (3, 1))
         repeated = self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(cookies))
         self.assertTrue(repeated.json()["completed"])
         result = self.client.get(f"/bulk/jobs/{job_id}/results")
@@ -457,6 +479,46 @@ class BulkDatabaseTests(TenantDatabaseCase):
         self.assertEqual(self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(other_cookies)).status_code, 404)
         self.use_cookies(cookies)
         self.assertEqual(self.client.delete(f"/bulk/jobs/{job_id}", headers=self.headers(cookies)).status_code, 200)
+
+    def test_master_images_and_product_dependency_images_accept_urls_and_zip_files(self):
+        _, cookies, _ = self.register("bulk-master-images")
+        photo = io.BytesIO()
+        Image.new("RGB", (80, 80), "navy").save(photo, format="PNG")
+
+        def upload(kind, rows):
+            package = io.BytesIO()
+            with ZipFile(package, "w") as archive:
+                archive.writestr("manifest.xlsx", workbook(kind, rows))
+                archive.writestr("images/logo.png", photo.getvalue())
+            start = self.client.post(f"/bulk/jobs/{kind}?client_key={uuid4()}", content=package.getvalue(),
+                headers={**self.headers(cookies), "Content-Type": "application/zip"})
+            self.assertEqual(start.status_code, 200, start.text)
+            job_id = start.json()["id"]
+            status = self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(cookies))
+            self.assertEqual(status.status_code, 200, status.text)
+            self.assertEqual(status.json()["failures"], 0, self.client.get(f"/bulk/jobs/{job_id}/results").content)
+            with ZipFile(io.BytesIO(self.client.get(f"/bulk/jobs/{job_id}/results").content)) as archive:
+                return read_workbook(kind, archive.read("success.xlsx"))
+
+        for kind in ("brands", "categories"):
+            rows = upload(kind, [{"name": f"{kind} File", "image_file": "logo.png"},
+                                 {"name": f"{kind} URL", "image_url": "https://images.example.com/logo.png"}])
+            exported = self.client.post(f"/bulk/exports/{kind}", json={"ids": [row["id"] for row in rows]}, headers=self.headers(cookies))
+            self.assertEqual(exported.status_code, 200, exported.text)
+            images = [row["image_url"] for row in read_workbook(kind, exported.content)]
+            self.assertIn("https://images.example.com/logo.png", images)
+            self.assertTrue(any(url.startswith("/api/public-images/") for url in images), images)
+        rows = upload("products", [{
+            "name": "Cup", "hsn_code": "1234", "hsn_description": "Sample goods", "gst_rate": 0,
+            "brand": "New imaged brand", "categories": "New imaged category",
+            "brand_image_file": "logo.png", "category_image_url": "https://images.example.com/category.png",
+            "image_background": "white",
+        }])
+        product = self.client.get(f"/inventory/products/{rows[0]['id']}").json()
+        self.assertEqual(product["image_background"], "#ffffff")
+        from sqlalchemy import text
+        brand_image = self.connection.execute(text("select image_url from brands where id=:id"), {"id": product["brand_id"]}).scalar_one()
+        self.assertTrue(brand_image.startswith("/api/public-images/"), brand_image)
 
     def test_product_dependencies_and_selected_export_round_trip(self):
         _, cookies, _ = self.register("bulk-products")

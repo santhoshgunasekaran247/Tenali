@@ -3,10 +3,10 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.company import validate_image_source
-from app.services.product_images import PHOTO_REFERENCE
+from app.services.product_images import PHOTO_REFERENCE, normalize_background
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
 Quantity = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=3)]
@@ -56,6 +56,11 @@ class ProductInput(ItemDetails):
     best_seller: bool = False
     sru_special: bool = False
     home_order: int = Field(default=999, ge=0, le=99999)
+
+    @field_validator("image_background", mode="before")
+    @classmethod
+    def named_background(cls, value):
+        return normalize_background(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_images(self):

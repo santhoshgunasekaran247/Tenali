@@ -1,5 +1,6 @@
 """Bounded Excel templates and retryable import reports."""
 from io import BytesIO
+import re
 from zipfile import BadZipFile, ZipFile
 
 from fastapi import HTTPException
@@ -11,6 +12,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.workbook.properties import CalcProperties
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
+from app.services.product_images import background_name
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_EXPANDED_BYTES = 40 * 1024 * 1024
@@ -20,14 +22,15 @@ MAX_LOOKUPS = 5000
 FIELDS = {
     "products": ("id", "name", "sku", "description", "brand", "brand_description", "categories",
                  "hsn_code", "hsn_description", "gst_rate", "vendor", "image_url", "image_file", "image_background",
-                 "labels", "selling_price", "discount_percent", "pricing_mode", "is_active", "catalog_visible"),
+                 "labels", "selling_price", "discount_percent", "pricing_mode", "is_active", "catalog_visible",
+                 "brand_image_url", "brand_image_file", "category_image_url", "category_image_file"),
     "variants": ("id", "product_id", "variant_name", "sku", "size", "colour", "selling_price",
                  "discount_percent", "pricing_mode", "image_url", "is_active"),
     "hsn": ("id", "code", "description", "gst_rate", "is_active"),
     "parties": ("id", "party_type", "legal_name", "nickname", "contact_person", "phone", "email",
                 "address", "gst_number", "is_active"),
-    "brands": ("id", "name", "description", "is_active"),
-    "categories": ("id", "name", "description", "is_active"),
+    "brands": ("id", "name", "description", "is_active", "image_url", "image_file"),
+    "categories": ("id", "name", "description", "is_active", "image_url", "image_file"),
     "images": ("id", "entity", "image_url", "image_file", "image_background"),
 }
 SAMPLES = {
@@ -39,7 +42,7 @@ SAMPLES = {
     "parties": {"party_type": "vendor", "legal_name": "Sample supplier", "phone": "9876543210", "is_active": True},
     "brands": {"name": "Sample brand", "description": "Example description", "is_active": True},
     "categories": {"name": "Home", "description": "Example category", "is_active": True},
-    "images": {"id": "Paste a record ID", "entity": "product", "image_file": "photo.png", "image_background": "#ffffff"},
+    "images": {"id": "Paste a record ID", "entity": "product", "image_file": "photo.png", "image_background": "white"},
 }
 INSTRUCTIONS = {
     "products": (
@@ -48,7 +51,8 @@ INSTRUCTIONS = {
         "categories and labels use | between names. Avoid | in names; first category is the primary one.",
         "For a new HSN, supply hsn_code, hsn_description and gst_rate. GST-registered workspaces require an HSN for new products.",
         "vendor maps an existing vendor by name or creates a new vendor contact. It becomes the preferred vendor.",
-        "image_background is a hex color such as #ffffff. Non-white requires a transparent image or AI segmentation.",
+        "image_background uses English names: white, black, light blue, ivory. White is the default. Hex colours still work for existing files.",
+        "brand_image_url / brand_image_file updates the named brand's logo; category_image_url / category_image_file updates the first category's image. Supply a matching name.",
         "For product image files, upload a ZIP containing manifest.xlsx and images/<filename>; set image_file to the filename.",
         "pricing_mode is price or discount. selling_price and discount_percent must meet inventory pricing rules.",
     ),
@@ -64,8 +68,8 @@ INSTRUCTIONS = {
         "Contacts: party_type is customer, vendor, customer_vendor, friend, employee or other.",
         "legal_name and party_type are required for new contacts. Telephone numbers should be stored as text.",
     ),
-    "brands": ("Brands: name is required. Existing records use their exported id.",),
-    "categories": ("Categories: name is required. Existing records use their exported id.",),
+    "brands": ("Brands: name is required. Existing records use their exported id. Add image_url or image_file to include the logo in the same row.",),
+    "categories": ("Categories: name is required. Existing records use their exported id. Add image_url or image_file to include a picture in the same row.",),
     "images": (
         "Images: choose entity product, brand or category and enter its existing ID.",
         "Specify either image_url or image_file, never both. Upload URLs as an XLSX workbook.",
@@ -101,6 +105,11 @@ FIELD_HELP = {
     "categories": "Separate names with |. The first is primary. Existing names or new names are accepted.",
     "image_url": "Public HTTPS or an existing Tenali image URL. Leave image_file blank when using a URL.",
     "image_file": "Filename in the ZIP images/ folder. Leave image_url blank when using a file.",
+    "image_background": "English colour name, for example white, ivory or light blue. Defaults to white for new products. Hex colours remain supported.",
+    "brand_image_url": "Public HTTPS logo URL for the brand named in this row. Leave brand_image_file blank.",
+    "brand_image_file": "Brand logo filename in images/. Set brand and leave brand_image_url blank.",
+    "category_image_url": "Public HTTPS image URL for the first category in this row. Leave category_image_file blank.",
+    "category_image_file": "Category image filename in images/. Set categories and leave category_image_url blank.",
     "failure_reason": "Correct the described error and re-upload only failed rows. This column is ignored during import.",
 }
 
@@ -161,6 +170,8 @@ def _readme(book, kind, notes):
         (f"Limits: {MAX_ROWS:,} data rows; XLSX 10 MiB; image ZIP 20 MiB.", ""),
         ("Record-specific guidance", "section"),
         *((line, "") for line in INSTRUCTIONS[kind]),
+        ("Image sizes: products 1000 x 1000 px; brand logos 600 x 600 px; category pictures 800 x 800 px. Use square PNG, JPEG or WebP under 1 MiB. Keep the whole subject inside the image; Tenali fits it without stretching.", "") if kind in {"products", "brands", "categories", "images", "variants"} else
+        ("Check your entries before upload.", ""),
         ("Example only - copy values into Data if needed", "section"),
     ]
     for number, (line, style) in enumerate(lines, 1):
@@ -210,7 +221,10 @@ def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> 
     _style_header(sheet, fields, kind)
     for number, row in enumerate(rows, 2):
         for column, field in enumerate(fields, 1):
-            _write_cell(sheet, number, column, row.get(field))
+            value = row.get(field)
+            if field == "image_background" and isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                value = background_name(value)
+            _write_cell(sheet, number, column, value)
     sheet.freeze_panes = "B2"
     last_row = max(2, sheet.max_row)
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(fields))}{last_row}"

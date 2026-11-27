@@ -2656,12 +2656,13 @@ html[data-busy] body::before {
 }
 
 /* Horizontal product rows. */
-.product-rail { position: relative; --rail-gap: 12px; }
+.product-rail { position: relative; min-width: 0; max-width: 100%; --rail-gap: 12px; }
 .product-rail-track {
+  position: relative;
   /* Column width always leaves part of the next card visible so shoppers can tell the row scrolls. */
   display: grid; grid-auto-flow: column; grid-auto-columns: clamp(176px, calc((100% - 4 * var(--rail-gap)) / 4.35), 236px); gap: var(--rail-gap);
   overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 2px;
-  padding: 6px 2px 12px; scrollbar-width: thin;
+  min-width: 0; max-width: 100%; padding: 6px 2px 12px; scrollbar-width: thin; -webkit-overflow-scrolling: touch;
 }
 .product-rail-track > * { scroll-snap-align: start; }
 .product-rail-track:focus-visible { outline: 2px solid var(--site-accent); outline-offset: 2px; }
@@ -3926,4 +3927,42 @@ html[data-corners="square"] *:not(.shopper-avatar, .checkout-step-number, .dashb
   .app-root[data-storefront-template="current"] :is(.home-section, .brands-section, .statement, .contact, .corporate) { padding-inline: 12px; }
   .app-root[data-storefront-template="current"] .hero,
   .app-root[data-storefront-template="current"] .catalog-hero { padding-inline: 12px; }
+}
+
+/* Product photos and logos retain their shape; the surrounding panel supplies the backdrop. */
+.storefront-design-priorities { list-style: none; padding: 0; margin: 0; }
+.storefront-design-priorities li { display: flex; align-items: center; gap: 8px; padding-block: 4px; }
+.storefront-design-priorities li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-root .product-card .product-image img { object-fit: contain; }
+.app-root .storefront-catalog .theme-catalog-banner { padding-block: 26px; gap: 24px; }
+.app-root .storefront-catalog .theme-catalog-banner :is(figure, .supermarket-catalog-image) {
+  width: 112px; height: 112px; max-width: 100%; margin: 0 auto; padding: 10px;
+  background: #fff; border: 1px solid var(--site-border);
+}
+.app-root .storefront-catalog .theme-catalog-banner :is(figure, .supermarket-catalog-image) img { width: 100%; height: 100%; object-fit: contain; }
+.app-root .theme-catalog-banner--jewellery { grid-template-columns: 140px minmax(0, 1fr); text-align: left; }
+.app-root .theme-catalog-banner--jewellery:not(:has(> figure)) { grid-template-columns: minmax(0, 1fr); }
+.app-root .theme-catalog-banner--jewellery :is(h1, .lead) { margin-block: 8px; }
+.app-root .theme-catalog-banner--jewellery .jewellery-divider { margin: 10px 0; }
+.app-root .theme-catalog-banner--jewellery .actions { justify-content: flex-start; }
+.catalog-brand-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--site-text); font-size: 24px; }
+.storefront-catalog .catalog-hero-email { color: var(--site-text); overflow-wrap: anywhere; }
+.storefront-catalog :is(.catalog-hero-actions, .theme-catalog-banner .actions) { flex-wrap: wrap; gap: 12px 20px; }
+@media (max-width: 700px) {
+  .product-rail-track { margin-inline: 0; padding-inline: 2px; scroll-padding-inline: 2px; touch-action: pan-x pan-y pinch-zoom; }
+  .app-root .storefront-theme-home :is(.template-section, .template-section-copy),
+  .app-root :is(.home-section, .brands-section, .product-section) { min-width: 0; }
+  .app-root :is(.category-grid, .brand-grid),
+  .app-root .storefront-theme-home :is(.boutique-category-grid, .category-first-grid, .heritage-category-list, .supermarket-aisle-grid, .jewellery-collection-grid, .marketplace-category-dock, .boutique-brand-list, .heritage-brand-seals, .supermarket-brand-shelf, .jewellery-brand-row, .marketplace-brand-grid, .supermarket-product-grid) {
+    position: relative; display: grid; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(160px, 72vw);
+    gap: 12px; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden;
+    justify-content: start; scroll-snap-type: x proximity; padding-bottom: 12px; -webkit-overflow-scrolling: touch;
+  }
+  .app-root :is(.category-grid, .brand-grid) > *,
+  .app-root .storefront-theme-home :is(.boutique-category-grid, .category-first-grid, .heritage-category-list, .supermarket-aisle-grid, .jewellery-collection-grid, .marketplace-category-dock, .boutique-brand-list, .heritage-brand-seals, .supermarket-brand-shelf, .jewellery-brand-row, .marketplace-brand-grid, .supermarket-product-grid) > * {
+    min-width: 0; width: 100%; scroll-snap-align: start;
+  }
+  .app-root .theme-catalog-banner--jewellery { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 16px; }
+  .app-root .storefront-catalog .theme-catalog-banner :is(figure, .supermarket-catalog-image) { width: 72px; height: 72px; padding: 6px; }
+  .app-root .theme-catalog-banner--jewellery h1 { font-size: clamp(28px, 8vw, 42px); overflow-wrap: anywhere; }
 }
