@@ -116,13 +116,13 @@ test("marketing page has real routes, an accessible demo and a local video", () 
   assert.doesNotMatch(page, /one-minute|1-minute/);
   assert.match(page, /setAttribute\("open", ""\)/);
   assert.match(page, /poster="\/tenali-product-tour-poster.jpg"/);
-  assert.match(page, /src="\/tenali-product-tour-veena.mp4" type="video\/mp4"/);
+  assert.match(page, /src="\/tenali-product-tour-veena-v2.mp4" type="video\/mp4"/);
   assert.ok(statSync(path.join(root, "public", "tenali-workspace-preview.jpg")).size > 10000);
   assert.ok(statSync(path.join(root, "public", "tenali-product-tour-poster.jpg")).size > 10000);
 });
 
 test("local narrated guide is seekable with matching captions and chapters", () => {
-  const video = readFileSync(path.join(root, "public", "tenali-product-tour-veena.mp4"));
+  const video = readFileSync(path.join(root, "public", "tenali-product-tour-veena-v2.mp4"));
   assert.equal(video.toString("ascii", 4, 8), "ftyp");
   assert.ok(video.includes(Buffer.from("avc1")), "video must contain H.264 media");
   assert.ok(video.includes(Buffer.from("mp4a")), "video must include AAC narration and music");

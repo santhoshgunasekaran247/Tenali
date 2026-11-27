@@ -719,7 +719,7 @@ The platform homepage includes a narrated 19-minute, 6-second beginner guide wit
 steps and 12 clickable, timed chapters. Conversational narration uses the expressive
 Indian-English female `en-IN-NeerjaExpressiveNeural` synthetic voice at its natural rate,
 over the supplied veena/mridangam instrumental recording, not synthesized music.
-The backing stays approximately 21 dB below the voice during narration and gently
+The backing stays approximately 19 dB below the voice during narration and gently
 rises during pauses, with a soft opening/closing fade. Ensure the supplied recording
 is cleared for distribution with the guide. Speech is authored separately from the concise
 on-screen instructions, rather than reading the instruction panel verbatim. Instructions occupy a dark panel;
@@ -735,7 +735,7 @@ Excel uploads and a part-paid sale. Online-shop chapters explain WhatsApp list e
 Razorpay, optional Shiprocket/self-shipping and custom domains without implying those services
 are enabled automatically. Native volume controls and a separate mute/unmute button control
 both narration and music; the video never autoplays. Captions and the written guide remain usable without sound.
-Deploy `web/public/tenali-product-tour-veena.mp4`, its
+Deploy `web/public/tenali-product-tour-veena-v2.mp4`, its
 `tenali-product-tour-poster.jpg` poster, `tenali-product-tour.vtt` English captions
 and `tenali-product-tour-chapters.vtt` chapter track together with the frontend.
 `web/src/content/product-tour.json` supplies the chapter buttons and full written
