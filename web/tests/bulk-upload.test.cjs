@@ -112,6 +112,7 @@ test("upload advances saved jobs to completion and exposes results, not a second
       bulkAdvance: async id => { calls.push(["advance", id]); const processed = calls.filter(call => call[0] === "advance").length === 1 ? 3 : 4; return { ...job, processed, success: processed - 1, failures: 1, completed: processed === 4 }; },
     } },
   });
+
   const render = () => h.render(() => BulkWorkbookPanel({ selectedProducts: [] }));
   let tree = render();
   await settle();
@@ -127,4 +128,28 @@ test("upload advances saved jobs to completion and exposes results, not a second
   assert.ok(button(tree, "Download results"));
   assert.equal(button(tree, "Upload & process").props.disabled, true);
   assert.equal(button(tree, "Resume"), undefined);
+});
+
+test("older completed import responses recover real counts from result headers", async () => {
+  const calls = [];
+  const job = { id: "legacy", kind: "products", total: 2, processed: 2, completed: true };
+  const { api } = load("api.ts", {
+    "./features/tenantTransport": { tenantFetch: async url => {
+      calls.push(url);
+      return url.endsWith("/results") ? new Response("zip", { headers: { "X-Bulk-Success-Count": "1", "X-Bulk-Failure-Count": "1" } })
+        : new Response(JSON.stringify({ items: [job] }));
+    } },
+  });
+  const result = await api.bulkJobs();
+  assert.equal(result.items[0].success, 1);
+  assert.equal(result.items[0].failures, 1);
+  assert.deepEqual(calls, ["/api/bulk/jobs", "/api/bulk/jobs/legacy/results"]);
+});
+
+test("missing or inconsistent import result counts fail explicitly rather than pretending zero failures", async () => {
+  const { api } = load("api.ts", {
+    "./features/tenantTransport": { tenantFetch: async url => url.endsWith("/results") ? new Response("zip")
+      : new Response(JSON.stringify({ items: [{ id: "legacy", total: 2, processed: 2, completed: true }] })) },
+  });
+  await assert.rejects(api.bulkJobs(), /counts are unavailable/);
 });

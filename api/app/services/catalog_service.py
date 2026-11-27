@@ -86,13 +86,40 @@ def _public_product(row) -> dict:
 
 def _catalog_categories_query() -> str:
     return """
-        select id, code as category_slug, name,
-               coalesce(display_title, name) as category_title,
-               coalesce(description, '') as category_description,
-               image_url, home_order
-        from product_categories
-        where company_id = :company_id and is_active = true
-        order by home_order asc, name asc
+        select c.id, c.code as category_slug, c.name,
+               coalesce(c.display_title, c.name) as category_title,
+               coalesce(c.description, '') as category_description,
+               coalesce(nullif(c.image_url, ''), (
+                   select coalesce(nullif(p.image_url, ''), nullif(split_part(p.image_urls, '|', 1), ''))
+                   from products p
+                   where p.company_id=c.company_id and p.is_active=true and p.catalog_visible=true
+                     and (p.category_id=c.id or exists (
+                         select 1 from product_category_products assignment
+                         where assignment.company_id=c.company_id and assignment.category_id=c.id
+                           and assignment.product_id=p.id))
+                     and (nullif(p.image_url, '') is not null or nullif(p.image_urls, '') is not null)
+                   order by p.home_order, p.name, p.id limit 1
+               )) as image_url, c.home_order
+        from product_categories c
+        where c.company_id = :company_id and c.is_active = true
+        order by c.home_order asc, c.name asc
+    """
+
+
+def _catalog_brands_query() -> str:
+    return """
+        select b.id, b.code, b.name, coalesce(b.description, '') as description,
+               coalesce(nullif(b.image_url, ''), (
+                   select coalesce(nullif(p.image_url, ''), nullif(split_part(p.image_urls, '|', 1), ''))
+                   from products p
+                   where p.company_id=b.company_id and p.brand_id=b.id
+                     and p.is_active=true and p.catalog_visible=true
+                     and (nullif(p.image_url, '') is not null or nullif(p.image_urls, '') is not null)
+                   order by p.home_order, p.name, p.id limit 1
+               )) as image_url
+        from brands b
+        where b.company_id=:company_id and b.is_active=true
+        order by b.name, b.id
     """
 
 
@@ -138,14 +165,7 @@ class CatalogService:
         ).mappings().all()
 
         brands = self.db.execute(
-            text(
-                """
-                select id, code, name, coalesce(description, '') as description, image_url
-                from brands
-                where company_id = :company_id and is_active = true
-                order by name asc
-                """
-            ),
+            text(_catalog_brands_query()),
             {"company_id": resolved_company_id},
         ).mappings().all()
 
@@ -221,14 +241,7 @@ class CatalogService:
             raise HTTPException(status_code=404, detail="Company not found")
 
         brands = self.db.execute(
-            text(
-                """
-                select id, code, name, coalesce(description, '') as description, image_url
-                from brands
-                where company_id = :company_id and is_active = true
-                order by name asc
-                """
-            ),
+            text(_catalog_brands_query()),
             {"company_id": resolved_company_id},
         ).mappings().all()
 

@@ -145,6 +145,7 @@ test("the editor preserves Classic edits and selections while fitting desktop an
       saveStorefrontSections: async sections => { calls.push(sections); return { sections }; },
     } },
     "../components/Notifications": { FloatingAlert: "FloatingAlert" },
+    "../components/ImageCropEditor": { ImageCropEditor: "ImageCropEditor" },
     "../components/PortalHomeLink": { PortalHomeLink: "PortalHomeLink" },
     "../features/siteTheme": themeHelpers,
     "../features/tenantTransport": { tenantBase: () => "/c/classic-store" },
@@ -316,8 +317,8 @@ test("the editor preserves Classic edits and selections while fitting desktop an
   assert.equal(addMenu().props.disabled, true);
   const menuField = all(render(), node => node.props.definition?.key === "menu-1")[0];
   menuField.props.onChange({ label: "Our brands", href: "/brand?view=brands" });
-  const menuToggle = all(render(), node => node.type === "label" && text(node) === "Show Our brands")[0];
-  all(menuToggle, node => node.type === "input")[0].props.onChange({ target: { checked: false } });
+  const menuToggle = all(render(), node => node.type === "input" && node.props["aria-label"] === "Show Our brands")[0];
+  menuToggle.props.onChange({ target: { checked: false } });
   assert.equal(all(render(), node => node.props["aria-label"] === "Move menu 1 up")[0].props.disabled, true);
   assert.equal(all(render(), node => node.props["aria-label"] === "Move menu 9 down")[0].props.disabled, true);
   all(render(), node => node.props["aria-label"] === "Move menu 9 up")[0].props.onClick();
@@ -717,6 +718,7 @@ test("Marketplace header retains search routing, cart quantities and enquiry mod
     "../features/useCheckoutAvailability": { useCartMode: () => ({ mode }) },
     "../features/cartMode": load("features/cartMode.ts"),
     "./WorkspaceBar": { WorkspaceBar: "WorkspaceBar" }, "./PortalNavigation": { PortalNavigation: "PortalNavigation" },
+    "../features/useDismissOutside": { useDismissOutside() {} },
   });
   const render = previewCompany => { slot = 0; return Header({ menuOpen: false, onMenuToggle() {}, previewCompany }); };
   const tree = render();
@@ -792,7 +794,7 @@ test("brand cards have distinct themes and a failed logo falls back without losi
   assert.ok(text(classic).includes("OB"));
   const marketplace = BrandCard({ ...props, template: "marketplace" });
   assert.equal(marketplace.props["data-brand-theme"], "marketplace");
-  assert.equal(all(marketplace, node => node.props.className === "logo-box").length, 0);
+  assert.equal(all(marketplace, node => node.props.className === "logo-box").length, 1);
   assert.ok(text(marketplace).includes("Our collection"));
   const boutique = BrandCard({ ...props, template: "boutique", action: "View this studio →" });
   assert.equal(text(all(boutique, node => node.type === "em")[0]), "View this studio →");

@@ -38,6 +38,7 @@ function marketingPlayer(video, muted = false) {
     },
     "react-router-dom": { Link: "Link" },
     "../content/product-tour.json": tour,
+    "../features/useDismissOutside": { useDismissOutside() {} },
     "../features/policies": { policyPath: (scope, kind) => `/policies/${scope}/${kind}` },
   };
   const code = ts.transpileModule(read("pages/PlatformHomePage.tsx"), {
@@ -108,7 +109,7 @@ test("marketing page has real routes, an accessible demo and a local video", () 
   assert.match(page, /id="demo-transcript"/);
   assert.match(page, /Actual app screens use sample data/);
   assert.match(page, /no customer records or live AI replies/);
-  assert.match(page, /Tenali is an app for running your shop/);
+  assert.match(page, /Run your day-to-day operations, manage inventory/);
   assert.match(page, /Know who has paid/);
   assert.match(page, /Ask Tenali AI for help/);
   assert.match(page, /Read the instructions in the dark panel and follow the app in the light panel/);
@@ -140,7 +141,7 @@ test("local narrated guide is seekable with matching captions and chapters", () 
     assert.ok(cue.start >= end && cue.start - end <= 0.101);
     assert.ok(cue.end > cue.start && cue.end <= duration);
     const captionEnd = step.end === duration ? step.end : step.end - 0.1;
-    assert.deepEqual(cue, { start: step.start, end: captionEnd, text: step.instruction });
+    assert.deepEqual(cue, { start: step.start, end: captionEnd, text: step.narration || step.instruction });
     end = cue.end;
   }
   assert.equal(end, duration);

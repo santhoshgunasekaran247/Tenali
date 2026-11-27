@@ -13,7 +13,7 @@ from sqlalchemy import bindparam, text
 from app.schemas.inventory import InventoryLookupCreate, ProductInput, VariantImageInput, VendorOfferInput
 from app.schemas.masters import HsnMasterCreate, HsnMasterUpdate
 from app.schemas.parties import PartyCreate, PartyUpdate
-from app.services.bulk_workbooks import FIELDS, MAX_LOOKUPS, MAX_ROWS
+from app.services.bulk_workbooks import FIELDS, MAX_LOOKUPS, MAX_ROWS, OFFER_FIELDS
 from app.services.inventory_service import InventoryService
 from app.services.masters_service import MastersService
 from app.services.parties_service import PartiesService
@@ -123,7 +123,8 @@ class BulkImport:
                 result["hsn_gst_rates"] = [float(value["gst_rate"]) for value in values]
         result.update(party_types=["customer", "vendor", "customer_vendor", "friend", "employee", "other"],
                       pricing_modes=["price", "discount", "inherit"], booleans=["TRUE", "FALSE"],
-                      image_entities=["product", "brand", "category"])
+                      image_entities=["product", "brand", "category"], record_types=["product", "child"],
+                      vendor_availability=["UNKNOWN", "AVAILABLE", "OUT_OF_STOCK", "ON_ORDER"])
         return result
 
     def _lookup(self, kind, name, description=""):
@@ -171,7 +172,44 @@ class BulkImport:
         values["image_urls"] = (record.get("image_urls") or "").split("|") if record.get("image_urls") else []
         return values
 
+    def _offer(self, product_id, vendor_id, row, current, variant_id=None):
+        existing = next((offer for offer in current.get("offers", [])
+                         if str(offer["vendor_id"]) == vendor_id), None)
+        if existing and not existing["is_active"]:
+            raise HTTPException(422, "The vendor mapping is inactive; reactivate it first.")
+        values = {key: existing[key] for key in VendorOfferInput.model_fields if existing and key in existing}
+        values.update(vendor_id=vendor_id, variant_id=variant_id)
+        values.update({field if field in VendorOfferInput.model_fields else field.removeprefix("vendor_"): value
+                       for field, value in _changes(row, OFFER_FIELDS).items()})
+        return self.inventory.save_offer(product_id, VendorOfferInput.model_validate(values),
+                                         str(existing["id"]) if existing else None, commit=False)
+
+    def _child_parent(self, row):
+        parent_id = _text(row.get("parent_product_id"))
+        sku = _text(row.get("parent_sku"))
+        if not parent_id and not sku:
+            raise HTTPException(422, "Child rows need parent_product_id or parent_sku.")
+        if parent_id:
+            parent_id = _id(parent_id, "parent_product_id")
+            parent = self.inventory.detail(parent_id)
+            if sku and parent.get("sku") != sku:
+                raise HTTPException(422, "parent_product_id and parent_sku refer to different products.")
+            return parent_id
+        matches = self.db.execute(text("select id from products where company_id=:company and sku=:sku limit 2"),
+                                  {"company": self.company_id, "sku": sku}).scalars().all()
+        if len(matches) != 1:
+            raise HTTPException(422, "Parent SKU must match exactly one product in this workspace. Upload the parent first.")
+        return str(matches[0])
+
     def product(self, row, images=None):
+        record_type = _text(row.get("record_type")).lower() or "product"
+        if record_type == "child":
+            return self.variant({**row, "product_id": self._child_parent(row),
+                                 "variant_name": row.get("variant_name") or row.get("name")}, images)
+        if record_type != "product":
+            raise HTTPException(422, "record_type must be product or child.")
+        if row.get("parent_product_id") or row.get("parent_sku"):
+            raise HTTPException(422, "Set record_type to child when specifying a parent.")
         product_id = _id(row["id"]) if row.get("id") not in (None, "") else None
         current = self.inventory.detail(product_id) if product_id else None
         values = self._product_values(current) if current else {}
@@ -206,24 +244,22 @@ class BulkImport:
             values["hsn_code"] = code or None
         vendor_change = _changes(row, ("vendor",))
         vendor_id = self._vendor(_text(vendor_change["vendor"])) if vendor_change.get("vendor") else None
+        if _changes(row, OFFER_FIELDS) and not vendor_id:
+            raise HTTPException(422, "Set vendor to import its offer details.")
         if vendor_id and current:
-            existing = next((offer for offer in current["offers"] if str(offer["vendor_id"]) == vendor_id), None)
-            if existing and not existing["is_active"]:
-                raise HTTPException(422, "The vendor mapping is inactive; reactivate it first.")
-            if not existing:
-                self.inventory.save_offer(product_id, VendorOfferInput(vendor_id=vendor_id), commit=False)
+            self._offer(product_id, vendor_id, row, current)
         if vendor_change and (current or not vendor_id):
             values["preferred_vendor_id"] = vendor_id
-        product = self.inventory.save_product(ProductInput.model_validate(values), product_id, commit=False)
+        staged = {**values, "pricing_mode": "price"} if vendor_id and not current and values.get("pricing_mode") == "discount" else values
+        product = self.inventory.save_product(ProductInput.model_validate(staged), product_id, commit=False)
         product_id = str(product["id"])
         if vendor_id and not current:
-            product = self.inventory.save_offer(product_id, VendorOfferInput(vendor_id=vendor_id), commit=False)
-            values = self._product_values(product)
+            self._offer(product_id, vendor_id, row, product)
             values["preferred_vendor_id"] = vendor_id
             product = self.inventory.save_product(ProductInput.model_validate(values), product_id, commit=False)
         return str(product["id"])
 
-    def variant(self, row):
+    def variant(self, row, images=None):
         product_id = _id(row.get("product_id"), "product_id")
         variant_id = _id(row["id"]) if row.get("id") not in (None, "") else None
         product = self.inventory.detail(product_id)
@@ -231,11 +267,34 @@ class BulkImport:
         if variant_id and not current:
             raise HTTPException(404, "Variant does not belong to this product.")
         values = {key: current[key] for key in VariantImageInput.model_fields if current and key in current}
-        values.update(_changes(row, FIELDS["variants"][2:]))
+        values.update(_changes(row, VariantImageInput.model_fields))
         if _changes(row, ("image_url",)).get("image_url") is not None:
             values["image_url"] = _image_url(row["image_url"])
+        filename = _text(row.get("image_file"))
+        if filename:
+            if row.get("image_url") not in (None, ""):
+                raise HTTPException(422, "Provide either image_file or image_url, not both.")
+            values["image_url"] = image_file_source(images or {}, filename)[2]
+        vendor_change = _changes(row, ("vendor",))
+        vendor_id = self._vendor(_text(vendor_change["vendor"])) if vendor_change.get("vendor") else None
+        if vendor_change and not vendor_id:
+            values["preferred_vendor_id"] = None
+        if _changes(row, OFFER_FIELDS) and not vendor_id:
+            raise HTTPException(422, "Set vendor to import its offer details.")
+        if vendor_id and current:
+            self._offer(product_id, vendor_id, row, current, variant_id)
+            values["preferred_vendor_id"] = vendor_id
+        requested_mode = values.get("pricing_mode", "inherit")
+        if vendor_id and not current and requested_mode == "discount":
+            values["pricing_mode"] = "inherit"
         result = self.inventory.save_variant(product_id, VariantImageInput.model_validate(values), variant_id, commit=False)
-        return str(result["saved_variant_id"])
+        saved_id = str(result["saved_variant_id"])
+        if vendor_id and not current:
+            child = next(item for item in result["variants"] if str(item["id"]) == saved_id)
+            self._offer(product_id, vendor_id, row, child, saved_id)
+            values.update(preferred_vendor_id=vendor_id, pricing_mode=requested_mode)
+            self.inventory.save_variant(product_id, VariantImageInput.model_validate(values), saved_id, commit=False)
+        return saved_id
 
     def hsn(self, row):
         record_id = _id(row["id"]) if row.get("id") not in (None, "") else None
@@ -331,7 +390,7 @@ class BulkImport:
         if kind == "products":
             return self.product(row, images)
         if kind == "variants":
-            return self.variant(row)
+            return self.variant(row, images)
         if kind == "hsn":
             return self.hsn(row)
         if kind == "parties":
@@ -356,17 +415,40 @@ class BulkImport:
                 labels = item.get("tags", [])
                 if any("|" in name for name in [*category_names, *labels]):
                     raise HTTPException(422, "Category and label names containing | cannot be exported; rename them first.")
-                rows.append({**item, "brand": item.get("brand_name"), "categories": "|".join(category_names),
-                             "labels": "|".join(labels), "vendor": item.get("preferred_vendor_name")})
+                offer = next((offer for offer in item.get("offers", [])
+                              if str(offer["vendor_id"]) == str(item.get("preferred_vendor_id"))), {})
+                rows.append({**item, "record_type": "product", "brand": item.get("brand_name"), "categories": "|".join(category_names),
+                             "labels": "|".join(labels), "vendor": item.get("preferred_vendor_name"),
+                             **self._export_offer(offer)})
+                for child in self.inventory.detail(str(item["id"]))["variants"]:
+                    offer = next((offer for offer in child.get("offers", [])
+                                  if str(offer["vendor_id"]) == str(child.get("preferred_vendor_id"))), {})
+                    rows.append({**child, "name": child["variant_name"], "record_type": "child",
+                                 "parent_product_id": str(item["id"]), "parent_sku": item.get("sku"),
+                                 "vendor": offer.get("vendor_name"), **self._export_offer(offer)})
         elif kind == "variants":
             query = text("""select v.* from product_variants v join products p on p.id=v.product_id
                 where p.company_id=:company and v.id in :ids""").bindparams(bindparam("ids", expanding=True))
-            rows = [dict(row) for row in self.db.execute(query, {"company": self.company_id, "ids": ids}).mappings()]
+            rows = []
+            for row in self.db.execute(query, {"company": self.company_id, "ids": ids}).mappings():
+                child = next(item for item in self.inventory.detail(str(row["product_id"]))["variants"]
+                             if str(item["id"]) == str(row["id"]))
+                offer = next((offer for offer in child.get("offers", [])
+                              if str(offer["vendor_id"]) == str(child.get("preferred_vendor_id"))), {})
+                rows.append({**child, "product_id": row["product_id"],
+                             "vendor": offer.get("vendor_name"), **self._export_offer(offer)})
         else:
             table = {"hsn": "hsn_masters", "parties": "parties", "brands": "brands", "categories": "product_categories"}[kind]
             query = text(f"select * from {table} where company_id=:company and id in :ids").bindparams(bindparam("ids", expanding=True))
             rows = [dict(row) for row in self.db.execute(query, {"company": self.company_id, "ids": ids}).mappings()]
-        if {str(row["id"]) for row in rows} != set(ids):
+        if {str(row["id"]) for row in rows if row.get("record_type") != "child"} != set(ids):
             raise HTTPException(404, "One or more selected records do not belong to this workspace.")
+        if len(rows) > MAX_ROWS:
+            raise HTTPException(422, "Products and their children exceed 2,000 rows. Select fewer products.")
         return [{field: str(value) if isinstance(value, UUID) else value
                  for field in FIELDS[kind] if (value := row.get(field)) is not None} for row in rows]
+
+    @staticmethod
+    def _export_offer(offer):
+        return {field: offer.get(field if field in VendorOfferInput.model_fields else field.removeprefix("vendor_"))
+                for field in OFFER_FIELDS}

@@ -77,7 +77,7 @@ import { tenantFetch } from "./features/tenantTransport";
 
 export const API_BASE = "/api";
 export type BulkKind = "products" | "variants" | "hsn" | "parties" | "brands" | "categories" | "images";
-export type BulkJob = { id: string; kind: BulkKind; processed: number; total: number; success: number; failures: number; completed: boolean;
+export type BulkJob = { id: string; kind: BulkKind; processed: number; total: number; success?: number; failures?: number; completed: boolean;
   created_at: string; expires_at: string };
 export const API_RESULT_EVENT = "tenali-api-result";
 export type ApiResult = { method: string; path: string; ok: boolean; status: number; data?: unknown; message?: string };
@@ -141,15 +141,31 @@ async function bulkFile(path: string, options?: RequestInit) {
   return { blob: await response.blob(), success: response.headers.get("X-Bulk-Success-Count"), failures: response.headers.get("X-Bulk-Failure-Count") };
 }
 
+async function bulkJobCounts(job: BulkJob): Promise<BulkJob> {
+  if (Number.isInteger(job.success) && Number.isInteger(job.failures)) return job;
+  if (!job.processed) return { ...job, success: 0, failures: 0 };
+  if (!job.completed) return job;
+  // Older API workers omit summary counts, but their result headers contain the real totals.
+  const result = await bulkFile(`/bulk/jobs/${job.id}/results`);
+  const success = result.success == null ? NaN : Number(result.success);
+  const failures = result.failures == null ? NaN : Number(result.failures);
+  if (!Number.isInteger(success) || !Number.isInteger(failures) || success < 0 || failures < 0 ||
+    success + failures !== job.processed) throw new Error("Import result counts are unavailable. Update the API and refresh saved imports.");
+  return { ...job, success, failures };
+}
+
 export const api = {
   bulkTemplate: (kind: BulkKind) => bulkFile(`/bulk/templates/${kind}`),
   bulkExport: (kind: BulkKind, ids: string[]) => bulkFile(`/bulk/exports/${kind}`, { method: "POST",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }),
-  bulkJobs: () => request<{ items: BulkJob[] }>("/bulk/jobs"),
+  bulkJobs: async () => {
+    const result = await request<{ items: BulkJob[] }>("/bulk/jobs");
+    return { items: await Promise.all(result.items.map(bulkJobCounts)) };
+  },
   bulkStart: (kind: BulkKind, file: File, key: string) => request<BulkJob>(`/bulk/jobs/${kind}?${new URLSearchParams({ client_key: key })}`,
     { method: "POST", headers: { "Content-Type": file.name.toLowerCase().endsWith(".zip")
-      ? "application/zip" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, body: file }),
-  bulkAdvance: (id: string) => request<BulkJob>(`/bulk/jobs/${id}/advance`, { method: "POST" }),
+      ? "application/zip" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }, body: file }).then(bulkJobCounts),
+  bulkAdvance: (id: string) => request<BulkJob>(`/bulk/jobs/${id}/advance`, { method: "POST" }).then(bulkJobCounts),
   bulkResults: (id: string) => bulkFile(`/bulk/jobs/${id}/results`),
   bulkDelete: (id: string) => request(`/bulk/jobs/${id}`, { method: "DELETE" }),
   dashboard: (period: { month: string } | { from_date: string; to_date: string }, storeId: string) => request<OperationsDashboard>(`/dashboard?${new URLSearchParams({ ...period, ...(storeId ? { store_id: storeId } : {}) })}`),

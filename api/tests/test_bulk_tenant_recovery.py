@@ -78,7 +78,7 @@ class WorkbookBoundaryTests(unittest.TestCase):
                 yield b"1234"
                 yield b"56789"
 
-        for kind, setting in (("brands", "MAX_UPLOAD_BYTES"), ("products", "MAX_IMAGE_UPLOAD_BYTES")):
+        for kind, setting in (("brands", "MAX_IMAGE_UPLOAD_BYTES"), ("parties", "MAX_UPLOAD_BYTES")):
             with self.subTest(kind=kind), patch("app.api.routes.bulk." + setting, 8):
                 with self.assertRaises(HTTPException) as error:
                     asyncio.run(upload(kind, Request(), uuid4(), MagicMock()))

@@ -97,7 +97,7 @@ def result_package(kind, success, failures, images, suggestions):
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr("success.xlsx", workbook(kind, success, suggestions))
         archive.writestr("failure.xlsx", workbook(kind, failures, suggestions, reasons=True))
-        if kind in {"images", "products", "brands", "categories"}:
+        if kind in {"images", "products", "variants", "brands", "categories"}:
             for name in {row[field] for row in failures for field in ("image_file", "brand_image_file", "category_image_file") if row.get(field) in images}:
                 archive.writestr(f"images/{name}", images[name])
     return download(output.getvalue(), f"tenali-{kind}-results.zip", "application/zip",
@@ -136,7 +136,7 @@ def json_value(value):
 def create_job(kind, content, client_key, service):
     if kind not in FIELDS:
         raise HTTPException(422, "Unknown bulk workbook type.")
-    rows, _ = image_upload(content, kind) if kind in {"images", "products", "brands", "categories"} else (read_workbook(kind, content), {})
+    rows, _ = image_upload(content, kind) if kind in {"images", "products", "variants", "brands", "categories"} else (read_workbook(kind, content), {})
     if not rows:
         raise HTTPException(422, "The workbook contains no data rows.")
     scope = job_scope(service)
@@ -179,7 +179,7 @@ def advance_job(job_id, service):
         if index == len(job["rows"]):
             service.db.commit()
             return job_summary(job)
-        images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "brands", "categories"} else {}
+        images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "variants", "brands", "categories"} else {}
         try:
             with service.db.begin_nested():
                 record_id = service.apply_row(job["kind"], job["rows"][index], images)
@@ -220,7 +220,7 @@ def jobs(service: BulkImport = Depends(bulk_service)):
 @router.post("/jobs/{kind}")
 async def upload(kind: str, request: Request, client_key: UUID, service: BulkImport = Depends(bulk_service)):
     content = bytearray()
-    limit = MAX_IMAGE_UPLOAD_BYTES if kind in {"images", "products", "brands", "categories"} else MAX_UPLOAD_BYTES
+    limit = MAX_IMAGE_UPLOAD_BYTES if kind in {"images", "products", "variants", "brands", "categories"} else MAX_UPLOAD_BYTES
     async for chunk in request.stream():
         content.extend(chunk)
         if len(content) > limit:
@@ -244,7 +244,7 @@ def results(job_id: UUID, service: BulkImport = Depends(bulk_service)):
             failures.append({**row, **outcome})
         else:
             successes.append({**row, **outcome})
-    images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "brands", "categories"} else {}
+    images = image_upload(job["content"], job["kind"])[1] if job["kind"] in {"images", "products", "variants", "brands", "categories"} else {}
     return result_package(job["kind"], successes, failures, images, service.suggestions())
 
 

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.schemas.storefront import ProductTagsUpdate, StorefrontSectionInput
 from app.schemas.inventory import ProductInput
 from app.schemas.company import StorefrontContent
-from app.services.catalog_service import CatalogService, _catalog_categories_query
+from app.services.catalog_service import CatalogService, _catalog_categories_query, _catalog_brands_query
 from app.services.storefront_sections import StorefrontSectionsService
 
 
@@ -196,12 +196,42 @@ class ProductTagInputTests(unittest.TestCase):
             ProductInput.model_validate({"name": "Cotton Kurta", "tags": [" "]})
 
 class ClassicSectionVisibilityTests(unittest.TestCase):
+    def test_master_photo_fallback_uses_public_tenant_products_and_keeps_explicit_images(self):
+        with closing(sqlite3.connect(":memory:")) as db:
+            db.create_function("split_part", 3, lambda value, delimiter, part: value.split(delimiter)[part - 1] if value else None)
+            db.executescript("""
+                create table product_categories(id text, company_id text, code text, name text, display_title text,
+                    description text, image_url text, home_order integer, is_active boolean);
+                create table brands(id text, company_id text, code text, name text, description text, image_url text, is_active boolean);
+                create table products(id text, company_id text, category_id text, brand_id text, name text,
+                    image_url text, image_urls text, home_order integer, is_active boolean, catalog_visible boolean);
+                create table product_category_products(company_id text, product_id text, category_id text);
+                insert into product_categories values('cat','tenant','cat','Category',null,null,null,0,true);
+                insert into brands values('brand','tenant','brand','Brand',null,null,true);
+                insert into products values('foreign','other','cat','brand','Foreign','foreign.png',null,0,true,true);
+                insert into products values('hidden','tenant','cat','brand','Hidden','hidden.png',null,0,true,false);
+                insert into products values('inactive','tenant','cat','brand','Inactive','inactive.png',null,0,false,true);
+                insert into products values('first','tenant',null,'brand','First',null,'first.png|second.png',1,true,true);
+                insert into products values('later','tenant','cat','brand','Later','later.png',null,2,true,true);
+                insert into product_category_products values('tenant','first','cat');
+            """)
+            category = db.execute(_catalog_categories_query(), {"company_id": "tenant"}).fetchone()
+            brand = db.execute(_catalog_brands_query(), {"company_id": "tenant"}).fetchone()
+            self.assertEqual(category[5], "first.png")
+            self.assertEqual(brand[4], "first.png")
+            db.execute("update product_categories set image_url='category.png'")
+            db.execute("update brands set image_url='brand.png'")
+            self.assertEqual(db.execute(_catalog_categories_query(), {"company_id": "tenant"}).fetchone()[5], "category.png")
+            self.assertEqual(db.execute(_catalog_brands_query(), {"company_id": "tenant"}).fetchone()[4], "brand.png")
+
     def test_all_active_categories_are_visible_without_exposing_other_tenants_or_inactive_categories(self):
         with closing(sqlite3.connect(":memory:")) as db:
+            db.create_function("split_part", 3, lambda value, delimiter, part: value.split(delimiter)[part - 1] if value else None)
             db.executescript("""
                 create table product_categories(id text, company_id text, code text, name text,
                     display_title text, description text, image_url text, home_order integer, is_active boolean);
-                create table products(id text, company_id text, category_id text, is_active boolean, catalog_visible boolean);
+                create table products(id text, company_id text, category_id text, is_active boolean, catalog_visible boolean,
+                    image_url text, image_urls text, home_order integer, name text);
                 create table product_category_products(company_id text, product_id text, category_id text);
                 create table storefront_sections(id text, company_id text, section_type text, is_enabled boolean);
                 create table storefront_section_categories(company_id text, section_id text, category_id text);
@@ -215,7 +245,7 @@ class ClassicSectionVisibilityTests(unittest.TestCase):
             ):
                 db.execute("insert into product_categories values(?,?,?,?,?,?,?,?,?)",
                            (category_id, company_id, category_id, category_id, None, None, None, 0, active))
-            db.executemany("insert into products values(?,?,?,?,?)", [
+            db.executemany("insert into products(id,company_id,category_id,is_active,catalog_visible) values(?,?,?,?,?)", [
                 ("visible", "tenant", "populated", True, True),
                 ("hidden", "tenant", "hidden-product", True, False),
             ])

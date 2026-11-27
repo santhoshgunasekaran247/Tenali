@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowDownRight, ArrowRight, BarChart3, Boxes, CircleDollarSign, ClipboardList, Globe2, Menu, Sparkles, Store, UsersRound, X } from "lucide-react";
 import { policyPath, policyRequest, type PublicPolicy } from "../features/policies";
 import productTour from "../content/product-tour.json";
+import { useDismissOutside } from "../features/useDismissOutside";
 import "./platform-home.css";
 
 const capabilities = [
@@ -23,6 +24,9 @@ export function PlatformHomePage() {
   const [contactEmail, setContactEmail] = useState("");
   const [contactUnavailable, setContactUnavailable] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  useDismissOutside(menuRef, () => setMenuOpen(false), menuOpen, menuToggleRef);
   const [activeChapter, setActiveChapter] = useState(0);
   const [videoNotice, setVideoNotice] = useState("");
   const [videoMuted, setVideoMuted] = useState(false);
@@ -56,8 +60,8 @@ export function PlatformHomePage() {
     <a className="marketing-skip" href="#main-content">Skip to content</a>
     <header className="marketing-header">
       <a className="marketing-brand" href="#top" aria-label="Tenali home"><img src="/tenali-logo.png" alt="Tenali" /></a>
-      <button className="marketing-menu" type="button" aria-expanded={menuOpen} aria-controls="marketing-nav" aria-label={menuOpen ? "Close menu" : "Open menu"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
-      <nav id="marketing-nav" className={menuOpen ? "marketing-nav is-open" : "marketing-nav"} aria-label="Main navigation" onClick={() => setMenuOpen(false)}>
+      <button ref={menuToggleRef} className="marketing-menu" type="button" aria-expanded={menuOpen} aria-controls="marketing-nav" aria-label={menuOpen ? "Close menu" : "Open menu"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+      <nav ref={menuRef} id="marketing-nav" className={menuOpen ? "marketing-nav is-open" : "marketing-nav"} aria-label="Main navigation" onClick={() => setMenuOpen(false)}>
         <a href="#what-we-do">What you can do</a><a href="#how-it-works">Getting started</a><a href="#demo">Watch the guide</a><a href="#about">Who it is for</a><a href="#contact">Contact</a>
         <Link className="marketing-nav-login" to="/login">Sign in</Link><Link className="marketing-button small" to="/register">Set up my business <ArrowRight size={16} /></Link>
       </nav>
@@ -68,8 +72,8 @@ export function PlatformHomePage() {
         <div className="marketing-container hero-grid">
           <div className="hero-copy">
             <p className="marketing-kicker"><span /> FOR SHOPS, TRADERS AND SELLERS</p>
-            <h1>Your business. Your online shop.<br/><em>Your AI helper.</em></h1>
-            <p className="hero-description">Tenali is an app for running your shop and selling online. Keep products, bills, stock and payments together. Get AI help beside your everyday work, and give customers your own ecommerce website—not just another listing.</p>
+            <h1>Your stock, bills and accounts.<br/><em>Your shop. All connected.</em></h1>
+            <p className="hero-description">Run your day-to-day operations, manage inventory, record purchases and sales, and keep your accounting and payments together. Your own ecommerce website connects to the same products, orders and stock—with AI help beside your work, from buying goods to delivering orders.</p>
             <div className="marketing-actions"><Link className="marketing-button" to="/register">Set up my business <ArrowRight size={18} /></Link><a className="marketing-button secondary" href="#demo">Watch the step-by-step guide <ArrowDownRight size={18} /></a></div>
             <p className="hero-note">WhatsApp list enquiries · Razorpay payments · Shiprocket or your own delivery · Your own domain. Connect the services you need.</p>
           </div>

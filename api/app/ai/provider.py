@@ -76,6 +76,25 @@ def response_schema(output_schema):
             compact(node["items"])
 
     compact(schema)
+    if output_schema is CatalogOutput:
+        def require_declared_fields(node):
+            if not isinstance(node, dict):
+                return
+            node.pop("default", None)
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                node["required"] = list(properties)
+                for child in properties.values():
+                    require_declared_fields(child)
+            for definition in node.get("$defs", {}).values():
+                require_declared_fields(definition)
+            for key in ("anyOf", "allOf", "oneOf"):
+                for child in node.get(key, []):
+                    require_declared_fields(child)
+            if isinstance(node.get("items"), dict):
+                require_declared_fields(node["items"])
+
+        require_declared_fields(schema)
     return schema
 
 

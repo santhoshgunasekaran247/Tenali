@@ -18,14 +18,17 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_EXPANDED_BYTES = 40 * 1024 * 1024
 MAX_ROWS = 2000
 MAX_LOOKUPS = 5000
+OFFER_FIELDS = ("vendor_mrp", "vendor_buying_price", "vendor_available_quantity", "vendor_availability",
+                "vendor_lead_time_days", "vendor_sku", "vendor_reference", "vendor_product_url")
 
 FIELDS = {
     "products": ("id", "name", "sku", "description", "brand", "brand_description", "categories",
                  "hsn_code", "hsn_description", "gst_rate", "vendor", "image_url", "image_file", "image_background",
                  "labels", "selling_price", "discount_percent", "pricing_mode", "is_active", "catalog_visible",
-                 "brand_image_url", "brand_image_file", "category_image_url", "category_image_file"),
+                 "brand_image_url", "brand_image_file", "category_image_url", "category_image_file",
+                 "record_type", "parent_product_id", "parent_sku", "variant_name", "size", "colour", *OFFER_FIELDS),
     "variants": ("id", "product_id", "variant_name", "sku", "size", "colour", "selling_price",
-                 "discount_percent", "pricing_mode", "image_url", "is_active"),
+                 "discount_percent", "pricing_mode", "image_url", "is_active", "vendor", *OFFER_FIELDS, "image_file"),
     "hsn": ("id", "code", "description", "gst_rate", "is_active"),
     "parties": ("id", "party_type", "legal_name", "nickname", "contact_person", "phone", "email",
                 "address", "gst_number", "is_active"),
@@ -54,11 +57,16 @@ INSTRUCTIONS = {
         "image_background uses English names: white, black, light blue, ivory. White is the default. Hex colours still work for existing files.",
         "brand_image_url / brand_image_file updates the named brand's logo; category_image_url / category_image_file updates the first category's image. Supply a matching name.",
         "For product image files, upload a ZIP containing manifest.xlsx and images/<filename>; set image_file to the filename.",
-        "pricing_mode is price or discount. selling_price and discount_percent must meet inventory pricing rules.",
+        "Product pricing_mode is price or discount; child rows may also inherit their parent's price. selling_price and discount_percent must meet inventory pricing rules.",
+        "record_type is product (default) or child. A child is a size/colour variant, not a separate catalogue product.",
+        "For child rows, set parent_product_id or parent_sku and variant_name (or name). Put parent rows first. Keep the exported child id when updating.",
+        "Vendor offer columns describe the supplier's MRP, buying price, stock, availability, lead time and reference, not your selling price. Leave unknown values blank; an offer requires vendor.",
     ),
     "variants": (
         "Variants: product_id is the owning product's ID. variant_name is required for new variants.",
         "A variant ID can only be updated under its own product. pricing_mode can be inherit, price or discount.",
+        "Variants are child records. Optional vendor and vendor_* columns create or update the supplier offer for this child, not the parent.",
+        "For child image files, upload manifest.xlsx and images/<filename> in a ZIP and set image_file. Alternatively, use image_url; do not supply both.",
     ),
     "hsn": (
         "HSN: code must contain 4, 6 or 8 digits. Supply description and GST rate from 0 to 100.",
@@ -84,6 +92,7 @@ LOOKUP_FIELDS = {
     "party_type": "party_types", "pricing_mode": "pricing_modes", "is_active": "booleans",
     "catalog_visible": "booleans",
     "entity": "image_entities",
+    "record_type": "record_types", "vendor_availability": "vendor_availability",
 }
 AUTOFILL = {
     "brand_description": ("brand", "$A$2:$B$5001", 2),
@@ -111,6 +120,13 @@ FIELD_HELP = {
     "category_image_url": "Public HTTPS image URL for the first category in this row. Leave category_image_file blank.",
     "category_image_file": "Category image filename in images/. Set categories and leave category_image_url blank.",
     "failure_reason": "Correct the described error and re-upload only failed rows. This column is ignored during import.",
+    "record_type": "product for a parent; child for a size/colour variant. Blank means product.",
+    "parent_product_id": "For child rows: the existing parent product ID in this workspace.",
+    "parent_sku": "For child rows: exact parent SKU, including a parent created in an earlier row. Do not use the child's SKU.",
+    "variant_name": "Name of the child option, for example Large / Blue.",
+    "vendor_mrp": "Supplier's MRP in INR. Not your selling price.",
+    "vendor_buying_price": "Price you pay this vendor in INR. Never infer this from selling price.",
+    "vendor_available_quantity": "Stock available from this vendor, not stock in your stores.",
 }
 
 
@@ -161,6 +177,7 @@ def _readme(book, kind, notes):
         ("Working with your data", "section"),
         ("Blank update cells keep existing values. Use <clear> to clear an optional field.", ""),
         ("Dark blue headers are inputs; teal headers auto-fill related values. Hover over headers for field guidance.", ""),
+        ("Purple text on pale lavender cells is AI-generated content. Review it against your source before uploading; colour is guidance, not verification.", ""),
         ("Products: selecting an HSN fills its description and GST; selecting a brand fills its description.", "") if kind == "products" else
         ("Only the Data sheet is imported. This guide and the example below are not imported.", ""),
         ("For a new HSN or brand, replace its auto-filled cells with your own values. Existing HSN/GST values are verified from the live master on upload.", "") if kind == "products" else
@@ -209,7 +226,7 @@ def _write_cell(sheet, row, column, value):
     return cell
 
 
-def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> bytes:
+def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None, ai_generated=False) -> bytes:
     if kind not in FIELDS:
         raise HTTPException(422, "Unknown bulk workbook type.")
     lookups = lookups or {}
@@ -224,7 +241,10 @@ def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> 
             value = row.get(field)
             if field == "image_background" and isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 value = background_name(value)
-            _write_cell(sheet, number, column, value)
+            cell = _write_cell(sheet, number, column, value)
+            if ai_generated and value is not None:
+                cell.font = Font(name="Calibri", color="7135A5", size=11)
+                cell.fill = PatternFill("solid", fgColor="F3EAFB")
     sheet.freeze_panes = "B2"
     last_row = max(2, sheet.max_row)
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(fields))}{last_row}"
@@ -256,7 +276,7 @@ def workbook(kind: str, rows=(), lookups=None, *, reasons=False, notes=None) -> 
             names = lookups.get("brands" if source == "brand" else "hsn", [])
             for number in range(2, MAX_ROWS + 2):
                 cell = sheet.cell(number, column)
-                if cell.value is None or str(sheet.cell(number, source_column).value) in names:
+                if cell.value is None or (not ai_generated and str(sheet.cell(number, source_column).value) in names):
                     cell.value = _autofill_formula(field, number, fields)
                     cell.font = Font(name="Calibri", color="147D78")
                     cell.number_format = "0.##" if field == "gst_rate" else "General"

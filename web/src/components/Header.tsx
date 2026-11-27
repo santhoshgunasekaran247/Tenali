@@ -14,6 +14,7 @@ import { useCart } from "../features/cart";
 import { useCartMode } from "../features/useCheckoutAvailability";
 import { cartWords } from "../features/cartMode";
 import { PortalNavigation } from "./PortalNavigation";
+import { useDismissOutside } from "../features/useDismissOutside";
 import { isStorefrontHref, storefrontHeaderMenu, storefrontLink } from "../features/catalog/storefrontLinks";
 
 type HeaderProps = {
@@ -28,6 +29,9 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
   const location=useLocation();
   const navigate=useNavigate();
   const [searchText,setSearchText]=useState("");
+  const menuRef = useRef<HTMLElement>(null);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  useDismissOutside(menuRef, onMenuToggle, menuOpen, menuToggleRef);
   const [company, setCompany] = useState<(Pick<Company,'company_name'|'logo_url'|'storefront_content'|'storefront_enabled'>&{site_theme?:SiteTheme;storefront_template?:StorefrontTemplate}) | null>(null);
   const previewCompanyRef = useRef(previewCompany);
   previewCompanyRef.current = previewCompany;
@@ -98,7 +102,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
           onChange={event=>setSearchText(event.target.value)} />
         <button type="submit" aria-label="Search products"><Search size={18} aria-hidden="true" /></button>
       </form>:null}
-      <nav id="header-navigation" className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onKeyDown={event => {
+      <nav ref={menuRef} id="header-navigation" className={`${auth.user?"workspace-header-nav":""}${menuOpen?" open":""}`} onKeyDown={event => {
         if (event.key === "Escape" && menuOpen) { onMenuToggle(); document.querySelector<HTMLButtonElement>(".header .menu")?.focus(); }
       }} onClick={(event)=>{if(menuOpen&&(event.target as HTMLElement).closest("a,button"))onMenuToggle();}}>
         {auth.user ? <div className="workspace-nav-links">
@@ -113,7 +117,7 @@ export function Header({ menuOpen, onMenuToggle, previewCompany }: HeaderProps) 
         {!auth.user?<Link {...link("nav.sign_in", "/login", navText("sign_in","Workspace Staff Sign In"))} onClick={()=>menuOpen&&onMenuToggle()} />:null}
         <WorkspaceBar navigation={navigation}/>
       </nav>
-      <button className="menu" aria-label={menuOpen?"Close menu":"Open menu"} aria-controls="header-navigation" aria-expanded={menuOpen} onClick={onMenuToggle}>{menuOpen?"×":"☰"}</button>
+      <button ref={menuToggleRef} className="menu" aria-label={menuOpen?"Close menu":"Open menu"} aria-controls="header-navigation" aria-expanded={menuOpen} onClick={onMenuToggle}>{menuOpen?"×":"☰"}</button>
       {marketplace&&menuItems.length ? <nav className="marketplace-departments" aria-label="Store departments">
         {sectionLinks}
       </nav> : null}

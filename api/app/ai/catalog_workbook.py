@@ -1,6 +1,7 @@
 """Reviewable product workbooks generated from a private AI reply."""
 from io import BytesIO
 import re
+from typing import Literal
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import HTTPException
@@ -16,13 +17,16 @@ REPLY_PREFIX = "[TENALI_CATALOG_WORKBOOK_V1]\n"
 CATALOG_INSTRUCTIONS = """
 The user requests a reviewable product import workbook, not a business operation.
 Extract product facts from the user's message and attached documents. Never invent
-HSN, tax rates, prices, brands, category assignments, model numbers or image URLs.
+HSN, tax rates, prices, discounts, brands, category assignments, model numbers or image URLs.
 When absent, write a brief plain-English description using the product name and ordinary
 knowledge of its use, without inventing specifications, materials, warranties or claims.
 Missing SKU values may use clearly generated internal stock codes, never pretend manufacturer codes.
 Default image_background to white (English colour names, not hex codes).
-brand_image_url and category_image_url may contain supplied public HTTPS logos or category
-pictures, never guessed URLs. Their matching file columns are available in the workbook.
+image_url may contain a product image URL explicitly supplied in the source, never a guessed
+URL. If using an attached image crop, set image_index/image_box and leave image_url null;
+never supply both image_url and an image crop. brand_image_url and category_image_url may
+contain supplied public HTTPS logos or category pictures, never guessed URLs. Their matching
+file columns are available in the workbook.
 Use square images: products 1000x1000 px, brand logos 600x600 px, categories 800x800 px,
 PNG/JPEG/WebP under 1 MiB. Keep products un-stretched on a white or requested backdrop.
 Use | between multiple category or label names. Set image_index to the zero-based
@@ -43,6 +47,16 @@ Use the provided PDF page and Excel sheet/row locations to help associate images
 but never guess an uncertain association. Describe the source catalog's visual
 theme in reply. Use white unless a different background colour is explicitly requested.
 Explain uncertainties, missing data or omitted images in reply. No records are saved.
+Group sizes and colours of the same item under one product row followed by child rows only
+when the source explicitly lists those variants. Never invent a size or colour variant.
+Set record_type to product for every standalone item and parent product, never "parent" or
+"standard". Set record_type to child only for listed variants, with parent_sku matching the earlier parent's
+SKU, or a supplied parent_product_id. Use variant_name, size and colour for the child.
+Use inherit pricing for a child unless a different selling price is supplied.
+Discount percentage and pricing mode must come from the source; do not calculate or infer
+discounts from listed prices. Vendor offer details (MRP, buying price, quantity, availability,
+lead time, vendor SKU, reference and URL) must come from the source, never AI guesses.
+Set vendor when supplying offer details. Vendor stock is not the business's own stock.
 """
 
 
@@ -51,6 +65,7 @@ class CatalogRow(BaseModel):
     name: str
     sku: str | None
     description: str | None
+    image_url: str | None = None
     brand: str | None
     categories: str | None
     hsn_code: str | None
@@ -59,12 +74,28 @@ class CatalogRow(BaseModel):
     vendor: str | None
     labels: str | None
     selling_price: str | None
+    discount_percent: str | None = None
     image_background: str | None
     brand_image_url: str | None = None
     category_image_url: str | None = None
     image_index: int | None
     image_box: str | None = Field(description="Use the supplied region:N photo label when available; otherwise a normalized x0,y0,x1,y1 box.")
     product_box: str | None = Field(default=None, description="For a numbered panel, the tight product-only x0,y0,x1,y1 box, normalized to that panel (not the whole page). Exclude headings, icons, captions and unrelated props.")
+    record_type: Literal["product", "child"] = "product"
+    parent_product_id: str | None = None
+    parent_sku: str | None = None
+    variant_name: str | None = None
+    size: str | None = None
+    colour: str | None = None
+    pricing_mode: Literal["price", "discount", "inherit"] | None = None
+    vendor_mrp: str | None = None
+    vendor_buying_price: str | None = None
+    vendor_available_quantity: str | None = None
+    vendor_availability: str | None = None
+    vendor_lead_time_days: str | None = None
+    vendor_sku: str | None = None
+    vendor_reference: str | None = None
+    vendor_product_url: str | None = None
 
 
 class CatalogOutput(BaseModel):
@@ -80,7 +111,9 @@ def catalog_answer(parsed: CatalogOutput) -> str:
     for row in parsed.products:
         if not row.name.strip() or (row.image_index is None) != (row.image_box is None):
             raise ValueError("Invalid catalog row")
-    result = REPLY_PREFIX + parsed.model_dump_json()
+        if row.record_type not in {"product", "child"} or (row.record_type == "child" and not (row.parent_sku or row.parent_product_id)):
+            raise ValueError("Child variants need a parent SKU or product ID")
+    result = REPLY_PREFIX + parsed.model_dump_json(exclude_defaults=True)
     if len(result) > 12000:
         raise ValueError("Catalog reply is too large")
     return result
@@ -126,6 +159,9 @@ def download_catalog(assistant, conversation_id, message_id):
             brand = (product.brand or "").strip()
             record["description"] = product.name.strip() + (f" by {brand}." if brand else ".")
         record["image_background"] = product.image_background or "white"
+        if product.record_type == "child":
+            record["variant_name"] = product.variant_name or product.name
+            record["pricing_mode"] = product.pricing_mode or ("price" if product.selling_price is not None else "inherit")
         if product.image_index is not None:
             if product.image_index < 0 or product.image_index >= len(files):
                 raise HTTPException(422, f"Product {index} refers to an unavailable image.")
@@ -164,7 +200,8 @@ def download_catalog(assistant, conversation_id, message_id):
         raise HTTPException(422, "Catalog images exceed the bulk image package limit; split the request.")
     notes = parsed.reply + (("\n\n" + parsed.clarification) if parsed.clarification else "")
     notes += "\n\nMissing SKUs use generated internal stock codes, not manufacturer part numbers. Descriptions may be AI-written; review them against the product. Default image background: white."
-    content = workbook("products", records, BulkImport(assistant.db, assistant.scope["company"]).suggestions(), notes=notes)
+    content = workbook("products", records, BulkImport(assistant.db, assistant.scope["company"]).suggestions(),
+                       notes=notes, ai_generated=True)
     output = BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         archive.writestr("manifest.xlsx", content)

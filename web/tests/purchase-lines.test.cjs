@@ -48,7 +48,7 @@ test("bulk upload resumes the saved job after an interrupted advance", async () 
   const state = [], refs = [], effects = [];
   let stateIndex = 0, refIndex = 0, fail = true;
   const calls = [];
-  const job = { id: "job", kind: "brands", processed: 0, total: 1, completed: false, expires_at: "2030-01-01" };
+  const job = { id: "job", kind: "brands", processed: 0, total: 1, success: 0, failures: 0, completed: false, expires_at: "2030-01-01" };
   const react = {
     useState(initial) { const i = stateIndex++; if (!(i in state)) state[i] = initial;
       return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }]; },
@@ -59,7 +59,7 @@ test("bulk upload resumes the saved job after an interrupted advance", async () 
     bulkJobs: async () => ({ items: calls.length ? [job] : [] }),
     bulkStart: async (kind, file, key) => { calls.push(["start", kind, file.name, key]); return job; },
     bulkAdvance: async id => { calls.push(["advance", id]); if (fail) { fail = false; throw new Error("Connection lost"); }
-      return { ...job, processed: 1, completed: true }; },
+      return { ...job, processed: 1, success: 1, completed: true }; },
   };
   const source = readFileSync(path.join(__dirname, "..", "src", "components", "BulkWorkbookPanel.tsx"), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: {
@@ -78,7 +78,7 @@ test("bulk upload resumes the saved job after an interrupted advance", async () 
   const fileInput = find(tree, node => node.type === "input" && node.props.type === "file")[0];
   fileInput.props.onChange({ target: { files: [{ name: "items.xlsx", size: 100 }] } });
   tree = render();
-  find(tree, node => node.type === "button" && text(node) === "Upload workbook")[0].props.onClick();
+  find(tree, node => node.type === "button" && text(node) === "Upload & process")[0].props.onClick();
   await flush(); await flush();
   tree = render();
   assert.match(text(tree), /Connection lost/);
@@ -296,10 +296,10 @@ test("product editor saves multiple categories and a primary category", async ()
 test("product editor saves the selected image background", async () => {
   const saved = [];
   const editor = editorHarness(undefined, { inventorySaveProduct: async payload => { saved.push(payload); return payload; } });
-  find(editor.render(), node => node.type === "input" && node.props.type === "color")[0]
-    .props.onChange({ target: { value: "#202830" } });
+  find(find(editor.render(), node => node.type === "label" && text(node).startsWith("Product image background"))[0],
+    node => node.type === "select")[0].props.onChange({ target: { value: "#add8e6" } });
   await find(editor.render(), node => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
-  assert.equal(saved[0].image_background, "#202830");
+  assert.equal(saved[0].image_background, "#add8e6");
 });
 
 test("setting a reorder level turns reorder alerts on and keeps the target valid", () => {

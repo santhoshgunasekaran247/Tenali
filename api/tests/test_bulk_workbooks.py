@@ -16,6 +16,77 @@ from test_tenancy import TenantDatabaseCase
 
 
 class BulkWorkbookTests(unittest.TestCase):
+    def test_ai_catalog_schema_is_strict_without_losing_optional_or_bulk_fields(self):
+        from app.ai.catalog_workbook import CatalogOutput
+        from app.ai.provider import response_schema
+
+        schema = response_schema(CatalogOutput)
+
+        def assert_required(node):
+            if not isinstance(node, dict):
+                return
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                self.assertEqual(set(node.get("required", [])), set(properties))
+                for child in properties.values():
+                    assert_required(child)
+            for definition in node.get("$defs", {}).values():
+                assert_required(definition)
+            for key in ("anyOf", "allOf", "oneOf"):
+                for child in node.get(key, []):
+                    assert_required(child)
+            if isinstance(node.get("items"), dict):
+                assert_required(node["items"])
+
+        assert_required(schema)
+        row = schema["$defs"]["CatalogRow"]["properties"]
+        for field in ("brand_image_url", "category_image_url", "image_url", "discount_percent"):
+            self.assertIn(field, schema["$defs"]["CatalogRow"]["required"])
+            self.assertTrue(any(branch.get("type") == "null" for branch in row[field]["anyOf"]))
+        self.assertNotIn("default", row["record_type"])
+        self.assertEqual(row["record_type"]["type"], "string")
+        self.assertEqual(set(row["record_type"]["enum"]), {"product", "child"})
+        self.assertEqual(set(next(branch["enum"] for branch in row["pricing_mode"]["anyOf"] if "enum" in branch)),
+                         {"price", "discount", "inherit"})
+
+    def test_ai_catalog_download_keeps_child_links_and_vendor_facts(self):
+        from app.ai.catalog_workbook import CatalogOutput, catalog_answer, download_catalog
+        fields = ("sku", "description", "brand", "categories", "hsn_code", "hsn_description",
+                  "gst_rate", "vendor", "labels", "selling_price", "image_background", "image_index", "image_box")
+        blank = dict.fromkeys(fields)
+        parsed = CatalogOutput.model_validate({"reply": "Review the supplier facts.", "clarification": None, "products": [
+            {**blank, "name": "Bottle", "sku": "BOT"},
+            {**blank, "name": "Blue bottle", "record_type": "child", "parent_sku": "BOT", "vendor": "Supplier",
+             "vendor_buying_price": "90", "vendor_mrp": "200", "colour": "Blue"},
+        ]})
+        assistant = MagicMock()
+        assistant.scope = {"company": str(uuid4()), "user": str(uuid4())}
+        assistant.db.execute.return_value.mappings.return_value.first.return_value = {
+            "content": catalog_answer(parsed), "attachment_ids": []}
+        with patch("app.ai.capabilities.current_identity", return_value={"role": "owner"}), \
+                patch("app.ai.catalog_workbook.MediaService") as media, patch("app.ai.catalog_workbook.BulkImport") as bulk:
+            media.return_value.attachments.return_value = []
+            bulk.return_value.suggestions.return_value = {}
+            package = download_catalog(assistant, uuid4(), uuid4())
+        with ZipFile(io.BytesIO(package)) as archive:
+            rows = read_workbook("products", archive.read("manifest.xlsx"))
+        self.assertEqual(rows[1]["parent_sku"], rows[0]["sku"])
+        self.assertEqual(rows[1]["record_type"], "child")
+        self.assertEqual(rows[1]["pricing_mode"], "inherit")
+        self.assertEqual(rows[1]["vendor_buying_price"], "90")
+        self.assertIsNone(rows[0].get("vendor_mrp"))
+
+    def test_ai_cells_are_distinct_and_child_vendor_fields_survive_download(self):
+        rows = [{"name": "Bottle", "sku": "BOT", "record_type": "product"},
+                {"name": "Blue", "sku": "BOT-BLUE", "record_type": "child", "parent_sku": "BOT",
+                 "vendor": "Supplier", "vendor_buying_price": 80, "vendor_mrp": 200}]
+        content = workbook("products", rows, ai_generated=True)
+        self.assertEqual(read_workbook("products", content)[1]["parent_sku"], "BOT")
+        book = load_workbook(io.BytesIO(content))
+        self.assertEqual(book["Data"]["B2"].font.color.rgb, "007135A5")
+        self.assertEqual(book["Data"]["B2"].fill.fgColor.rgb, "00F3EAFB")
+        self.assertTrue(any("Purple text" in str(row[0].value) for row in book["README"].iter_rows()))
+
     def test_named_backgrounds_and_master_image_templates_round_trip(self):
         for colour, expected in (("white", "#ffffff"), ("Light Blue", "#add8e6"), ("ivory", "#fffff0"), ("#123abc", "#123abc")):
             with self.subTest(colour=colour):
@@ -480,6 +551,204 @@ class BulkDatabaseTests(TenantDatabaseCase):
         self.use_cookies(cookies)
         self.assertEqual(self.client.delete(f"/bulk/jobs/{job_id}", headers=self.headers(cookies)).status_code, 200)
 
+    def test_hsn_parties_brands_categories_success_failure_retry_matrix(self):
+        _, cookies, _ = self.register("bulk-kind-matrix")
+        xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        def package(kind, rows):
+            manifest = workbook(kind, rows)
+            if kind not in {"brands", "categories"}:
+                return manifest, xlsx
+            output = io.BytesIO()
+            with ZipFile(output, "w") as archive:
+                archive.writestr("manifest.xlsx", manifest)
+            return output.getvalue(), "application/zip"
+
+        cases = (
+            ("hsn", {"code": "1234", "description": "Synthetic goods", "gst_rate": 18},
+             {"code": "12", "description": "Invalid synthetic code", "gst_rate": 18},
+             {"code": "123456", "description": "Corrected synthetic goods", "gst_rate": 18}),
+            ("parties", {"party_type": "vendor", "legal_name": "Synthetic matrix vendor"},
+             {"party_type": "unknown", "legal_name": "Invalid synthetic party"},
+             {"party_type": "customer", "legal_name": "Corrected synthetic party"}),
+            ("brands", {"name": "Synthetic matrix brand"},
+             {"name": "Invalid synthetic brand URL", "image_url": "http://example.com/logo.png"},
+             {"name": "Corrected synthetic brand"}),
+            ("categories", {"name": "Synthetic matrix category"},
+             {"name": "Invalid synthetic category URL", "image_url": "http://example.com/category.png"},
+             {"name": "Corrected synthetic category"}),
+        )
+        for kind, good, bad, corrected in cases:
+            with self.subTest(kind=kind):
+                content, media_type = package(kind, [good, bad])
+                headers = {**self.headers(cookies), "Content-Type": media_type}
+                start = self.client.post(f"/bulk/jobs/{kind}?client_key={uuid4()}", content=content, headers=headers)
+                self.assertEqual(start.status_code, 200, start.text)
+                job_id = start.json()["id"]
+                finished = self.client.post(f"/bulk/jobs/{job_id}/advance", headers=self.headers(cookies))
+                self.assertEqual((finished.json()["success"], finished.json()["failures"]), (1, 1), finished.text)
+                report = self.client.get(f"/bulk/jobs/{job_id}/results")
+                self.assertEqual((report.headers["x-bulk-success-count"], report.headers["x-bulk-failure-count"]),
+                                 ("1", "1"))
+                with ZipFile(io.BytesIO(report.content)) as archive:
+                    failed = read_workbook(kind, archive.read("failure.xlsx"))
+                self.assertEqual(len(failed), 1)
+                retry_content, retry_type = package(kind, [corrected])
+                retry = self.client.post(f"/bulk/jobs/{kind}?client_key={uuid4()}", content=retry_content,
+                                         headers={**self.headers(cookies), "Content-Type": retry_type})
+                self.assertEqual(retry.status_code, 200, retry.text)
+                retried = self.client.post(f"/bulk/jobs/{retry.json()['id']}/advance", headers=self.headers(cookies))
+                self.assertEqual((retried.json()["success"], retried.json()["failures"]), (1, 0), retried.text)
+                retry_report = self.client.get(f"/bulk/jobs/{retry.json()['id']}/results")
+                self.assertEqual((retry_report.headers["x-bulk-success-count"],
+                                  retry_report.headers["x-bulk-failure-count"]), ("1", "0"))
+
+    def test_product_export_does_not_turn_inherited_vendor_into_child_offer(self):
+        _, cookies, _ = self.register("bulk-vendor-inheritance")
+        headers = {**self.headers(cookies), "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+        start = self.client.post(f"/bulk/jobs/products?client_key={uuid4()}",
+            content=workbook("products", [
+                {"name": "Synthetic parent", "sku": "INHERIT-PARENT", "selling_price": 100,
+                 "hsn_code": "7323", "hsn_description": "Synthetic goods", "gst_rate": 18,
+                 "vendor": "Synthetic parent supplier", "vendor_mrp": 100, "vendor_buying_price": 60},
+                {"name": "Synthetic child", "sku": "INHERIT-CHILD", "record_type": "child",
+                 "parent_sku": "INHERIT-PARENT", "variant_name": "Small", "pricing_mode": "inherit"},
+            ]), headers=headers)
+        self.assertEqual(start.status_code, 200, start.text)
+        finished = self.client.post(f"/bulk/jobs/{start.json()['id']}/advance", headers=self.headers(cookies))
+        self.assertEqual((finished.json()["success"], finished.json()["failures"]), (2, 0), finished.text)
+        product_id = self.client.get(f"/bulk/jobs/{start.json()['id']}/results")
+        with ZipFile(io.BytesIO(product_id.content)) as archive:
+            imported = read_workbook("products", archive.read("success.xlsx"))
+        parent_id = imported[0]["id"]
+
+        for _ in range(2):
+            exported = self.client.post("/bulk/exports/products", json={"ids": [parent_id]}, headers=self.headers(cookies))
+            self.assertEqual(exported.status_code, 200, exported.text)
+            rows = read_workbook("products", exported.content)
+            child = next(row for row in rows if row["record_type"] == "child")
+            self.assertIsNone(child.get("vendor"))
+            self.assertIsNone(child.get("vendor_buying_price"))
+            reimport = self.client.post(f"/bulk/jobs/products?client_key={uuid4()}",
+                content=workbook("products", rows), headers=headers)
+            self.assertEqual(reimport.status_code, 200, reimport.text)
+            result = self.client.post(f"/bulk/jobs/{reimport.json()['id']}/advance", headers=self.headers(cookies))
+            self.assertEqual((result.json()["success"], result.json()["failures"]), (2, 0), result.text)
+
+    def test_product_child_rows_and_vendor_offers_round_trip_without_duplicates(self):
+        owner, cookies, _ = self.register("bulk-children")
+        headers = {**self.headers(cookies), "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+        rows = [
+            {"name": "Bottle", "sku": "BOT", "brand": "Bottle brand", "categories": "Bottles|Gifts",
+             "hsn_code": "7323", "hsn_description": "Goods", "gst_rate": 18, "vendor": "Supplier",
+             "pricing_mode": "discount", "discount_percent": 10, "vendor_mrp": 200, "vendor_buying_price": 80,
+             "image_url": "https://images.example.com/bottle.png"},
+            {"name": "Blue", "record_type": "child", "parent_sku": "BOT", "sku": "BOT-BLUE", "colour": "Blue",
+             "vendor": "Supplier", "vendor_mrp": 250, "vendor_buying_price": 90, "vendor_reference": "BLUE-REF",
+             "vendor_availability": "AVAILABLE", "vendor_available_quantity": 5,
+             "pricing_mode": "discount", "discount_percent": 20},
+            {"name": "No parent", "record_type": "child", "parent_sku": "MISSING"},
+        ]
+        start = self.client.post(f"/bulk/jobs/products?client_key={uuid4()}", content=workbook("products", rows), headers=headers)
+        self.assertEqual(start.status_code, 200, start.text)
+        finished = self.client.post(f"/bulk/jobs/{start.json()['id']}/advance", headers=self.headers(cookies))
+        self.assertEqual((finished.json()["success"], finished.json()["failures"]), (2, 1), finished.text)
+        with ZipFile(io.BytesIO(self.client.get(f"/bulk/jobs/{start.json()['id']}/results").content)) as archive:
+            saved = read_workbook("products", archive.read("success.xlsx"))
+        parent_id = saved[0]["id"]
+        product = self.client.get(f"/inventory/products/{parent_id}").json()
+        self.assertEqual(len(product["variants"]), 1)
+        self.assertEqual(float(product["catalog_price"]), 180)
+        child = product["variants"][0]
+        self.assertEqual(float(child["catalog_price"]), 200)
+        self.assertEqual(float(child["offers"][0]["buying_price"]), 90)
+        self.assertEqual(child["offers"][0]["vendor_reference"], "BLUE-REF")
+        exported = self.client.post("/bulk/exports/products", json={"ids": [parent_id]}, headers=self.headers(cookies))
+        self.assertEqual(exported.status_code, 200, exported.text)
+        records = read_workbook("products", exported.content)
+        self.assertEqual([row["record_type"] for row in records], ["product", "child"])
+        self.assertEqual(records[1]["parent_product_id"], parent_id)
+        self.assertEqual(float(records[1]["vendor_buying_price"]), 90)
+        repeat = self.client.post(f"/bulk/jobs/products?client_key={uuid4()}", content=workbook("products", records), headers=headers)
+        retried = self.client.post(f"/bulk/jobs/{repeat.json()['id']}/advance", headers=self.headers(cookies))
+        self.assertEqual((retried.json()["success"], retried.json()["failures"]), (2, 0), retried.text)
+        product = self.client.get(f"/inventory/products/{parent_id}").json()
+        self.assertEqual(len(product["variants"]), 1)
+        self.assertEqual(len(product["variants"][0]["offers"]), 1)
+        response = self.client.get("/catalog/home", headers={"X-Tenant-Slug": owner["user"]["tenant_slug"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        home = response.json()
+        self.assertEqual(next(row["image_url"] for row in home["brands"] if row["name"] == "Bottle brand"), rows[0]["image_url"])
+        for category in ("Bottles", "Gifts"):
+            self.assertEqual(next(row["image_url"] for row in home["categories"] if row["name"] == category), rows[0]["image_url"])
+
+    def test_ai_catalog_package_imports_cropped_parent_child_and_reports_success(self):
+        from app.ai.catalog_workbook import CatalogOutput, CatalogRow, catalog_answer, download_catalog
+
+        owner, cookies, _ = self.register("bulk-ai-catalog")
+        image = io.BytesIO()
+        Image.new("RGB", (40, 40), "red").save(image, format="JPEG")
+
+        def catalog_row(name, **values):
+            row = {field: None for field in CatalogRow.model_fields}
+            row.update(name=name, record_type="product")
+            row.update(values)
+            return row
+
+        parsed = CatalogOutput.model_validate({
+            "reply": "Synthetic sample catalog; verify all details.",
+            "clarification": None,
+            "products": [
+                catalog_row("Sample cup", sku="SAMPLE-CUP", description="Synthetic demo item.",
+                            brand="Sample brand", categories="Kitchen", hsn_code="7323",
+                            hsn_description="Synthetic source value", gst_rate="18", selling_price="12.50",
+                            discount_percent="10", pricing_mode="discount", image_index=0,
+                            image_box="0,0,1000,1000", image_background="white"),
+                catalog_row("Blue sample cup", sku="SAMPLE-CUP-BLUE", record_type="child",
+                            parent_sku="SAMPLE-CUP", variant_name="Blue", colour="Blue",
+                            vendor="Synthetic supplier", vendor_mrp="20", vendor_buying_price="8"),
+            ],
+        })
+        assistant = MagicMock()
+        assistant.scope = {"company": str(owner["user"]["company_id"]), "user": str(uuid4())}
+        assistant.identity = {"role": "owner"}
+        assistant.conversation.return_value = None
+        assistant.db.execute.return_value.mappings.return_value.first.return_value = {
+            "content": catalog_answer(parsed), "attachment_ids": [uuid4()]}
+        with patch("app.ai.capabilities.current_identity", return_value={"role": "owner"}), \
+                patch("app.ai.catalog_workbook.MediaService") as media, \
+                patch("app.services.bulk_import.BulkImport.suggestions", return_value={}):
+            media.return_value.attachments.return_value = [
+                {"mime_type": "image/jpeg", "content": image.getvalue()}]
+            package = download_catalog(assistant, uuid4(), uuid4())
+
+        with ZipFile(io.BytesIO(package)) as archive:
+            self.assertIn("images/product-1.jpg", archive.namelist())
+            manifest = archive.read("manifest.xlsx")
+        rows = read_workbook("products", manifest)
+        self.assertEqual(rows[0]["image_file"], "product-1.jpg")
+        self.assertEqual(rows[0]["discount_percent"], "10")
+        self.assertEqual(rows[1]["parent_sku"], "SAMPLE-CUP")
+        self.assertEqual(rows[1]["vendor_buying_price"], "8")
+
+        start = self.client.post(
+            f"/bulk/jobs/products?client_key={uuid4()}",
+            content=package,
+            headers={**self.headers(cookies), "Content-Type": "application/zip"},
+        )
+        self.assertEqual(start.status_code, 200, start.text)
+        finished = self.client.post(f"/bulk/jobs/{start.json()['id']}/advance", headers=self.headers(cookies))
+        self.assertEqual((finished.json()["success"], finished.json()["failures"]), (2, 0), finished.text)
+        report = self.client.get(f"/bulk/jobs/{start.json()['id']}/results")
+        self.assertEqual((report.headers["x-bulk-success-count"], report.headers["x-bulk-failure-count"]), ("2", "0"))
+        with ZipFile(io.BytesIO(report.content)) as archive:
+            succeeded = read_workbook("products", archive.read("success.xlsx"))
+        self.assertEqual([row["record_type"] for row in succeeded], ["product", "child"])
+        product = self.client.get(f"/inventory/products/{succeeded[0]['id']}").json()
+        self.assertEqual(len(product["variants"]), 1)
+        self.assertEqual(product["variants"][0]["colour"], "Blue")
+        self.assertTrue(product["image_url"].startswith("/api/public-images/"))
+
     def test_master_images_and_product_dependency_images_accept_urls_and_zip_files(self):
         _, cookies, _ = self.register("bulk-master-images")
         photo = io.BytesIO()
@@ -509,16 +778,29 @@ class BulkDatabaseTests(TenantDatabaseCase):
             self.assertIn("https://images.example.com/logo.png", images)
             self.assertTrue(any(url.startswith("/api/public-images/") for url in images), images)
         rows = upload("products", [{
-            "name": "Cup", "hsn_code": "1234", "hsn_description": "Sample goods", "gst_rate": 0,
+            "name": "Cup", "sku": "CUP-ZIP", "hsn_code": "1234", "hsn_description": "Sample goods", "gst_rate": 0,
             "brand": "New imaged brand", "categories": "New imaged category",
             "brand_image_file": "logo.png", "category_image_url": "https://images.example.com/category.png",
             "image_background": "white",
+        }, {
+            "record_type": "child", "parent_sku": "CUP-ZIP", "variant_name": "Blue", "sku": "CUP-ZIP-BLUE",
+            "image_file": "logo.png",
         }])
         product = self.client.get(f"/inventory/products/{rows[0]['id']}").json()
         self.assertEqual(product["image_background"], "#ffffff")
         from sqlalchemy import text
         brand_image = self.connection.execute(text("select image_url from brands where id=:id"), {"id": product["brand_id"]}).scalar_one()
         self.assertTrue(brand_image.startswith("/api/public-images/"), brand_image)
+        self.assertTrue(product["variants"][0]["image_url"].startswith("/api/public-images/"), product["variants"])
+        upload("variants", [
+            {"product_id": rows[0]["id"], "variant_name": "Green", "sku": "CUP-ZIP-GREEN", "image_file": "logo.png"},
+            {"product_id": rows[0]["id"], "variant_name": "Red", "sku": "CUP-URL-RED",
+             "image_url": "https://images.example.com/red-cup.png"},
+        ])
+        product = self.client.get(f"/inventory/products/{rows[0]['id']}").json()
+        variants = {row["variant_name"]: row for row in product["variants"]}
+        self.assertTrue(variants["Green"]["image_url"].startswith("/api/public-images/"), variants["Green"])
+        self.assertEqual(variants["Red"]["image_url"], "https://images.example.com/red-cup.png")
 
     def test_product_dependencies_and_selected_export_round_trip(self):
         _, cookies, _ = self.register("bulk-products")

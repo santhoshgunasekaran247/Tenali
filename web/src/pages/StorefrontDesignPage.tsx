@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, Monitor, Plus, Save, Smartphone, Trash2, Upload } from "lucide-react";
+import { ChevronDown, ChevronUp, Crop, Monitor, Plus, Save, Smartphone, Trash2, Upload } from "lucide-react";
 import { api } from "../api";
 import { FloatingAlert } from "../components/Notifications";
+import { ImageCropEditor } from "../components/ImageCropEditor";
 import { SITE_THEME_FIELDS, STOREFRONT_THEME_PALETTES, normalizeSiteTheme, storefrontSiteTheme } from "../features/siteTheme";
 import { tenantBase } from "../features/tenantTransport";
 import { toAssetUrl } from "../features/catalog/utils";
@@ -81,12 +82,16 @@ function ActionField({ definition, value, targets, onChange, requireDestination 
   </details>;
 }
 
-function ImageField({ label, value, onChange, onError }: {
+function ImageField({ label, value, onChange, onError, width = 1200, height = 900, wideLogo = false }: {
   label: string;
   value?: string | null;
   onChange: (value: string | null) => void;
   onError: (message: string) => void;
+  width?: number;
+  height?: number;
+  wideLogo?: boolean;
 }) {
+  const [cropping, setCropping] = useState(false);
   const upload = async (file?: File) => {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
@@ -106,14 +111,19 @@ function ImageField({ label, value, onChange, onError }: {
     }
   };
   return <div className="storefront-design-image-field">
+    <p className="social-caption">Preferred {width} x {height} px{wideLogo ? " (square), or 1200 x 300 px for a wide logo" : ""}. PNG, JPEG or WebP under 1 MiB. Keep your image size or choose a crop below.</p>
     {value ? <img src={toAssetUrl(value)} alt={`${label} preview`} /> : <div className="storefront-image-placeholder">Image preview</div>}
     <label>{label} URL<input value={value?.startsWith("data:") ? "" : value || ""} placeholder={value?.startsWith("data:") ? "Uploaded image — save to apply" : "Paste an image URL"} onChange={event => onChange(event.target.value || null)} /></label>
     <div className="storefront-design-image-actions">
-      <label className="company-upload"><Upload size={15} aria-hidden="true" />Upload image
+      <label className="company-upload image-action"><Upload size={16} aria-hidden="true" />Upload image
         <input type="file" accept="image/png,image/jpeg,image/webp" aria-label={`Upload ${label.toLowerCase()}`} onChange={event => { void upload(event.target.files?.[0]); event.target.value = ""; }} />
       </label>
-      <button className="ops-link-btn" type="button" disabled={!value} onClick={() => onChange(null)}><Trash2 size={15} aria-hidden="true" />Remove</button>
+      <button className="image-action" type="button" disabled={!value} onClick={() => onChange(null)}><Trash2 size={16} aria-hidden="true" />Remove</button>
+      <button className="image-action image-action-primary" type="button" disabled={!value} onClick={() => setCropping(true)}><Crop size={16} aria-hidden="true" />Preview &amp; crop</button>
     </div>
+    {cropping && value ? <ImageCropEditor source={value} label={label} width={width} height={height}
+      presets={wideLogo ? [{ label: "Wide logo", width: 1200, height: 300 }] : []}
+      onApply={onChange} onClose={() => setCropping(false)} /> : null}
   </div>;
 }
 
@@ -351,8 +361,8 @@ export function StorefrontDesignPage() {
     {company ? <div className="storefront-design-workspace">
       <aside className="storefront-design-controls" aria-label="Storefront design controls">
         <div className="storefront-design-panel-heading"><h2>Design</h2><span>{enabledCount + 5} active sections</span></div>
-        <section className="storefront-design-control-group">
-          <h3>Store theme</h3>
+        <details className="storefront-design-control-group">
+          <summary><h3>Store theme</h3></summary>
           <label>Choose a storefront
             <select value={company.storefront_template || "current"} onChange={event => {
               const template = event.target.value as StorefrontTemplate;
@@ -362,9 +372,9 @@ export function StorefrontDesignPage() {
             </select>
           </label>
           <p>Changing themes only changes presentation. Your products, categories, brands, tags, orders and checkout stay the same.</p>
-        </section>
-        <section className="storefront-design-control-group">
-          <h3>Colours</h3>
+        </details>
+        <details className="storefront-design-control-group">
+          <summary><h3>Colours</h3></summary>
           <div className="storefront-design-colours">
             {SITE_THEME_FIELDS.map(([key, label]) => <label key={key}>
               <span>{label}</span>
@@ -386,34 +396,36 @@ export function StorefrontDesignPage() {
               <option value="rounded">Rounded</option><option value="square">Square</option>
             </select>
           </label>
-        </section>
-        <section className="storefront-design-control-group">
-          <div className="storefront-design-section-heading"><h3>Homepage sections</h3><span>{sections.length + 5}</span></div>
+        </details>
+        <details className="storefront-design-control-group">
+          <summary className="storefront-design-section-heading"><h3>Homepage sections</h3><span>{sections.length + 5}</span></summary>
           <p>Reorder, hide or edit any section. Select products, categories and brands manually; these choices are separate from product tags.</p>
           <p>Each section contains its own links and buttons. Destinations can be enabled homepage sections, store pages or custom URLs.</p>
           <details className="storefront-design-section">
             <summary><strong>Header</strong><span>Fixed at top</span></summary>
             <div className="storefront-design-section-fields">
               <p>The header always stays above the homepage sections.</p>
-              <ImageField label="Store logo" value={company.logo_url} onChange={value => updateCompany({ logo_url: value || undefined })} onError={setError} />
+              <ImageField label="Store logo" width={600} height={600} wideLogo value={company.logo_url} onChange={value => updateCompany({ logo_url: value || undefined })} onError={setError} />
               <label>Browser title<input maxLength={140} value={company.storefront_content.home.browser_title || ""}
                 onChange={event => updateHomeCopy("browser_title", event.target.value)} /></label>
               <h4>Header menu ({headerMenu.length}/{MAX_STOREFRONT_MENU_ITEMS})</h4>
               <p>Add, reorder, hide or remove up to 9 primary menu items. Cart and account controls remain separate.</p>
-              {headerMenu.map((item, index) => <div key={item.key}>
+              {headerMenu.map((item, index) => <div key={item.key} className="storefront-design-menu-item">
                 <ActionField requireDestination definition={{ key: item.key, title: `Menu ${index + 1}: ${item.label}`,
                   label: item.label, href: item.href, group: "Header menu" }} value={item} targets={linkTargets}
                   onChange={value => updateHeaderMenu(headerMenu.map((entry, position) => position === index
                     ? { ...entry, label: value.label ?? entry.label, href: value.href ?? entry.href } : entry))} />
-                <label className="storefront-design-checkbox"><input type="checkbox" checked={item.is_enabled}
+                <div className="storefront-design-menu-tools">
+                <label className="storefront-design-checkbox"><input type="checkbox" checked={item.is_enabled} aria-label={`Show ${item.label || `menu ${index + 1}`}`}
                   onChange={event => updateHeaderMenu(headerMenu.map((entry, position) => position === index
-                    ? { ...entry, is_enabled: event.target.checked } : entry))} />Show {item.label || `menu ${index + 1}`}</label>
-                <button type="button" className="ops-link-btn" disabled={index === 0} aria-label={`Move menu ${index + 1} up`}
-                  onClick={() => moveHeaderMenuItem(index, -1)}><ChevronUp size={15} aria-hidden="true" />Move up</button>
-                <button type="button" className="ops-link-btn" disabled={index === headerMenu.length - 1} aria-label={`Move menu ${index + 1} down`}
-                  onClick={() => moveHeaderMenuItem(index, 1)}><ChevronDown size={15} aria-hidden="true" />Move down</button>
-                <button type="button" className="ops-link-btn" onClick={() => updateHeaderMenu(headerMenu.filter((_, position) => position !== index))}>
-                  <Trash2 size={15} aria-hidden="true" />Remove menu {index + 1}</button>
+                    ? { ...entry, is_enabled: event.target.checked } : entry))} />Visible</label>
+                <button type="button" className="ops-link-btn" disabled={index === 0} aria-label={`Move menu ${index + 1} up`} title="Move up"
+                  onClick={() => moveHeaderMenuItem(index, -1)}><ChevronUp size={16} aria-hidden="true" /></button>
+                <button type="button" className="ops-link-btn" disabled={index === headerMenu.length - 1} aria-label={`Move menu ${index + 1} down`} title="Move down"
+                  onClick={() => moveHeaderMenuItem(index, 1)}><ChevronDown size={16} aria-hidden="true" /></button>
+                <button type="button" className="ops-link-btn" aria-label={`Remove menu ${index + 1}`} onClick={() => updateHeaderMenu(headerMenu.filter((_, position) => position !== index))}>
+                  <Trash2 size={15} aria-hidden="true" />Remove<span className="sr-only"> menu {index + 1}</span></button>
+                </div>
               </div>)}
               <button type="button" className="ops-link-btn" disabled={headerMenu.length >= MAX_STOREFRONT_MENU_ITEMS}
                 onClick={addHeaderMenuItem}>
@@ -438,7 +450,11 @@ export function StorefrontDesignPage() {
               : section.section_type === "categories"
                 ? (options?.categories || []).map(item => [item.id, `${item.name}${item.is_active ? "" : " (inactive)"}`] as const)
                 : (options?.brands || []).map(item => [item.id, `${item.name}${item.is_active ? "" : " (inactive)"}`] as const);
-            return <details className="storefront-design-section" key={section.section_key} open={index === 0}>
+            const imageRatio = String(section.configuration.image_ratio || (section.section_type === "hero" ? "theme" : "square"));
+            const squarePixels = section.section_type === "brands" ? 600 : section.section_type === "categories" ? 800 : 1000;
+            const [imageWidth, imageHeight] = imageRatio === "portrait" ? [800, 1000]
+              : imageRatio === "landscape" ? [1200, 800] : imageRatio === "square" ? [squarePixels, squarePixels] : [1600, 600];
+            return <details className="storefront-design-section" key={section.section_key}>
               <summary><span className="storefront-design-drag-mark" aria-hidden="true">::</span><strong>{section.title || `Section ${index + 1}`}</strong><span>{section.section_type}</span></summary>
               <div className="storefront-design-section-fields">
                 {classicSlot ? copyFields(classicSlot) : <>
@@ -472,8 +488,10 @@ export function StorefrontDesignPage() {
                       })} /></label>)}
                   </div>
                 </details> : null}
-                <ImageField label="Section image" value={section.image_url} onChange={value => updateSection(section.section_key, { image_url: value })} onError={setError} />
-                <label>Image size<select value={String(section.configuration.image_ratio || (section.section_type === "hero" ? "theme" : "square"))} onChange={event => {
+                <ImageField label="Section image" value={section.image_url}
+                  width={imageWidth} height={imageHeight}
+                  onChange={value => updateSection(section.section_key, { image_url: value })} onError={setError} />
+                <label>Image shape<select value={imageRatio} onChange={event => {
                   const { image_ratio, ...configuration } = section.configuration;
                   updateSection(section.section_key, { configuration: event.target.value === "theme" ? configuration
                     : { ...configuration, image_ratio: event.target.value } });
@@ -570,7 +588,7 @@ export function StorefrontDesignPage() {
               {linkDefinitions.filter(definition => definition.key === "catalog.explore").map(actionField)}
             </div>
           </details>
-        </section>
+        </details>
       </aside>
       <section className="storefront-design-preview" aria-label="Live storefront preview">
         <div className="storefront-preview-toolbar">

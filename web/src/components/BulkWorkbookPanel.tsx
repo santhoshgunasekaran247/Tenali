@@ -5,8 +5,8 @@ import { api, type BulkJob, type BulkKind } from "../api";
 
 type Master = { id: string; name: string; is_active: boolean };
 const RECORD_TYPES: { kind: BulkKind; label: string; help: string }[] = [
-  { kind: "products", label: "Products", help: "Products, pricing, categories, HSN and preferred vendors." },
-  { kind: "variants", label: "Variants", help: "Sizes, colours and variant pricing for existing products." },
+  { kind: "products", label: "Products", help: "Parents and child variants, pricing, categories, HSN and vendor offers." },
+  { kind: "variants", label: "Variants", help: "Child sizes, colours, images and vendor offers for existing products." },
   { kind: "hsn", label: "HSN / GST", help: "Tax codes, descriptions and GST rates." },
   { kind: "parties", label: "Contacts", help: "Customers, vendors and other business contacts." },
   { kind: "brands", label: "Brands", help: "Brand names, descriptions and logo URLs or files." },
@@ -116,7 +116,7 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
     finally { setBusy(false); }
   };
 
-  const supportsFiles = ["products", "images", "brands", "categories"].includes(kind);
+  const supportsFiles = ["products", "variants", "images", "brands", "categories"].includes(kind);
   const exportCount = kind === "products" && selectedProducts.length ? selectedProducts.length
     : kind === "brands" || kind === "categories" ? selected.length : manualIds.split(/[\s,]+/).filter(Boolean).length;
   return <div className="bulk-content" aria-label="Bulk Excel workbooks" aria-busy={busy}>
@@ -142,6 +142,8 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
           <li>Leave <strong>id</strong> blank for new records; keep exported IDs to update.</li>
           {kind === "products" ? <li>Select an existing HSN to fill its description and GST rate; select a brand to fill its description. For new entries, replace those cells with your own values.</li> : null}
           {kind === "products" ? <li>Use English background colours such as <strong>white</strong> or <strong>light blue</strong>. Brand and primary-category photos can use their own image URL or file columns.</li> : null}
+          {kind === "products" ? <li>For variants, use <strong>record_type = child</strong> and set <strong>parent_sku</strong> or <strong>parent_product_id</strong>. Put the parent first. Vendor offer columns hold buying price, MRP and supplier availability, separately from your selling price.</li> : null}
+          {kind === "products" || kind === "variants" ? <li>Purple text and lavender cells identify AI-generated content. Check these values before uploading; see the workbook README.</li> : null}
           {kind === "variants" ? <li>Use an existing product ID for each variant. Keep the variant ID when updating.</li> : null}
           {kind === "hsn" ? <li>Use 4, 6 or 8 digit codes. Enter a description and a GST rate between 0 and 100.</li> : null}
           {kind === "parties" ? <li>New contacts need a legal name and party type. Format phone numbers as text.</li> : null}
@@ -192,7 +194,9 @@ export function BulkWorkbookPanel({ selectedProducts }: { selectedProducts: stri
       {jobs.map(job => <article key={job.id} className="bulk-job">
         <div><strong>{RECORD_TYPES.find(item => item.kind === job.kind)?.label || job.kind}</strong><span className={`bulk-job-status${job.completed ? " is-complete" : ""}`}>{job.completed ? "Processed" : "Ready to resume"}</span>
           <p>{job.processed} / {job.total} rows processed</p>
-          <p role="status">{job.success} succeeded · {job.failures} failed · {job.total - job.processed} remaining</p>
+          <p role="status">{Number.isInteger(job.success) && Number.isInteger(job.failures)
+            ? <><strong>{job.success}</strong> succeeded · <strong>{job.failures}</strong> failed</>
+            : "Success/failure counts unavailable — refresh after updating the API"} · {job.total - job.processed} remaining</p>
           <progress aria-label={`${job.kind} import progress`} value={job.processed} max={Math.max(1, job.total)} />
           <small>Uploaded {new Date(job.created_at).toLocaleString()} · Expires {new Date(job.expires_at).toLocaleDateString()}</small>
         </div>

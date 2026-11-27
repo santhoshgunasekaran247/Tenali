@@ -5,6 +5,7 @@ import { Plus, Save, Sparkles, Trash2, X } from "lucide-react";
 import { api } from "../api";
 import { PartySelect } from "./PartySelect";
 import { toAssetUrl } from "../features/catalog/utils";
+import { ImageCropEditor } from "./ImageCropEditor";
 import type { HsnMaster, InventoryItemInput, InventoryLookups, InventoryOffer, InventoryOfferInput, InventoryProduct, InventoryProductInput, InventoryVariant } from "../types";
 
 const EMPTY_ITEM: InventoryItemInput = {
@@ -72,6 +73,7 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   const [error, setError] = useState("");
   const [fixingImage, setFixingImage] = useState("");
   const [imageNotice, setImageNotice] = useState("");
+  const [cropImage, setCropImage] = useState<string | null>(null);
   const [savedImages, setSavedImages] = useState(() => ({
     urls: new Set([product?.image_url, ...(product?.image_urls || "").split("|")].filter((value): value is string => !!value)),
     originals: product?.image_originals || {},
@@ -172,6 +174,11 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
   return <section className="inventory-editor" aria-label={variantMode ? "Variant editor" : "Product editor"}>
     <div className="inventory-section-head"><h2>{variantMode ? variant ? "Edit Variant" : "Add Variant" : product ? "Edit Product" : "Add Product"}</h2><button className="ops-link-btn" type="button" title="Close editor" aria-label="Close product editor" disabled={saving} onClick={() => { clearDrafts(draftKey); onClose(); }}><X size={18}/></button></div>
     {error?<FloatingAlert>{error}</FloatingAlert>:null}
+    {cropImage ? <ImageCropEditor source={cropImage} label={variantMode ? "variant image" : "product image"}
+      onClose={() => setCropImage(null)} onApply={image => {
+        patch({ image_url: draft.image_url === cropImage || !draft.image_url ? image : draft.image_url });
+        setGallery(previous => previous.split(/\r?\n/).map(url => url.trim() === cropImage ? image : url).join("\n"));
+      }} /> : null}
     <form className="ops-form" onSubmit={submit}><fieldset disabled={saving} className="inventory-fields">
       <label>{variantMode?"Variant Name":"Product Name"}<input required={!variantMode} maxLength={200} value={variantMode?draft.variant_name:draft.name} onChange={event=>patch(variantMode?{variant_name:event.target.value}:{name:event.target.value})}/></label>
       <label>Item Name<input maxLength={200} value={draft.item_name||""} onChange={event=>patch({item_name:event.target.value})}/></label>
@@ -291,6 +298,14 @@ export function ProductEditor({ product, variant, variantMode = false, lookups, 
         <input aria-label={`Attribute ${index+1} value`} value={value} maxLength={500} onChange={event=>setAttributes(previous=>previous.map((entry,position)=>position===index?[entry[0],event.target.value]:entry))}/>
         <button className="ops-link-btn" type="button" title="Remove attribute" aria-label={`Remove attribute ${index+1}`} onClick={()=>setAttributes(previous=>previous.filter((_,position)=>position!==index))}><Trash2 size={16}/></button>
       </div>)}<button className="ops-link-btn" type="button" disabled={attributes.length>=40} onClick={()=>setAttributes(previous=>[...previous,["",""]])}><Plus size={16}/> Add Attribute</button></div>
+      {(draftImages.length ? draftImages : variantMode && parentImage ? [parentImage] : []).map(image => <figure key={image} className="inventory-card-preview">
+        <div style={{ backgroundColor: draft.image_background || product?.image_background || "white" }}>
+          <img src={toAssetUrl(image)} alt="Product card preview" />
+        </div>
+        <figcaption><strong>{variantMode ? draft.variant_name || product?.name : draft.name || "Product"} · Card preview</strong>
+          <span>Preferred 1000 x 1000 px. Square frame, full image, no stretching.</span></figcaption>
+        <button type="button" className="btn light" onClick={() => setCropImage(image)}>Preview & crop</button>
+      </figure>)}
     </fieldset><div className="inventory-actions"><button className="btn" type="submit" disabled={saving||imageBusy}><Save size={16}/>{saving?"Saving...":variantMode?"Save Variant":"Save Product"}</button></div></form>
   </section>;
 }

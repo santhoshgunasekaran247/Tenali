@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { BarChart3, BriefcaseBusiness, ChevronLeft, ChevronRight, LayoutGrid, Settings, Sparkles, UserRound } from "lucide-react";
 import { useAuth } from "../features/auth";
 import { portalGroups, visiblePortalEntries } from "../features/portalNavigation";
+import { useDismissOutside } from "../features/useDismissOutside";
 
 export function PortalNavigation({ mobile = false }: { mobile?: boolean }) {
   const { user } = useAuth();
@@ -10,6 +11,8 @@ export function PortalNavigation({ mobile = false }: { mobile?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismissOutside(menuRef, () => { setExpanded(false); setSelectedGroup(null); }, !mobile && expanded);
   useEffect(() => { setExpanded(false); setSelectedGroup(null); }, [pathname]);
   if (!user) return null;
   const entries = visiblePortalEntries(user);
@@ -20,7 +23,7 @@ export function PortalNavigation({ mobile = false }: { mobile?: boolean }) {
     {!entry.group && !mobile ? entry.path === "/portal/dashboard" ? <BarChart3 size={19} aria-hidden="true" /> : <Sparkles size={19} aria-hidden="true" /> : null}
     <span className="portal-nav-label">{entry.label}</span></NavLink>;
   const icons = { Operations: BriefcaseBusiness, Admin: Settings, "My Workspace": UserRound };
-  return <div role="navigation" className={mobile ? "portal-mobile-links" : `portal-sidebar${expanded ? " portal-sidebar-expanded" : " portal-sidebar-compact"}`} aria-label="Workspace modules" onKeyDown={event => {
+  return <div ref={menuRef} role="navigation" className={mobile ? "portal-mobile-links" : `portal-sidebar${expanded ? " portal-sidebar-expanded" : " portal-sidebar-compact"}`} aria-label="Workspace modules" onKeyDown={event => {
     if (!mobile && expanded && event.key === "Escape") { setExpanded(false); setSelectedGroup(null); toggleRef.current?.focus(); }
   }}>
     {!mobile ? <button ref={toggleRef} type="button" className="portal-rail-toggle" aria-label={expanded ? "Collapse workspace menu" : "Expand workspace menu"} aria-expanded={expanded} onClick={() => { setExpanded(!expanded); setSelectedGroup(expanded ? null : activeGroup); }}>

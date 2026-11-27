@@ -715,9 +715,11 @@ and actual data-handling practices before publication. Anonymous visitors now se
 a platform homepage with an app description and public policy links; signed-in
 workspace/storefront routing is preserved.
 
-The platform homepage includes a narrated 12-minute, 5-second beginner guide with 38
-steps and 12 clickable, timed chapters. A gentle Indian-English female voice
-explains each step over quiet, original background music. Instructions occupy a dark panel;
+The platform homepage includes a narrated 16-minute, 9-second beginner guide with 38
+steps and 12 clickable, timed chapters. Conversational narration uses the expressive
+Indian-English female `en-IN-NeerjaExpressiveNeural` synthetic voice at its natural rate,
+over quiet, original background music. Speech is authored separately from the concise
+on-screen instructions, rather than reading the instruction panel verbatim. Instructions occupy a dark panel;
 actual app screens using sample data occupy a separate light panel. It follows
 AI help and workbook generation, accounts, borrowing/lending and settlements,
 purchase bills, multiple stores, Admin/Operations menus, the dashboard, products,
@@ -729,7 +731,7 @@ Deploy `web/public/tenali-product-tour.mp4`, its
 `tenali-product-tour-poster.jpg` poster, `tenali-product-tour.vtt` English captions
 and `tenali-product-tour-chapters.vtt` chapter track together with the frontend.
 `web/src/content/product-tour.json` supplies the chapter buttons and full written
-guide; keep its timings and instructions consistent with the video and tracks.
+guide; keep its timings, instructions and `narration` consistent with the video and tracks.
 Caption cues leave a short gap between steps to prevent overlapping text after seeking.
 Playback failures show a written-guide alternative. The guide makes no live AI
 requests and needs no database migration.
@@ -741,6 +743,19 @@ Brand/category workbooks support `image_url` and `image_file`; product workbooks
 600×600 for logos and 800×800 for categories, in PNG/JPEG/WebP under 1 MiB. Photos fit without stretching;
 white padding replaces blurred duplicated backdrops when a product cannot be isolated.
 Saved-import progress shows successes, failures and remaining rows; retry only failed rows.
+Older API workers without summary counts use completed-result headers to recover actual totals;
+an incomplete legacy job shows an explicit unavailable-count notice, never invented zero failures.
+Restart/deploy the API with the frontend to get live counts and new workbook fields.
+
+Product workbooks contain parent (`record_type=product`) and variant (`record_type=child`) rows.
+Child rows use `parent_product_id` or the exact `parent_sku`; place new parents first.
+Selected product exports include their children. Variant-only templates also support image ZIPs.
+Both templates carry vendor MRP, buying price, availability, quantity, lead time, vendor SKU,
+reference and URL fields, separate from selling price and owned stock. Supplying offer details
+requires a vendor. Updates retain blank offer fields and reuse the existing vendor mapping.
+AI prepares the same parent/child and vendor columns, without inventing financial or supplier data.
+Purple text with a lavender cell fill identifies AI-prepared values; every workbook README
+explains that these need review and that colouring is not verification.
 
 AI catalogue workbooks use the same template. Missing descriptions may use generic, reviewed AI copy;
 missing SKUs receive collision-checked internal codes and the default background is white. Tax, prices,
@@ -749,10 +764,26 @@ panel-relative `product_box` around the actual object, excluding advertising tex
 whole-panel responses must be regenerated instead of downloading misleading product images.
 Always review extracted crops: object recognition can be uncertain, and low-resolution source pictures
 cannot supply missing detail.
+Strict catalogue response schemas require all declared fields, using null for unknown optional values.
+Row types are limited to `product`/`child` and pricing modes to `price`/`discount`/`inherit`; supplied
+image URLs and discount percentages remain in the generated workbook.
 
 Across storefront themes, selected records are priorities, followed by remaining active, public records.
 Use **Show only selected** to restrict a section explicitly. Inactive/private products and records from
 other workspaces remain excluded. Mobile product, brand and category shelves support horizontal scrolling.
+Missing category or brand pictures fall back to the first active, public product photo in
+catalogue order, including secondary-category assignments. Explicit master pictures take priority.
+No tenant master or product is modified by this display-only fallback.
+Storefront Design groups and nested sections start collapsed, with consistent sans-serif controls.
+Each image field shows recommended pixels and an optional crop/preview dialog with editable output
+dimensions, zoom and position. Reopening a crop uses the current image's actual pixels rather than
+resetting to the recommendation. Logos offer both 600×600 square and 1200×300 wide presets; custom
+dimensions remain available. The crop frame can be dragged with a mouse or touch, with sliders as an
+alternative; compact previews and sticky actions keep desktop/mobile controls reachable.
+The product/variant editor also previews the square product-card frame.
+Cropping preserves proportions and updates the draft only; save explicitly to publish. Remote pictures
+must allow browser cross-origin access for cropping; otherwise upload their original file.
+Workspace navigation, account menus and mobile menus close when clicking or focusing outside.
 These changes use existing image columns, job outcomes and section JSON; no additional migration is needed.
 
 Tenant owners/admins use **Store Policies** (`/portal/policies`), also linked from

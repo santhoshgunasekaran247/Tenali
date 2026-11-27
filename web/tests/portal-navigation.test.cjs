@@ -13,7 +13,8 @@ function load(file, overrides = {}) {
   const compiled = ts.transpileModule(source(file), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(compiled, { exports, window: overrides.window, require: name => overrides[name] || require(name) });
+  vm.runInNewContext(compiled, { exports, window: overrides.window, document: overrides.document, Node: overrides.Node,
+    require: name => overrides[name] || (name === "../features/useDismissOutside" ? { useDismissOutside() {} } : require(name)) });
   return exports;
 }
 const navigation = load("features/portalNavigation.ts");
@@ -231,6 +232,25 @@ test("launcher label is hidden until hover or keyboard focus", () => {
   assert.match(source("components/PortalNavigation.tsx"), /aria-label="Ask Tenali AI for help"/);
   assert.match(css, /\.tenali-launcher \{[^}]*border: 0; background: transparent/);
   assert.match(css, /\.tenali-launcher img \{[^}]*object-fit: contain/);
+});
+
+test("outside pointer and keyboard focus dismiss menus without closing on an inside click", () => {
+  const events = {}, closed = [];
+  class Node {}
+  const inside = new Node(), outside = new Node(), trigger = new Node();
+  const { useDismissOutside } = load("features/useDismissOutside.ts", {
+    Node, document: { addEventListener: (name, fn) => { events[name] = fn; }, removeEventListener() {} },
+    react: { ...React, useRef: value => ({ current: value }), useEffect: fn => fn() },
+  });
+  useDismissOutside({ current: { contains: node => node === inside } }, () => closed.push(true), true,
+    { current: { contains: node => node === trigger } });
+  events.pointerdown({ target: inside });
+  assert.equal(closed.length, 0);
+  events.pointerdown({ target: trigger });
+  assert.equal(closed.length, 0);
+  events.pointerdown({ target: outside });
+  events.focusin({ target: outside });
+  assert.equal(closed.length, 2);
 });
 
 test("launcher grows from its bottom-right corner on hover and keyboard focus with reduced-motion support", () => {

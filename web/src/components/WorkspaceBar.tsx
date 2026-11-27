@@ -6,11 +6,13 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "../features/auth";
 import { tenantBase } from "../features/tenantTransport";
 import { storefrontText } from "../features/catalog/storefrontText";
+import { useDismissOutside } from "../features/useDismissOutside";
 
 export function WorkspaceBar({ navigation }: { navigation?: Record<string, string> } = {}){
   const auth=useAuth();const[error,setError]=useState('');const[busy,setBusy]=useState(false);
   const location=useLocation();
   const menu=useRef<HTMLDetailsElement>(null);
+  useDismissOutside(menu, () => { if (menu.current) menu.current.open = false; });
   useEffect(()=>{if(menu.current?.open)menu.current.open=false;},[location.pathname,location.search,location.hash]);
   if(!auth.user)return null;
   const copy=navigation||auth.storefront?.storefront_content?.navigation||{};
